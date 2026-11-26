@@ -33,23 +33,25 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// A Smart Pipeline's waiting streams ([WaitingStreamList]), on its Learning Status tab under Learning history
-/// (design 06 A115), fetched a page at a time. A stream waits until its learner's session promotes, or the
-/// learner gives up, and both are done from Learning Status.
+/// Fetches a Smart Pipeline's waiting streams a page at a time and shows them in a [WaitingStreamList], on the
+/// pipeline's Learning Status tab under Learning history.
+///
+/// A stream waits until its learner's session promotes a translation or the learner gives up. Both are acted
+/// on elsewhere on the Learning Status tab, not from this list.
 public class WaitingStreamListController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
 
     private final WaitingStreamList view;
     private final RestDataProvider<BacklogStream, ResultPage<BacklogStream>> dataProvider;
-    /// Whose waiting streams are listed: the pipeline chosen above, or nobody's before one is.
+    /// The learner whose waiting streams are listed, i.e. the pipeline selected above, or null before one is.
     private SupervisorLearner learner;
 
-    /// Made by GIN, with its list.
+    /// Made by GIN.
     ///
     /// @param eventBus    The application's event bus.
-    /// @param view        Its component.
-    /// @param restFactory Makes REST requests.
+    /// @param view        The list.
+    /// @param restFactory Makes the REST requests that fetch the streams.
     @Inject
     public WaitingStreamListController(final EventBus eventBus,
                                        final WaitingStreamList view,
@@ -83,16 +85,16 @@ public class WaitingStreamListController extends Controller {
         view.setDataProvider(dataProvider);
     }
 
-    /// Lists this learner's waiting streams, from the first page, or none.
+    /// Lists the given learner's waiting streams, starting from the first page, or clears the list.
     ///
-    /// @param learner The learning pipeline chosen above, or null where none is.
+    /// @param learner The pipeline selected above, or null if none is selected.
     public void setLearner(final SupervisorLearner learner) {
         this.learner = learner;
         view.showFirstPage();
         refresh();
     }
 
-    /// Reads them again: what is waiting changes as sessions promote.
+    /// Fetches the streams again, since what is waiting changes as sessions promote translations.
     public void refresh() {
         dataProvider.refresh();
     }

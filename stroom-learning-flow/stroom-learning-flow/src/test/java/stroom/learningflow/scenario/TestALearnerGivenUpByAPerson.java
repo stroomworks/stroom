@@ -39,9 +39,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Design 06 A115: a person gives a learner up from its row in the learning pipelines list. It learns no
-/// more; its streams with nothing serving them error with the reason, and its pipeline is woken so that
-/// those waiting come to their end now; what serves it goes on serving; and sending it back undoes it.
+/// Tests a person giving up a learner from the Supervisor, for example because its feed is retired.
+///
+/// A learner that has been given up learns no more. Streams that nothing serves are errored with the person's
+/// reason, and the learner's pipeline is woken so that streams already waiting are errored now rather than
+/// waiting indefinitely. A binding that already serves the learner carries on serving, and sending the
+/// learner back to learn again clears the give-up.
 class TestALearnerGivenUpByAPerson {
 
     private static final String DOC = "doc-1";
@@ -89,8 +92,8 @@ class TestALearnerGivenUpByAPerson {
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).describedAs("sent back").isEmpty();
     }
 
-    /// A draft is decided before a give-up is read, so a learner with one awaiting review is given up by
-    /// rejecting the draft, which discards it; giving it up from its row is refused and says so.
+    /// A draft awaiting review takes precedence over a give-up, so the way to give up a learner with a draft is
+    /// to reject the draft. Giving it up directly is refused, with a message telling the person to reject it.
     @Test
     void aLearnerWithADraftAwaitingReviewIsGivenUpByRejectingIt() {
         final Scenarios scenarios = new Scenarios();

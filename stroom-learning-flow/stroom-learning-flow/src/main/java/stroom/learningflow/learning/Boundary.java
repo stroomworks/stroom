@@ -18,19 +18,21 @@ package stroom.learningflow.learning;
 
 import stroom.learningflow.shared.RecordBoundary;
 
-/// The record boundary a flow settles (A31, A35): for raw text the parser configuration that cuts one
-/// record per unit and emits it whole; for input that is already XML the local name of the element that is
-/// one record; for JSON the key of the array whose items are records, or [#ROOT] where each top-level value
-/// is one. Exactly one of the three is set.
+/// Where one record ends and the next begins in a stream, as settled by the split step of a learning flow.
+///
+/// For raw text it is the Data Splitter configuration that cuts the text into records. For input that is
+/// already XML it is the local name of the element that is one record, or the element whose children are
+/// each one record. For JSON it is the key of the array whose items are records, or [#ROOT] where each
+/// top-level value is one. Exactly one of these four is set.
 ///
 /// @param configuration The Data Splitter configuration that cuts the records, or null.
 /// @param element       The element that is one record, or null.
 /// @param children      The element whose children are each one record, [#ROOT] for the document's own
-///                      root, or null. For a feed that interleaves several record types as siblings
-///                      under one container (`docs/learning-flow-mixed-record-elements.md`).
+///                      root, or null. This is for a feed that mixes several record types as siblings
+///                      under one container, where no single element name describes a record.
 /// @param array         The key of the array whose items are records, or [#ROOT], or null.
-/// @param depth         How deep in the document the transform receives one record sits, where it is
-///                      known: what the fragment's `SplitFilter` is set to split at (§12 item 25). Null
+/// @param depth         The element depth at which one record sits in the document the transform is
+///                      given, where it is known. The fragment's `SplitFilter` splits at this depth. Null
 ///                      for raw text, whose parser cuts the records itself.
 public record Boundary(String configuration, String element, String children, String array, Integer depth) {
 
@@ -80,8 +82,11 @@ public record Boundary(String configuration, String element, String children, St
         return new Boundary(null, null, null, array, depth);
     }
 
-    /// The boundary as a binding carries it (A35): the element or the array; null for raw text, whose parser
-    /// configuration cuts the records and needs no count beside it.
+    /// Returns the boundary in the form a binding stores it: the element, the container whose children are
+    /// records, or the array, with the depth.
+    ///
+    /// @return The shared boundary, or null for raw text, whose parser configuration cuts the records and
+    /// needs nothing stored beside it.
     public RecordBoundary shared() {
         if (element != null) {
             return RecordBoundary.ofElement(element).atDepth(depth);

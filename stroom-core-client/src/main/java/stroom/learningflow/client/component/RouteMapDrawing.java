@@ -28,49 +28,50 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/// The Setup tab's route map ([RouteMap]) as SVG markup: the stations down one line, the sections as squares
-/// and the steps as circles, each a button that names its stop ([SetupStop]) in its [#DATA_STOP] attribute;
-/// the rules that go back, skip ahead or finish as arcs; a section's summary and what is wrong in it, and a
-/// step's rules and what is wrong with it, in lines under its name; under the step chosen, a button that adds a
-/// step after it ([#DATA_ADD]). A plain class, so that it is tested
-/// without a browser.
+/// Builds the SVG markup for the Setup tab's route map ([RouteMap]).
+///
+/// The stations are drawn down one line, sections as squares and steps as circles. Each station is a button
+/// whose [#DATA_STOP] attribute holds its stop's key ([SetupStop]). Rules that go back, skip ahead or finish are
+/// drawn as arcs. Under each name are lines with a section's summary or a step's rules, followed by any problem.
+/// Under the chosen step there may be a button that adds a step after it ([#DATA_ADD]). This is a plain class so
+/// that it can be unit tested without a browser.
 final class RouteMapDrawing {
 
-    /// The attribute that names a station's stop ([SetupStop#key()]).
+    /// The attribute that holds a station's stop key ([SetupStop#key()]).
     static final String DATA_STOP = "data-stop";
-    /// The attribute of the Add step button, under the step chosen: where a step added goes, as an index into
-    /// the flow.
+    /// The attribute on the Add step button that holds the index in the flow at which a new step is inserted.
     static final String DATA_ADD = "data-add";
-    /// The fallback's name on the map.
+    /// The label of the fallback step on the map.
     static final String FALLBACK = "Fallback: marked Unknowns";
-    /// What the line comes to once a step finishes.
+    /// The label of the station at the end of the steps, reached when a step finishes the flow.
     static final String LEARNED = "Translation learned";
     private static final String SVG_NS = "http://www.w3.org/2000/svg";
-    // Every station is a box of the same make: PAD above its name and below its last line, its mark beside
-    // its name, and GAP between it and the next; the line runs through the marks, the arcs left of it.
+    // Every station is laid out as a box with PAD above its name and below its last line, its mark beside its
+    // name, and GAP before the next box. The line runs through the marks, and the arcs are drawn to its left.
     private static final int WIDTH = 360;
     private static final int LINE_X = 46;
     private static final int LABEL_X = LINE_X + 20;
     private static final int AREA_X = LINE_X - 16;
-    // Room for the focus ring, which is drawn on the edge of a station's box
+    // Space for the focus ring, which is drawn on the edge of a station's box
     private static final int EDGE = 2;
     private static final int PAD = 8;
     private static final int GAP = 4;
-    // From the top of a station's words to its name's baseline, and from that to its mark's centre
+    // The distance from the top of a station's text to its name's baseline, and from there up to its mark's
+    // centre
     private static final int LABEL_BASELINE = 12;
     private static final int MARK_RAISE = 4;
-    // Below the name's baseline to the bottom of its descenders
+    // The distance from the name's baseline to the bottom of its descenders
     private static final int DESCENT = 5;
     private static final int SUB_FIRST = 16;
     private static final int SUB_PITCH = 15;
     private static final int SECTION_HALF = 8;
     private static final int STEP_RADIUS = 7;
-    // The Add step button under the step chosen: its height, and its width, which fits its words
+    // The size of the Add step button; the width fits its text
     private static final int ADD_HEIGHT = 24;
     private static final int ADD_WIDTH = 86;
     private static final int BACK_X = LINE_X - 30;
     private static final int SKIP_X = LINE_X - 50;
-    /// How many characters of a line fit beside the line, at the size of the lines under a stop's name.
+    /// The number of characters that fit on one of the smaller lines of text under a station's name.
     private static final int SUB_CHARS = 50;
 
     private RouteMapDrawing() {
@@ -80,19 +81,20 @@ final class RouteMapDrawing {
     /// Draws the map as SVG markup.
     ///
     /// @param steps        The learning flow's steps.
-    /// @param summary      What each section is set to and what is wrong in it; null before a document is read.
-    /// @param stepProblems What is wrong with a step, by its index; a step that is fine has none.
-    /// @param selected     The stop chosen.
-    /// @param canAdd       Whether a step may be added after the step chosen, by a button under it; never after
-    ///                     the fallback, nor under a section.
-    /// @return The markup, escaped.
+    /// @param summary      Each section's summary and problem; null before a document has been read.
+    /// @param stepProblems The problem with each step, by index; a step without a problem has no entry.
+    /// @param selected     The chosen stop.
+    /// @param canAdd       Whether to show a button under the chosen step for adding a step after it. The
+    ///                     button is never shown under the fallback or a section, whatever this says.
+    /// @return The markup, with all text in it HTML-escaped.
     static String draw(final List<FlowStep> steps,
                        final SetupSummary summary,
                        final Map<Integer, String> stepProblems,
                        final SetupStop selected,
                        final boolean canAdd) {
         final List<Station> order = order(steps, summary, stepProblems);
-        // Where each station's box is, top to bottom, with room for the Add step button under the step chosen
+        // Lay out each station's box from top to bottom, leaving room for the Add step button under the chosen
+        // step
         Station addUnder = null;
         int addTop = 0;
         int at = EDGE;
@@ -120,7 +122,7 @@ final class RouteMapDrawing {
                 .append("d=\"M0,0 L8,4 L0,8 z\"/></marker>")
                 .append("</defs>");
 
-        // The line, dashed into the fallback, which is reached only by a rule
+        // Draw the line, dashed into the fallback, since the fallback is reached only by a rule
         svg.append("<g aria-hidden=\"true\">");
         for (int n = 1; n < order.size(); n++) {
             line(svg, order.get(n - 1).y, order.get(n).y, order.get(n).kind == Kind.FALLBACK);
@@ -134,7 +136,8 @@ final class RouteMapDrawing {
             addButton(svg, addUnder.stop.getStep() + 1, addTop);
         }
 
-        // The arcs over the stations' boxes, so that a box chosen doesn't hide where an arc comes and goes
+        // Draw the arcs on top of the stations' boxes, so that the highlighted box of the chosen station
+        // doesn't hide where an arc starts and ends
         svg.append("<g class=\"route-map__arcs\" aria-hidden=\"true\">");
         arcs(svg, steps, order);
         svg.append("</g>");
@@ -142,7 +145,7 @@ final class RouteMapDrawing {
         return svg.toString();
     }
 
-    // Every station in the order down the line
+    // Lists every station in order down the line
     private static List<Station> order(final List<FlowStep> steps,
                                        final SetupSummary summary,
                                        final Map<Integer, String> stepProblems) {
@@ -192,7 +195,8 @@ final class RouteMapDrawing {
         return station;
     }
 
-    // The rules that go back, skip ahead or finish, as arcs; a rule on to the next stop is the line itself
+    // Draws the rules that go back, skip ahead or finish as arcs. A rule that goes on to the next step needs no
+    // arc, as the line itself shows it.
     private static void arcs(final StringBuilder svg, final List<FlowStep> steps, final List<Station> order) {
         final int[] y = new int[steps.size() + 1];
         final List<Integer> line = new ArrayList<>();
@@ -252,7 +256,7 @@ final class RouteMapDrawing {
                             ? " aria-current=\"location\""
                             : "")
                     .append('>');
-            // What is chosen by a click, and drawn on when chosen, hovered or focused
+            // The clickable area, which is also highlighted when the station is chosen, hovered or focused
             svg.append("<rect class=\"route-map__area\" x=\"").append(AREA_X)
                     .append("\" y=\"").append(station.top)
                     .append("\" width=\"").append(WIDTH - EDGE - AREA_X)
@@ -282,8 +286,8 @@ final class RouteMapDrawing {
         svg.append("</g>");
     }
 
-    // The Add step button, under the step chosen: a button of its own, not a stop, so the arrow keys pass it
-    // by and Tab reaches it after the stop chosen
+    // Draws the Add step button under the chosen step. It is a separate button rather than a stop, so the
+    // arrow keys skip it and Tab reaches it after the chosen stop.
     private static void addButton(final StringBuilder svg, final int at, final int top) {
         svg.append("<g class=\"route-map__add\" ").append(DATA_ADD).append("=\"").append(at)
                 .append("\" role=\"button\" tabindex=\"0\" aria-haspopup=\"menu\" ")
@@ -298,8 +302,9 @@ final class RouteMapDrawing {
         svg.append("</g>");
     }
 
-    // A station's mark on the line: a square for a section, a circle for a step, filled once learned. The
-    // mark chosen is filled, not made larger, so that every station keeps the same room about its mark.
+    // Draws a station's mark on the line: a square for a section, and a circle for a step, the fallback or the
+    // learned translation. CSS fills the chosen station's mark rather than enlarging it, so that every station
+    // keeps the same spacing.
     private static void stop(final StringBuilder svg, final Station station) {
         final String problem = station.problem == null
                 ? ""
@@ -330,7 +335,8 @@ final class RouteMapDrawing {
 
     // ---- What the rules say ----
 
-    // The station a rule goes to: a step's index, the translation learned (steps.size()), or null for an exit
+    // Gets the station a rule goes to: a step's index, steps.size() for the learned translation, or null for
+    // park, give up or an unknown step
     private static Integer target(final List<FlowStep> steps, final String goTo) {
         if (goTo == null || Transition.PARK.equals(goTo) || Transition.GIVE_UP.equals(goTo)) {
             return null;
@@ -346,7 +352,7 @@ final class RouteMapDrawing {
         return null;
     }
 
-    // What a step's rules do, a short line each, e.g. "Too few or too many records: back to 2"
+    // Describes a step's rules, one short line each, e.g. "Too few or too many records: back to 2"
     private static List<String> ruleLines(final List<FlowStep> steps, final int index) {
         final List<String> lines = new ArrayList<>();
         for (final Transition rule : steps.get(index).getTransitions()) {
@@ -385,11 +391,11 @@ final class RouteMapDrawing {
         return "'" + goTo + "', not a step";
     }
 
-    /// Breaks a line of text at spaces into lines that fit beside the line; a word longer than a line is a
-    /// line of its own.
+    /// Wraps text at spaces into lines short enough to fit under a station's name. A word longer than a line
+    /// goes on a line of its own.
     ///
     /// @param text The text.
-    /// @return Its lines.
+    /// @return The wrapped lines.
     static List<String> wrap(final String text) {
         final List<String> lines = new ArrayList<>();
         final StringBuilder current = new StringBuilder();
@@ -418,18 +424,18 @@ final class RouteMapDrawing {
     // --------------------------------------------------------------------------------
 
 
-    /// What a station on the line is.
+    /// The kinds of station on the line.
     private enum Kind {
         /// A section of the tab.
         SECTION("route-map__label route-map__label--section"),
         /// A step of the learning flow.
         STEP("route-map__label"),
-        /// The fallback, a step reached only by a rule.
+        /// The fallback step, which is reached only by a rule.
         FALLBACK("route-map__label"),
-        /// Where the steps end, a translation learned; not a stop to choose.
+        /// The learned translation, where the steps end. It cannot be chosen.
         LEARNED("route-map__label route-map__label--learned");
 
-        /// The class of its name.
+        /// The CSS classes for the station's name.
         private final String labelClass;
 
         Kind(final String labelClass) {
@@ -441,8 +447,8 @@ final class RouteMapDrawing {
     // --------------------------------------------------------------------------------
 
 
-    /// A station as it is drawn: its stop, its name, what its button is called, the lines under its name,
-    /// and what is wrong in it, in lines of its own beneath those.
+    /// A station as it is drawn: its stop, its name, its button's accessible label, the lines under its name,
+    /// and its problem, if any, wrapped into further lines beneath those.
     private static final class Station {
 
         private final Kind kind;
@@ -452,7 +458,7 @@ final class RouteMapDrawing {
         private final String problem;
         private final List<String> lines = new ArrayList<>();
         private final List<String> problemLines;
-        // The top of its box, and the middle of its mark
+        // The y position of the top of its box, and of the centre of its mark
         private int top;
         private int y;
 

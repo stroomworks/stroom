@@ -69,7 +69,7 @@ class TestFeedSituation {
         assertThat(situation.getDetail()).isEqualTo("It scored 94%. Approving it puts it to "
                                                     + "use and tries the 2 waiting streams again.");
         assertThat(situation.getPrimary()).containsExactly(FeedAction.APPROVE, FeedAction.REJECT);
-        // Rejecting is the way to give up while a draft awaits review
+        // While a draft awaits review, Give up is not offered; rejecting the draft is the way to stop
         assertThat(situation.getMore()).contains(FeedAction.RELEARN).doesNotContain(FeedAction.GIVE_UP);
     }
 
@@ -87,8 +87,8 @@ class TestFeedSituation {
 
     @Test
     void aPausedRunWhoseTargetHasNoMarkedUnknownOffersNoFallback() {
-        // Task 7, W1-3: Finish with Unknowns writes event-logging's marked Unknown, which another target
-        // schema doesn't have, so it isn't offered; the server refuses it too
+        // Finish with Unknowns writes event-logging's marked Unknown events, which another target schema
+        // doesn't have, so it isn't offered. The server refuses it too.
         final SupervisorLearner learner = learner(LearnerState.AWAITING_PERSON, null, 2);
         final SupervisorLearner noFallback = learner.named(learner.getPipeline(), learner.getDoc(),
                 learner.isRaised(), learner.isBelowThreshold(), true, null);
@@ -101,7 +101,8 @@ class TestFeedSituation {
 
     @Test
     void aSmartPipelineHeldBackByASpendCeilingSaysWhoseAndThatItClears() {
-        // Track 2 step 4: the spend breaker (A24), in its own words, on the row and on the Learning Status tab
+        // When a spend ceiling holds learning back, its own reason is shown, both in the list row and on the
+        // Learning Status tab
         final SupervisorLearner learner = learner(LearnerState.LEARNING, null, 2);
         final SupervisorLearner paused = learner.named(learner.getPipeline(), learner.getDoc(),
                 learner.isRaised(), learner.isBelowThreshold(), false,
@@ -121,7 +122,7 @@ class TestFeedSituation {
 
     @Test
     void theTimeZoneSaysWhereItComesFromAndWhatIsWrongWithIt() {
-        // Decision N6, Track 2 step 4: a surprising date is traced to what set the zone
+        // Say which setting the time zone came from, so a person can trace a surprising date to its cause
         final SupervisorLearner learner = learner(LearnerState.SERVING, "b-1", 0);
 
         assertThat(FeedSituation.timeZone(learner.withTimeZone("Europe/London", TimeZoneSource.PIPELINE, null)))
@@ -178,8 +179,8 @@ class TestFeedSituation {
         assertThat(situation.getMore()).containsExactly(FeedAction.RELEARN, FeedAction.GIVE_UP, FeedAction.RETRACT);
     }
 
-    /// A person who may only read the feed's pipeline is offered nothing that changes its learning: what it
-    /// says is the same, and nothing is left under More (its translation has its own link).
+    /// A person who may only view the pipeline is offered no action that changes its learning. The text shown
+    /// is the same, and the More menu is empty (the translation in use has its own link instead).
     @Test
     void readOnlyOffersOnlyWhatOpensSomethingToRead() {
         final FeedSituation serving = FeedSituation.of(learner(LearnerState.SERVING, "b-1", 0),
@@ -233,8 +234,8 @@ class TestFeedSituation {
 
     @Test
     void theListSaysHowManyRecordsTheTranslationDeclaredItSkipped() {
-        // Nothing caps how many records a translation may declare it skipped (ruling A148), so a person
-        // reading the list must be able to see it without opening the feed
+        // There is no limit on how many records a translation may declare skipped, so the count must be
+        // visible in the list without opening the pipeline
         final SupervisorLearner skipping = learner(LearnerState.SERVING, "b-1", 0, 96);
 
         assertThat(FeedSituation.listSummary(skipping)).isEqualTo("Scores 98% · 96 of 1,204 skipped");
@@ -270,7 +271,8 @@ class TestFeedSituation {
         assertThat(situation.getDetails())
                 .containsExactly("Each run may take 5 minutes; this one had taken 5 minutes 2 seconds.");
         assertThat(situation.getSuggestions()).hasSize(3);
-        // Give it more is a button already; the document names no model to open
+        // Of the three suggestions, only changing the limits can be done from here: granting more is already
+        // a button of its own, and the document names no model to open
         assertThat(situation.getSuggestions()).filteredOn(situation::canDo).extracting(Suggestion::getAction)
                 .containsExactly(SuggestionAction.CHANGE_LIMITS);
     }
@@ -352,11 +354,11 @@ class TestFeedSituation {
         return learner(state, binding, waiting, 0);
     }
 
-    /// @param state   Where it stands.
-    /// @param binding What serves it, or null.
-    /// @param waiting How many streams wait on it.
-    /// @param skips   How many of its records the translation declared it skipped.
-    /// @return The row.
+    /// @param state   The learner's state.
+    /// @param binding The UUID of the binding that serves it, or null.
+    /// @param waiting How many streams are waiting on it.
+    /// @param skips   How many of its records the translation declared skipped.
+    /// @return The learner row.
     private static SupervisorLearner learner(final LearnerState state,
                                              final String binding,
                                              final int waiting,

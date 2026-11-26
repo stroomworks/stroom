@@ -27,8 +27,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What the grant dialog tells a person before they grant (design 06 A145): spent and granted against the
-/// document's budgets, and that time is counted per run.
+/// Tests the text the grant dialog shows a person before they grant more budget to a session: what has been
+/// spent and granted against the document's budgets, and that the time budget applies to each run separately
+/// while tokens are counted over the session's life.
 class TestGrantText {
 
     @Test

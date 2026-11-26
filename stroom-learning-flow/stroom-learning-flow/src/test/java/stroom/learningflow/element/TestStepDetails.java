@@ -56,11 +56,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 01 §11.7 and A30: what the stepper's stage pane shows, from what the stage decided.
+/// Tests what the stepper's Smart Pipeline pane shows, which is built from the decision the stage made.
 ///
-/// A supervisor has no document to show as code, so the pane is the decision — and the decision is
-/// already everything a scenario asserts on (design 02 §1). This holds the mapping to that: what a
-/// person reads in the stepper is what the tests read.
+/// Other elements show their document's code in the stepper, but the Smart Pipeline element has none to
+/// show, so its pane shows the decision instead. The decision is also what the scenario tests assert on, so a
+/// person stepping a stream sees the same facts the tests check.
 class TestStepDetails {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -94,8 +94,8 @@ class TestStepDetails {
                 .describedAs("one per step of the chain, in chain order")
                 .hasSize(2)
                 .extracting(StageVerdict::getStep).containsExactly(1, 2);
-        // Across the chain rather than per step, because which scorers apply depends on what a step was
-        // given: the scorers of meaning apply to a step whose input was already records (design 01 §4).
+        // Checked across the chain rather than per step, because which scorers apply depends on a step's
+        // input: the scorers of meaning only apply to a step whose input was already records.
         assertThat(details.getVerdicts()).flatExtracting(StageVerdict::getScores)
                 .describedAs("and every check that applied, with what it was measured against")
                 .isNotEmpty()
@@ -135,13 +135,12 @@ class TestStepDetails {
         assertThat(details.getTranscript()).isEmpty();
     }
 
-    /// Every decision gets a line, and this is the test that says so.
+    /// Checks that every kind of decision has a description.
     ///
-    /// It exists because the error stream once had a switch of its own with a `default` that threw, and
-    /// it was only ever called for a decision that bound nothing — until it was called for one that did,
-    /// and every successful stream fataled. One description now, exhaustive over a sealed type, so a new
-    /// outcome will not compile until it has one; the count below is what stops a new outcome being
-    /// added to that switch and forgotten here.
+    /// `StepDetails.describe` switches exhaustively over the sealed `Decision` type, so a new kind of decision
+    /// will not compile until it has a description. The count below makes sure this test's list is updated
+    /// too. A missing description matters: an earlier separate switch with a throwing `default` made every
+    /// successful stream fail when it was first called for a decision that bound something.
     @Test
     void everyDecisionSaysWhatItWas() {
         final Binding binding = Binding.builder().uuid("rule-1")
@@ -183,8 +182,8 @@ class TestStepDetails {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Named, because a document with no scorers produces verdicts with nothing in them and
-                // this is about what the pane shows of them.
+                // Checks are set explicitly, because a document with no scorers produces empty verdicts and
+                // this test is about what the pane shows of them.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

@@ -78,17 +78,20 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A129: the stage asks for nothing to be reprocessed, so what a person reprocesses is a
-/// filter of their own on the pipeline — and a stream it offers waits as any other does. A promotion
-/// wakes the pipeline, not a filter: every filter on it has its deferred tasks woken, the reprocess
-/// filter's with the live one's, and nobody has to find the reprocess filter again to run it.
+/// Tests that a promotion wakes the deferred tasks of every processor filter on the pipeline, including a
+/// filter a person added to reprocess a stream.
+///
+/// Learning Flow never asks for streams to be reprocessed itself, so a person who wants a stream
+/// reprocessed adds their own filter to the pipeline. A stream that filter offers is deferred like any
+/// other. Because a promotion wakes the whole pipeline rather than one filter, the reprocessing filter's
+/// tasks run again along with the live filter's, and nobody has to find the reprocessing filter to rerun it.
 class TestAReprocessFilterWakesWithItsPipeline extends AbstractProcessIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-REPROCESSED";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -128,14 +131,14 @@ class TestAReprocessFilterWakesWithItsPipeline extends AbstractProcessIntegratio
         advisor.set(script);
         final Meta raw = rawStream();
 
-        // The live filter's task parks an attempt and waits.
+        // The live filter's task opens an attempt that waits for the model, and the stream is deferred.
         final ProcessorResult live = processOne();
         assertThat(live.getWritten()).isZero();
         final Recorded parked = attempts.forDocument(doc.getUuid(), 10).getFirst();
         assertThat(parked.status()).isEqualTo(AttemptStatus.AWAITING_MODEL);
 
-        // A person reprocesses the stream with a filter of their own on the same pipeline: what A129
-        // leaves to them. Its task waits behind the same attempt.
+        // A person reprocesses the stream with their own filter on the same pipeline. Its task is deferred
+        // behind the same attempt rather than opening another.
         filter(pipeline, ExpressionOperator.builder()
                 .addIdTerm(MetaFields.ID, Condition.EQUALS, raw.getId())
                 .build());
@@ -145,7 +148,7 @@ class TestAReprocessFilterWakesWithItsPipeline extends AbstractProcessIntegratio
                 .describedAs("behind the attempt there is, not one of its own").hasSize(1);
         assertThat(outputs()).isEmpty();
 
-        // The job learns and promotes, and the promotion wakes the pipeline.
+        // The deferred learning job learns and promotes, and the promotion wakes the pipeline.
         deferredLearning.exec();
         script.verifyExhausted();
         assertThat(attempts.byId(parked.id()).orElseThrow().status()).isEqualTo(AttemptStatus.PROMOTED);
@@ -187,10 +190,11 @@ class TestAReprocessFilterWakesWithItsPipeline extends AbstractProcessIntegratio
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
-                // What this scenario is about: nothing is asked in the task (A5).
+                // Learning never runs in a processing task. The task only defers the stream, and the
+                // deferred learning job asks the model.
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)

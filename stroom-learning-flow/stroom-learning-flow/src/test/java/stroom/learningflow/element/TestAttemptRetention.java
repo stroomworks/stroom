@@ -34,9 +34,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
-/// The retention job's side of a deleted pipeline (design 06 A134, A136): learning kept for a pipeline
-/// that no longer exists is marked deleted, for a delete no node heard, and learning deleted for longer
-/// than attempts are kept is forgotten.
+/// Tests how the attempt retention job handles deleted pipelines.
+///
+/// Pipeline deletions are normally heard as events, but the job also checks for learning kept for a pipeline
+/// that no longer exists and marks it deleted, in case no node heard the deletion. Learning for a pipeline
+/// deleted for longer than the attempt retention period is forgotten.
 class TestAttemptRetention {
 
     private final Attempts attempts = Mockito.mock(Attempts.class);
@@ -66,8 +68,8 @@ class TestAttemptRetention {
 
     @Test
     void aListThatCameBackShortMarksNothingThatIsThere() {
-        // The list is the first look, not the last word: a pipeline it leaves out is marked only once a
-        // read of it on its own finds nothing.
+        // The list of pipelines is only a first check. A pipeline missing from it is marked deleted only when
+        // reading that pipeline on its own also finds nothing.
         Mockito.when(pipelineStore.list()).thenReturn(List.of());
         Mockito.when(pipelineStore.readDocument(pipeline("still-here")))
                 .thenReturn(PipelineDoc.builder().uuid("still-here").name("still-here").build());
@@ -80,7 +82,7 @@ class TestAttemptRetention {
 
     @Test
     void aPipelineTheStoreCannotFindIsGone() {
-        // The database's store says not found by throwing, not with nothing.
+        // The database-backed store reports a missing document by throwing, rather than by returning null.
         Mockito.when(pipelineStore.readDocument(pipeline("gone-unheard")))
                 .thenThrow(new DocumentNotFoundException(pipeline("gone-unheard")));
 
@@ -101,7 +103,8 @@ class TestAttemptRetention {
 
     @Test
     void aMarkedPipelineThatIsBackIsItsOwnAgainAndNotForgotten() {
-        // Imported from an export of it, under the same uuid, while no node was listening.
+        // A pipeline marked deleted has reappeared with the same UUID, e.g. by importing an export of it, and
+        // no node heard the event.
         Mockito.when(pipelineStore.list()).thenReturn(List.of(pipeline("still-here"), pipeline("came-back")));
         Mockito.when(kept.deletedBefore(Long.MAX_VALUE)).thenReturn(List.of("came-back"));
 
@@ -115,7 +118,7 @@ class TestAttemptRetention {
     @Test
     void learningDeletedLongerThanAttemptsAreKeptIsForgotten() {
         Mockito.when(kept.deletedBefore(Mockito.anyLong())).thenReturn(List.of("long-gone", "also-gone"));
-        // One that cannot be forgotten now is tried at the next run, and holds up none of the rest.
+        // A failure to forget one pipeline's learning does not stop the rest; it is retried on the next run.
         Mockito.doThrow(new IllegalStateException("locked")).when(kept).forget("long-gone");
 
         retention.exec();

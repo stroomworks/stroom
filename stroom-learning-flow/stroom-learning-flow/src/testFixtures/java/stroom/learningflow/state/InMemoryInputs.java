@@ -23,13 +23,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/// The streams of A28 in memory, for a harness with no stream store: what a scenario puts through a
-/// stage is what its worker reads back.
+/// An in-memory [Inputs], from which the background worker reads streams, for tests with no stream store.
+/// The streams a scenario puts through a stage are the ones its worker reads back.
 public final class InMemoryInputs implements Inputs {
 
     private final Map<Long, Input> inputs = new LinkedHashMap<>();
 
-    /// Keep a stream, as receiving it does.
+    /// Stores a stream, as receiving one does.
     public synchronized Input put(final Input input) {
         inputs.put(input.id(), input);
         return input;
@@ -40,7 +40,7 @@ public final class InMemoryInputs implements Inputs {
         return Optional.ofNullable(inputs.get(metaId));
     }
 
-    /// Forget a stream, as deleting or ageing one off does.
+    /// Removes a stream, as deleting it or its expiry under retention does.
     public synchronized void remove(final long metaId) {
         inputs.remove(metaId);
     }

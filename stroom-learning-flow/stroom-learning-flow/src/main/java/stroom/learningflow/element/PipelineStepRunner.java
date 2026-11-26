@@ -43,25 +43,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/// One element of a candidate chain, run as the pipeline will run it (§12 item 2): the real element,
-/// the real pools, the real function library, given the candidate's configuration without that
-/// configuration having been written anywhere (§12 item 1).
+/// Runs one element of a candidate chain on a node, exactly as a pipeline will run it: the real element,
+/// the real pools and the real function library, given the candidate's configuration without that
+/// configuration being written to any document.
 ///
-/// The conversation asks one element at a time, each with what the element before it wrote, and that is
-/// what this preserves: a pipeline is built for this element alone — behind a parser where the element
-/// is a filter, since a filter is pushed SAX events and what it is given here is text — the
-/// configuration is injected, the stream is processed and what the element wrote is captured.
+/// A learning session asks the model about one element at a time, each with what the element before it
+/// wrote, and this class supports that. A pipeline is built for this element alone (behind an XML parser
+/// where the element is a filter, since a filter expects SAX events and is given text here), the
+/// configuration is injected, the input is processed, and what the element wrote is captured.
 ///
-/// It stands in the same relation to [stroom.learningflow.transformation.XsltStep] and its
-/// neighbours as [stroom.learningflow.fragment.PipelineFragmentRunner] does to the stand-in that
-/// walks a fragment: the module's runners are what Tier 1 runs on, needing no node, and these are what
-/// a node judges with. They are held to the same answers by a Tier 2 scenario, because a stand-in that
-/// has drifted would have the model correcting a fault the pipeline does not have.
+/// It relates to `stroom.learningflow.transformation.XsltStep` and the module's other step runners as
+/// `stroom.learningflow.fragment.PipelineFragmentRunner` does to the stand-in fragment runner. The
+/// module's runners are used by Tier 1 tests, which need no node, and these are what a node judges with.
+/// A Tier 2 scenario test checks they give the same answers, because a stand-in that has drifted would
+/// have the model correcting a fault the real pipeline does not have.
 public final class PipelineStepRunner implements StepRunner {
 
-    /// What turns text into the events a filter expects. The fragment uses a `SplitFilter` for this and
-    /// this uses a parser, because the fragment is given a stream and this is given one element's
-    /// worth of records; the events that reach the element are the same either way.
+    /// The id of the XML parser put in front of an element that is not a parser, to turn the text this
+    /// runner is given into the SAX events a filter expects.
     private static final String XML_PARSER_ID = "xmlParser";
 
     private final StepRunner describes;
@@ -71,9 +70,9 @@ public final class PipelineStepRunner implements StepRunner {
     private final Provider<ErrorReceiverProxy> errorReceiverProvider;
     private final TaskContextFactory taskContextFactory;
 
-    /// @param describes The module's runner for this element type, which says what the element is
-    ///                  called, what document it takes and whether it parses. What it *does* is what
-    ///                  this replaces.
+    /// @param describes The module's runner for this element type, which provides the element's type and
+    ///                  id, the document it takes and whether it is a parser. This class replaces only how
+    ///                  the element is run.
     public PipelineStepRunner(final StepRunner describes,
                               final Provider<PipelineFactory> pipelineFactoryProvider,
                               final Provider<HeadlessCapture> captureProvider,
@@ -125,13 +124,12 @@ public final class PipelineStepRunner implements StepRunner {
         }
     }
 
-    /// The pipeline built once and given one record after another (§12 item 25): building it compiles
-    /// the candidate, and compiling does not depend on the input, so a stylesheet judged over ten
-    /// thousand records is compiled once rather than ten thousand times.
+    /// Builds the pipeline once so it can be given one record after another. Building it compiles the
+    /// candidate, and compiling does not depend on the input, so a stylesheet judged over ten thousand
+    /// records is compiled once rather than ten thousand times.
     ///
-    /// What is taken while it is prepared is given back when it is closed: the error receiver that was
-    /// in place, whatever the carrier held, and the pipeline's own `endProcessing`, which is what
-    /// returns a pooled stylesheet.
+    /// Closing the result restores what was replaced while it was prepared (the previous error receiver
+    /// and injected code) and calls the pipeline's `endProcessing`, which returns a pooled stylesheet.
     @Override
     public Prepared prepare(final String configuration) {
         final String id = elementId();
@@ -143,9 +141,9 @@ public final class PipelineStepRunner implements StepRunner {
         final LoggingErrorReceiver logging = new LoggingErrorReceiver();
         errorReceiverProxy.setErrorReceiver(logging);
 
-        // The candidate, which is written nowhere: this is a judgement, and §7.3 rule 1 says nothing is
-        // written until it has been judged. An element whose configuration is its own business (§12
-        // item 26) runs with that, since nobody was ever going to be asked for it.
+        // Inject the candidate configuration rather than writing it anywhere, because nothing is written
+        // until it has passed judgement. An element with a fixed configuration that the model is never
+        // asked for runs with that configuration.
         final InjectedCode injectedCode = injectedCodeProvider.get();
         final Map<String, String> borrowed = injectedCode.asMap();
         final String code = configuration == null
@@ -156,10 +154,10 @@ public final class PipelineStepRunner implements StepRunner {
                 : Map.of(id, code));
 
         final PipelineData chain = chain(id);
-        // What is said about an input is heard from every element of the little chain, because the
-        // element under test is not always the one that objects — text that is not well formed is refused
-        // by the parser standing in front of it, and a step that failed with nothing to say is a re-ask
-        // the model cannot act on.
+        // Diagnostics are gathered from every element of this small chain, because the element under test
+        // is not always the one that reports the problem: text that is not well formed is refused by the
+        // XML parser in front of it. A step that failed with no reason would give the model nothing to
+        // act on when it is asked again.
         final List<String> speaking = chain.getAddedElements().stream()
                 .map(PipelineElement::getId)
                 .filter(element -> !PipelineRuns.SOURCE.equals(element))
@@ -170,7 +168,7 @@ public final class PipelineStepRunner implements StepRunner {
             pipeline = pipelineFactoryProvider.get().create(chain, taskContextFactory.current(), capture);
             pipeline.startProcessing();
         } catch (final LoggedException e) {
-            // Said through the receiver already: a configuration that will not compile refuses here.
+            // Already reported through the receiver; a configuration that will not compile fails here.
             pipeline = null;
         } catch (final RuntimeException e) {
             building = e.getClass().getSimpleName() + ": " + e.getMessage();
@@ -185,17 +183,17 @@ public final class PipelineStepRunner implements StepRunner {
                 if (built == null) {
                     return new StepResult(null, PipelineRuns.diagnostics(capture, speaking, logging, refused));
                 }
-                // This run's records and no others: one capture serves every run of a prepared chain,
-                // and a run that read past the last one would stop reading anything at all once the cap
-                // was reached — the count would stop advancing and every later run would report having
-                // produced nothing, with no diagnostic to say why.
+                // Clear the capture so it holds only this run's records. One capture serves every run of
+                // a prepared chain, and without clearing it, it would stop recording once its cap was
+                // reached, so every later run would report having produced nothing, with no diagnostic
+                // to say why.
                 capture.clear();
                 String failure = null;
                 try {
                     built.process(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),
                             StandardCharsets.UTF_8.name());
                 } catch (final LoggedException e) {
-                    // Said through the receiver already, which is where the diagnostics are read from.
+                    // Already reported through the receiver, which is where the diagnostics are read from.
                 } catch (final RuntimeException e) {
                     failure = e.getClass().getSimpleName() + ": " + e.getMessage();
                 }
@@ -217,8 +215,8 @@ public final class PipelineStepRunner implements StepRunner {
         };
     }
 
-    /// The smallest pipeline that can run this element over the text it is given: the element behind the
-    /// source, with a parser in between where the element is a filter and so expects events.
+    /// Builds the smallest pipeline that can run this element over the text it is given: the element
+    /// after the source, with an XML parser in between where the element is a filter and so expects events.
     private PipelineData chain(final String id) {
         final PipelineDataBuilder builder = new PipelineDataBuilder();
         builder.addElement(PipelineDataUtil.createElement(PipelineRuns.SOURCE, PipelineRuns.SOURCE, null, null));
@@ -233,10 +231,9 @@ public final class PipelineStepRunner implements StepRunner {
         return builder.build();
     }
 
-    /// What a run failed with, and — where the capture kept less than the run produced — that it did.
-    /// A candidate judged on the first ten thousand records of a longer stream is judged on a sample of
-    /// its own output, and saying so is the difference between a low score a person can read and one
-    /// they cannot.
+    /// The error a run failed with, plus a note where the capture kept fewer records than the run
+    /// produced. A candidate run over more than [PipelineRuns#MOST_RECORDS] records is judged on only the
+    /// first of them, and saying so lets a person make sense of a low score.
     private static String truncated(final HeadlessCapture capture, final String failure) {
         if (!capture.isTruncated()) {
             return failure;

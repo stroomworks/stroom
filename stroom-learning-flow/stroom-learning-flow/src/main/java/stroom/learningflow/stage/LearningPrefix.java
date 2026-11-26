@@ -33,10 +33,11 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 
-/// What the model is shown of a stream: the part it learns from, the rest held out to judge it on (A14),
-/// cut at whole records and within the Learning Flow's sample size (N2 option F), and how many records a
-/// stream brought. Taken out of [Stage] (simplification option iii), where it sat between serving and
-/// learning but belonged to neither.
+/// Decides what the model is shown of a stream, and counts how many records a stream brought.
+///
+/// The model is shown a prefix of the stream to learn from, cut at whole records and within the Learning
+/// Flow's sample size limit. The remaining records are held out, so that a candidate is also judged on
+/// records the model never saw. Used by both serving and learning.
 public final class LearningPrefix {
 
     private static final JsonFactory JSON = new JsonFactory();
@@ -45,39 +46,38 @@ public final class LearningPrefix {
         // Static utility
     }
 
-    /// The first `1 - heldOutFraction` of the stream's records: what the model learns from. The whole
-    /// stream is what it is judged on, so what judges a promotion includes records the model never saw
-    /// (A14).
+    /// Gets the first `1 - heldOutFraction` of the stream's records, which is what the model learns from.
+    /// The candidate is judged on the whole stream, so the judgement for a promotion includes records the
+    /// model never saw.
     ///
-    /// **Markup and JSON are held out by record, not left whole** (audit finding S5). A prefix of a
-    /// document is not a document — which is why they cannot simply be cut by lines — but a document's
-    /// records can be dropped from the end and the root closed again, which is what `wholeChildren` and
-    /// `wholeItems` already did for the size limit. Until this they were cut only when they were *too
-    /// big*, so for every XML or JSON feed within the limit the model was shown the whole stream and A14
-    /// did not hold, though the editor said it did.
+    /// **Markup and JSON are held out by record too.** They cannot simply be cut by lines, because a prefix
+    /// of a document is not a valid document. Instead, records are dropped from the end and the root is
+    /// closed again (see `wholeChildren` and `wholeItems`), which is also how they are cut to the size
+    /// limit. Otherwise, for any XML or JSON feed within the limit, the model would be shown the whole
+    /// stream and nothing would be held out.
     ///
-    /// A document of one record is shown whole: holding out the only record there is would leave nothing
-    /// to learn from.
+    /// A document of one record is shown whole, because holding out the only record would leave nothing to
+    /// learn from.
     ///
     /// @param data   The stream's text.
-    /// @param policy The document.
+    /// @param policy The Learning Flow document, giving the sample size limit and held-out fraction.
     /// @return What to show the model.
     public static String learningPrefix(final String data, final LearningFlowDoc policy) {
         final int limit = policy.getSampleSizeLimit();
-        // Markup that is one document is held out by record; markup that is not — a fragment per line, no
-        // root — is lines, held out and cut like any text.
+        // Markup that is one document is held out by record. Markup that is not (a fragment per line, with
+        // no root) is held out and cut by lines, like any text.
         if (RecordSkeleton.isMarkup(data) && Records.parsed(data) >= 0) {
             return wholeChildren(data, limit, policy.getHeldOutFraction());
         }
         final List<String> lines = data.lines().filter(line -> !line.isBlank()).toList();
         if (isJsonDocument(data)) {
-            // A prefix of a JSON document is not a document either: cut by lines it would not parse, and the
-            // split question would abandon the attempt on a sample the parser cannot read. It is cut at its
-            // widest array's items and closed again, as wholeChildren closes an XML root.
+            // A prefix of a JSON document is not a valid document either. Cut by lines it would not parse,
+            // and the split question would fail on a sample the parser cannot read. So it is cut between the
+            // items of its widest array and closed again, as wholeChildren closes an XML root.
             return wholeItems(data, limit, policy.getHeldOutFraction());
         }
         if (lines.isEmpty()) {
-            // A blank stream has nothing to learn from; the compile gate and coverage will say so.
+            // A blank stream has nothing to learn from; the compile and coverage checks will report it.
             return "";
         }
         int keep = (int) Math.ceil(lines.size() * (1.0 - policy.getHeldOutFraction()));
@@ -85,9 +85,8 @@ public final class LearningPrefix {
         return wholeLines(lines, keep, limit);
     }
 
-    /**
-     * The first {@code keep} lines, as many of them as the size limit allows; one line is always shown.
-     */
+    /// Gets up to the first `keep` lines, as many as fit within the size limit; the first line is always
+    /// included.
     private static String wholeLines(final List<String> lines, final int keep, final int limit) {
         int length = Input.bytes(lines.get(0));
         int within = 1;
@@ -98,25 +97,25 @@ public final class LearningPrefix {
         return String.join("\n", lines.subList(0, within)) + "\n";
     }
 
-    /**
-     * How many records a stream brought, the evidence a judgement rests on (A14), counted on the input so
-     * that a variant that drops records is judged, not excused. Where a boundary was settled (A35) it is
-     * counted by that — the elements of the name in XML input, the array's items in the XML the parser
-     * makes of JSON; otherwise as {@link #recordsBrought(String)} counts the input alone.
-     */
+    /// Counts how many records a stream brought, which is the evidence a judgement rests on. It is counted
+    /// on the input, so that a candidate that drops records is judged on them rather than excused. If a
+    /// record boundary was settled, records are counted by it: the named elements in XML input, or the
+    /// array's items in the XML the parser makes of JSON. Otherwise they are counted as
+    /// [#recordsBrought(String)] counts them.
     public static int recordsBrought(final Attempted first) {
         final RecordBoundary boundary = first.boundary();
         if (boundary != null) {
-            // The parser's output is the document a JSON boundary applies to; XML input is its own.
+            // A boundary over JSON applies to the parser's output; a boundary over XML applies to the input
+            // itself.
             final String document = first.parser()
                     ? first.result().output()
                     : first.input();
             final int by = document == null
                     ? -1
                     : Records.parsed(document, boundary);
-            // A parser whose output holds no records at all did not cut a stream of none: it failed to
-            // cut what the stream brought, and the stream is judged as what it brought — not as too few
-            // records to judge (A14).
+            // If the parser's output holds no records, the stream did not hold none: the parser failed to
+            // split it. So the stream is counted from its input, rather than treated as having too few
+            // records to judge.
             if (by > 0) {
                 return by;
             }
@@ -124,11 +123,10 @@ public final class LearningPrefix {
         return recordsBrought(first.input());
     }
 
-    /**
-     * How many records a stream brought where no boundary was settled: a document's root's children; the
-     * lines of markup that is not one document — a fragment per line — as the yield scorer counts them; one
-     * for a JSON document, however many lines it is printed over; the non-blank lines of text.
-     */
+    /// Counts how many records a stream brought when no record boundary was settled: the children of the
+    /// root for a markup document; the lines of markup that is not one document (a fragment per line), as
+    /// the yield scorer counts them; one for a JSON document, however many lines it spans; and the non-blank
+    /// lines of text.
     public static int recordsBrought(final String input) {
         if (RecordSkeleton.isMarkup(input)) {
             final int parsed = Records.parsed(input);
@@ -141,12 +139,10 @@ public final class LearningPrefix {
         return (int) input.lines().filter(line -> !line.isBlank()).count();
     }
 
-    /**
-     * Whether text is one JSON document spanning lines — one object or array, and nothing after it, whose
-     * first line does not close it — rather than JSON lines, each a value of its own, which are cut like any
-     * text. A bracket is not enough: a log whose lines open with {@code [Mon Sep 21 ...]} is text, so the
-     * value is parsed.
-     */
+    /// Whether text is one JSON document spanning several lines (one object or array, with nothing after it,
+    /// whose first line does not close it), as opposed to JSON lines, each a value of its own, which are cut
+    /// like any text. A leading bracket is not enough, because a log whose lines start with
+    /// `[Mon Sep 21 ...]` is text, so the value is parsed.
     public static boolean isJsonDocument(final String data) {
         final String trimmed = RecordSkeleton.withoutBom(data).stripLeading();
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
@@ -165,12 +161,10 @@ public final class LearningPrefix {
         }
     }
 
-    /**
-     * A JSON document over the sample size limit, cut at the items of its widest array — the one a split will
-     * name — and closed again, so that what the model is shown is still one JSON document. Where no array can
-     * be cut that way, the whole document is shown: a sample the parser cannot read is worse than a long one,
-     * and the budget of A5 is what stops a runaway.
-     */
+    /// Cuts a JSON document to hold out records and to fit the sample size limit. It is cut between the
+    /// items of its widest array (the one a split will name) and closed again, so that the model is still
+    /// shown one valid JSON document. If it has no array, the whole document is shown: a sample the parser
+    /// cannot read is worse than a long one, and the session's budgets stop runaway spending.
     private static String wholeItems(final String data, final int limit, final double heldOut) {
         final String trimmed = RecordSkeleton.withoutBom(data).stripLeading();
         final Optional<int[]> widest = widestArray(trimmed);
@@ -184,7 +178,7 @@ public final class LearningPrefix {
         final List<String> items = items(trimmed.substring(open + 1, close));
         final int show = shown(items.size(), heldOut);
         if (show == items.size() && Input.bytes(data) <= limit) {
-            // Nothing held out and nothing over the limit: the stream as it came
+            // Nothing held out and nothing over the limit, so the stream is returned unchanged
             return data;
         }
         final int room = limit - Input.bytes(before) - Input.bytes(after);
@@ -208,10 +202,8 @@ public final class LearningPrefix {
         return before + kept + after;
     }
 
-    /**
-     * The widest array in a JSON document — the outermost one holding the most — as the offsets of its
-     * brackets, ignoring brackets inside strings.
-     */
+    /// Finds the widest array in a JSON document (the one spanning the most characters), as the offsets of
+    /// its brackets, ignoring brackets inside strings.
     private static Optional<int[]> widestArray(final String json) {
         int[] widest = null;
         final Deque<Integer> opens = new ArrayDeque<>();
@@ -237,9 +229,8 @@ public final class LearningPrefix {
         return Optional.ofNullable(widest);
     }
 
-    /**
-     * An array's items as text, split at the commas between them rather than those inside them.
-     */
+    /// Splits an array's contents into its items as text, at the commas between items rather than those
+    /// inside them.
     private static List<String> items(final String inside) {
         final List<String> items = new ArrayList<>();
         int depth = 0;
@@ -270,12 +261,11 @@ public final class LearningPrefix {
         return items;
     }
 
-    /**
-     * A document over the sample size limit, cut at a record boundary: the root's start tag, as many of its
-     * children as fit — at least one — and its end tag, so that what the model is shown is still a document.
-     * What looks like markup but is not one document — fragments, or text beginning with a bracketed word —
-     * is cut by whole lines, as text is; the split question will find it what it is.
-     */
+    /// Cuts an XML document to hold out records and to fit the sample size limit: the root's start tag, as
+    /// many of its children as are to be shown and fit (at least one), and its end tag, so that the model is
+    /// still shown a valid document. Anything that looks like markup but does not parse as one document is
+    /// cut by whole lines to the size limit, with nothing held out; the split question will work out what it
+    /// is.
     private static String wholeChildren(final String data, final int limit, final double heldOut) {
         final Optional<OutputRecords> document = OutputRecords.parse(data);
         if (document.isEmpty() || document.get().records().isEmpty()) {
@@ -286,8 +276,8 @@ public final class LearningPrefix {
         }
         final int show = shown(document.get().records().size(), heldOut);
         if (show == document.get().records().size() && Input.bytes(data) <= limit) {
-            // Nothing held out and nothing over the limit: the stream as it came, rather than the same
-            // document rebuilt with its whitespace changed
+            // Nothing held out and nothing over the limit, so the stream is returned unchanged rather than
+            // rebuilt with its whitespace changed
             return data;
         }
         final String rootName = document.get().root().getNodeName().toString();
@@ -300,8 +290,8 @@ public final class LearningPrefix {
         }
         final StringBuilder cut = new StringBuilder(data.substring(open, close + 1)).append('\n');
         int kept = 0;
-        // Counted in bytes, as the setting is labelled (audit finding S4), and kept running rather than
-        // measured afresh per record, which would be quadratic over a long stream
+        // Counted in bytes, as the setting is labelled, and kept as a running total rather than measured
+        // afresh per record, which would be quadratic over a long stream
         int used = Input.bytes(cut.toString());
         for (final XdmNode child : document.get().records()) {
             final String text = child.toString();
@@ -316,20 +306,18 @@ public final class LearningPrefix {
         return cut.append("</").append(rootName).append('>').toString();
     }
 
-    /// How many of a document's records the model is shown, the rest held back to judge the promotion on
-    /// (A14, audit finding S5).
+    /// Works out how many of a document's records the model is shown; the rest are held back so that the
+    /// promotion is also judged on records the model never saw.
     ///
-    /// @param records  How many the document holds.
-    /// @param heldOut  The share to hold back.
-    /// @return How many to show; at least one, because a sample of nothing teaches nothing.
+    /// @param records  How many records the document holds.
+    /// @param heldOut  The fraction to hold back.
+    /// @return How many to show; at least one, because an empty sample teaches nothing.
     private static int shown(final int records, final double heldOut) {
         return Math.max(1, Math.min(records, (int) Math.ceil(records * (1.0 - heldOut))));
     }
 
-    /**
-     * @return The index of the {@code >} that ends the tag opening at {@code from}, outside any quoted
-     * attribute value, or -1.
-     */
+    /// @return The index of the `>` that ends the tag starting at `from`, ignoring any inside quoted
+    ///         attribute values, or -1 if there is none.
     private static int endOfTag(final String data, final int from) {
         char quote = 0;
         for (int i = from; i < data.length(); i++) {

@@ -27,19 +27,19 @@ import stroom.learningflow.shared.Transition;
 
 import java.util.List;
 
-/// The built-in default setups as a client test has them (Track 2 step 1c).
+/// Copies of the built-in learning flows (default setups) for client unit tests.
 ///
-/// The real ones are JSON on the server and reach the client over REST, which a unit test has no way to
-/// do, so they are built here. What they hold is pinned server-side by `TestFlowExamples`; these are for
-/// the client's own job, which is matching a document's steps to a setup's name and loading one.
+/// The real ones are JSON resources on the server that reach the client over REST, which a unit test cannot
+/// do, so they are built here. Their exact content is tested on the server by `TestFlowExamples`; these copies
+/// exist to test the client's own work of matching a document's steps to a built-in flow and loading one.
 final class FlowExampleFixtures {
 
     private FlowExampleFixtures() {
     }
 
-    /// Every setup, as the client is given them.
+    /// Gets every built-in flow, as the server would give them to the client.
     ///
-    /// @return Them, in the order the enum declares.
+    /// @return The flows, in the order `FlowExample` declares them.
     static List<BuiltInFlow> all() {
         return List.of(
                 flow(FlowExample.DIRECT, direct()),
@@ -47,8 +47,8 @@ final class FlowExampleFixtures {
                 flow(FlowExample.ESCALATING, escalating()));
     }
 
-    /// @param example The setup.
-    /// @return Its steps.
+    /// @param example The built-in flow.
+    /// @return The flow's steps.
     static List<FlowStep> steps(final FlowExample example) {
         for (final BuiltInFlow flow : all()) {
             if (flow.getExample() == example) {

@@ -21,19 +21,17 @@ import stroom.learningflow.learning.StepRunner;
 import stroom.learningflow.shared.RecordBoundary;
 import stroom.learningflow.transformation.StreamFacts;
 
-/**
- * One step of a chain as the scorers see it: what went in, what came out, which element did it, and
- * whether that element is a parser — whose records are the input's shape, not the target's, so the
- * scorers that judge meaning leave them alone (design 01 §4).
- *
- * @param boundary      What one record is where the input is markup (A35) — the element, or the JSON
- *                      array's items — so that yield counts the records the split settled and not the
- *                      root's children; null where none was settled, and the root's children are the
- *                      records.
- * @param configuration What the model wrote for this element — the stylesheet, or the parser's
- *                      configuration — which the permitted check reads to see what it uses (decision N1).
- *                      Null where the step has none, such as a chain being chosen.
- */
+/// One step of a chain as the scorers see it: what went in, what came out, which element did it, and
+/// whether that element is a parser. A parser's output records follow the input's structure, not the
+/// target schema's, so the scorers that judge the meaning of events leave parser output alone.
+///
+/// @param boundary      What one record is where the input is XML or JSON (the record element, or the
+///                      JSON array's items), so that yield counts the records the split step settled
+///                      rather than the root's children; null where none was settled, in which case the
+///                      root's children are the records.
+/// @param configuration What the model wrote for this element (the stylesheet, or the parser's
+///                      configuration), which the permitted check reads to see which functions it uses.
+///                      Null where the step has none, e.g. while a chain is being chosen.
 public record Attempted(String elementType,
                         boolean parser,
                         String input,

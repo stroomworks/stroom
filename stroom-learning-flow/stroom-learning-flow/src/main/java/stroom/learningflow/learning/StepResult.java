@@ -22,27 +22,24 @@ import stroom.util.shared.TextRange;
 
 import java.util.List;
 
-/**
- * What one element of the chain produced when run over its input, and every diagnostic it raised on the
- * way. The output of one step is the input of the next (A21 step 2).
- *
- * @param output       What the element emitted, or null if it could not run at all.
- * @param diagnostics  Compile and run-time diagnostics, in the order raised.
- * @param recordRanges For an extraction step, the span of input each output record was split from, in
- *                     output order, as the Data Splitter reports them; the raw material of the input
- *                     coverage scorer (A11). Empty for any other step.
- */
+/// What one element of the chain produced when a [StepRunner] ran it over its input, and every diagnostic it
+/// raised. The output of one step is the input of the next.
+///
+/// @param output       What the element emitted, or null if it could not run at all.
+/// @param diagnostics  Compile and run-time diagnostics, in the order raised.
+/// @param recordRanges For a Data Splitter step, the span of input each output record was split from, in
+///                     output order, as the Data Splitter reports them. The input coverage scorer uses them.
+///                     Empty for any other step.
 public record StepResult(String output, List<StoredError> diagnostics, List<TextRange> recordRanges) {
 
     public StepResult(final String output, final List<StoredError> diagnostics) {
         this(output, diagnostics, List.of());
     }
 
-    /**
-     * The gate of design §8.1 applied to a step: it ran to completion and raised nothing at error severity
-     * or above. Warnings pass. The scorers of §8.4 judge quality above this floor; they are not applied
-     * here.
-     */
+    /// Whether the step ran to completion and raised nothing at error severity or above. Warnings pass.
+    /// This is only the minimum; the scorers judge quality beyond it, and are not applied here.
+    ///
+    /// @return True if the step produced output with no errors.
     public boolean passed() {
         return output != null && diagnostics.stream()
                 .map(StoredError::getSeverity)

@@ -24,10 +24,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/**
- * One business rule (§8.4): an XPath that must evaluate true for a record, named so that a failure
- * reads as a sentence in the feedback to the model.
- */
+/// One business rule for the business rules check: an XPath that must evaluate to true for each record. It
+/// has a name so that a failure reads as a sentence in the feedback to the model.
 @JsonPropertyOrder({"name", "xpath"})
 @JsonInclude(Include.NON_NULL)
 public class XPathAssertion {

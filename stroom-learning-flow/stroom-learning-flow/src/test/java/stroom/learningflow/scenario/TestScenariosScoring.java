@@ -46,24 +46,23 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenarios 4–7: the scorers that judge meaning, and what their feedback steers. Coverage
- * points at the lines a splitter quietly dropped; schema conformance passes the degenerate transform of
- * design 01 §8.3 and extraction quality refuses it (A16); a business rule names itself; and a candidate
- * that never clears its threshold is abandoned at the candidate limit, while one that clears every
- * threshold is abandoned at the candidate limit. Under the one model of checks (UM-2, D1) a check that is
- * only advice refuses nothing, so a candidate that falls short of advice alone is promoted, and one that
- * passes a gate on the sample but fails it over the whole stream is given up.
- */
+/// Tests the scorers that judge whether a translation means something, and how their feedback steers the
+/// model.
+///
+/// Coverage points at the lines a splitter silently dropped. Schema conformance passes a transform whose
+/// events validate but extract nothing, and extraction quality refuses it. A failing business rule is named
+/// in the feedback. A candidate that never clears its threshold is parked for a person once its candidates,
+/// and those of the exhaustion step, are spent. A check that is only advice refuses nothing, so a candidate
+/// that falls short of advice alone is promoted, while one that passes a gate on the sample but fails it
+/// over the whole stream is given up.
 class TestScenariosScoring {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
     private static final String EVEN_USERS_ONLY = Scenarios.resource("csv-fields-even-users.ds3.xml");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// What a translation writes in place of an event for a record that is deliberately not one
-    /// (`docs/learning-flow-declared-skips-design.md`). A transform that filters has to say so, or
-    /// completeness counts the records it dropped as lost.
+    /// What a translation writes in place of an event for a record that is deliberately not one. A transform
+    /// that filters records out has to declare it, or completeness counts the records it dropped as lost.
     private static final String SKIP =
             "    <Skipped xmlns=\"learningflow:skips\" reason=\"not an event\"/>\n";
     private static final String DEGENERATE = Scenarios.resource("csv-degenerate.xsl");
@@ -100,10 +99,8 @@ class TestScenariosScoring {
             "interactive events name the user",
             "not(EventDetail/Authenticate) or EventDetail/Authenticate/User/Id[normalize-space(.) != '']");
 
-    /**
-     * The full scorer set of design 01 §8.4 as built: compile, coverage and yield from the first slice;
-     * schema conformance as a gate, extraction quality as a gate requiring the user, and the business rule.
-     */
+    /// Builds a document with the full set of scorers: compile, coverage and yield; schema conformance as a
+    /// gate; extraction quality as a gate requiring the user; and a business rule.
     private static LearningFlowDoc doc() {
         return Scenarios.document()
                 .uuid(DOC)
@@ -145,7 +142,7 @@ class TestScenariosScoring {
                 .expect(QuestionMatcher.configuration("DSParser").withoutFeedback())
                 .reply(Scenarios.fenced(EVEN_USERS_ONLY))
                 .expect(QuestionMatcher.configuration("DSParser")
-                        // Over the learning prefix — five of the six lines — not the whole stream.
+                        // Scored over the learning prefix (five of the six lines), not the whole stream.
                         .withFeedbackMentioning("Input coverage scored 0.6 against a threshold of 0.9")
                         .withFeedbackMentioning("The split consumed 3 of 5 lines")
                         .withFeedbackMentioning("Lines not consumed: 2, 4")
@@ -158,7 +155,7 @@ class TestScenariosScoring {
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
         assertThat(script.scripted()).hasSize(4);
-        // The second splitter consumed everything; the split's verdict says so and the whole stream scores full.
+        // The second splitter consumed everything, so the split's verdict passes and the stream scores 1.0.
         assertThat(run.verdicts().get(0).judgements().stream().allMatch(Judgement::metThreshold)).isTrue();
         assertThat(((Promoted) run.decision()).score()).isEqualTo(1.0);
     }
@@ -183,11 +180,11 @@ class TestScenariosScoring {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // The degenerate candidate passed the schema gate: nothing in its feedback came from conformance.
+        // The degenerate candidate passed the schema gate, so none of its feedback came from conformance.
         final Question reAsk = script.scripted().get(3);
         assertThat(feedback(reAsk)).noneMatch(message -> message.startsWith("Schema conformance scored"));
         assertThat(feedback(reAsk)).noneMatch(message -> message.startsWith("Record "));
-        // The promoted transform scores full on every judge of meaning over the whole stream.
+        // The promoted transform scores 1.0 on every check of meaning over the whole stream.
         assertThat(run.verdicts().get(1).judgements())
                 .extracting(judgement -> judgement.setting().getCheck())
                 .containsExactly(Check.COMPILE, Check.COMPLETENESS, Check.YIELD, Check.CONFORMANCE,
@@ -199,8 +196,9 @@ class TestScenariosScoring {
 
     @Test
     void schemaFeedbackCarriesTheContentModelOfWhatFellShort() {
-        // The ladder of design 02 §6.2: a Door with only a Name, an Alert with only a Description. The
-        // validator names one missing child; the feedback names them all, and the parent it did not name.
+        // A Door with only a Name, then an Alert with only a Description. The schema validator names only one
+        // missing child; the feedback adds the parent's full content model, and the parent the validator did
+        // not name.
         final Scenarios scenarios = new Scenarios();
         final String doorAndAlert = CsvLines.replacing(CsvLines.replacing(XSLT, DEVICE, DOOR), AUTHENTICATE, ALERT);
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
@@ -228,8 +226,9 @@ class TestScenariosScoring {
 
     @Test
     void anEventOutsideTheSchemaNamespaceIsToldWhereItBelongs() {
-        // A live transform declared event-logging:3 on the Events literal alone, so every Event it wrote was
-        // in no namespace; the validator says only that Event was found where Event is expected.
+        // A transform that declares event-logging:3 only on the literal Events element writes every Event in
+        // no namespace. The validator then says only that Event was found where Event is expected, so the
+        // feedback explains the namespace problem.
         final Scenarios scenarios = new Scenarios();
         final String unqualified = XSLT.replace("xmlns=\"event-logging:3\"", "xmlns:evt=\"event-logging:3\"")
                 .replace("<Events ", "<Events xmlns=\"event-logging:3\" ");
@@ -253,7 +252,7 @@ class TestScenariosScoring {
     @Test
     void scenario6ABrokenBusinessRuleNamesItself() {
         final Scenarios scenarios = new Scenarios();
-        // Schema-valid — the 3.0.0 schema wants a User under Authenticate — but the user it names is empty.
+        // Schema-valid (the 3.0.0 schema needs a User under Authenticate), but the user it names is empty.
         final String noUserOnLogon = CsvLines.replacing(XSLT, AUTHENTICATE_USER_ID,
                 "            <Id/>\n          </User>\n        </Authenticate>");
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
@@ -271,7 +270,8 @@ class TestScenariosScoring {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // The flawed transform still validated and still extracted the user at the source: only the rule spoke.
+        // The flawed transform still validated and still extracted the user at the source, so only the rule
+        // gave feedback.
         assertThat(feedback(script.scripted().get(3))).noneMatch(message -> message.startsWith("Schema conformance"));
         assertThat(feedback(script.scripted().get(3))).noneMatch(message -> message.startsWith("Extraction quality"));
     }
@@ -279,7 +279,7 @@ class TestScenariosScoring {
     @Test
     void scenario7ACandidateThatNeverClearsItsThresholdIsAbandonedAtTheLimit() {
         final Scenarios scenarios = new Scenarios();
-        // The catalogue's three candidates, pinned: the document's default is now five (design 02 §6.2).
+        // Three candidates, set explicitly because the document's default is five.
         final LearningFlowDoc doc = doc().copy()
                 .maxAttempts(3)
                 .checks(doc().getChecks().stream()
@@ -301,8 +301,8 @@ class TestScenariosScoring {
                 .reply(Scenarios.fenced(everyOther))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withFeedbackMentioning("Yield scored"))
                 .reply(Scenarios.fenced(everyOther))
-                // The candidates spent, the flow's exhaustion step asks for the transform as many times
-                // again (design 04 §4); a stylesheet that still drops every other record fails there too.
+                // With the candidates spent, the flow's exhaustion step asks for the transform as many times
+                // again, and a stylesheet that still drops every other record fails there too.
                 .expect(QuestionMatcher.admission("XSLTFilter").withFeedbackMentioning("Yield scored"))
                 .reply(Scenarios.fenced(everyOther))
                 .expect(QuestionMatcher.admission("XSLTFilter").withFeedbackMentioning("Yield scored"))
@@ -314,7 +314,7 @@ class TestScenariosScoring {
 
         script.verifyExhausted();
         assertThat(script.scripted()).hasSize(8);
-        // Its candidates spent, the session parks for a person (A65) rather than giving the learner up.
+        // With its candidates spent, the session is parked for a person rather than giving the learner up.
         assertThat(run.decision()).isInstanceOf(Parked.class);
         assertThat(((Parked) run.decision()).reason())
                 .isEqualTo("Couldn't translate what's left as marked Unknowns: all 3 answers fell short.");
@@ -327,8 +327,8 @@ class TestScenariosScoring {
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER,
                 1L)).describedAs("the stream waits on the parked session").isPresent();
 
-        // And the learner is not asked about again while a person decides: the next stream waits on the same
-        // session.
+        // The model is not asked about the learner again while a person decides: the next stream waits on the
+        // same session.
         final Script silent = Script.of();
         final StageRun again = scenarios.process(silent, run.doc(), stream(2, CsvLines.lines(6))).learned();
         assertThat(again.decision()).isInstanceOf(Deferred.class);
@@ -338,11 +338,11 @@ class TestScenariosScoring {
 
     @Test
     void scenario7ACandidateThatFallsShortOnlyOfAdviceIsPromoted() {
-        // Yield is advice in this document: a transform that drops every other record falls short of it, and
-        // is still promoted, since advice never refuses a candidate (D1). Its score says what it fell short on.
+        // Yield is advice in this document. A transform that drops every other record falls short of it, and
+        // is still promoted, since advice never refuses a candidate. Its lower score reflects the shortfall.
         final Scenarios scenarios = new Scenarios();
-        // The records it drops are declared skipped, so completeness is satisfied and yield is the one
-        // check left with anything to say (the declared-skips design)
+        // The records it drops are declared as skipped, so completeness is satisfied and yield is the only
+        // check that falls short.
         final String everyOther = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
                 "  <xsl:template match=\"record[number(substring(data[@name='who']/@value, 5)) mod 2 = 1]\">\n"
                 + SKIP + "  </xsl:template>\n\n"
@@ -372,7 +372,7 @@ class TestScenariosScoring {
                                 : setting)
                         .toList())
                 .build();
-        // Declared skipped rather than dropped, so that what fails is yield and only yield
+        // The record is declared as skipped rather than dropped, so that yield is the only check that fails.
         final String dropsTheLast = CsvLines.replacing(XSLT, "  <xsl:template match=\"record\">",
                 "  <xsl:template match=\"record[data[@name='who']/@value = 'user5']\">\n"
                 + SKIP + "  </xsl:template>\n\n"
@@ -392,8 +392,8 @@ class TestScenariosScoring {
                 .contains("Candidate failed the gate Yield");
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
         assertThat(scenarios.stores.pipelines.list()).describedAs("nothing written").isEmpty();
-        // The worker gave up on a stream it read back out of the store, so it errors nothing: the stream's
-        // task is woken to error it, as for the flow's give-up.
+        // The worker gave up on a stream it read back from the store, so it does not error the stream itself.
+        // Instead the stream's task is woken to error it, as for a give-up named by the flow.
         assertThat(scenarios.wake.pipelines()).containsExactly(Scenarios.LEARNER.pipelineUuid());
         final StageRun woken = scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER,
                 stream(1, CsvLines.lines(6)));

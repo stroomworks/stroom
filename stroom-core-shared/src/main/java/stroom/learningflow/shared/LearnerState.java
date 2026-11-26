@@ -21,17 +21,18 @@ import stroom.docref.HasDisplayValue;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
-/// Where a learner stands, as the Supervisor's learning pipelines list says it (design 06 A115, A142). A
-/// learner is in one at a time, read in this order: given up, then learning off, then waiting for a
-/// person, then learning, and serving only where none of those holds.
+/// Where a learner stands, as the Supervisor's list of learning pipelines shows it and filters by. A learner
+/// is in one state at a time, decided in this order: given up, then learning off, then waiting for a person,
+/// then learning, and serving only where none of those holds.
 public enum LearnerState implements HasDisplayValue {
 
-    /// It has given up, by a session's flow or by a person: it learns no more, and its streams with
-    /// nothing serving them error, until a person sends it back.
+    /// It has been given up, by a session's flow or by a person. It learns no more, and its streams that
+    /// nothing serves error, until a person sends it back to learn.
     GIVEN_UP("Given up"),
-    /// Its document has learning turned off: nothing is learned, and what serves goes on serving.
+    /// Its document has learning turned off. Nothing is learned, and any binding in use goes on serving.
     LEARNING_OFF("Learning off"),
-    /// A draft awaits review, or a session is parked for a person to answer, grant or exhaust.
+    /// A draft awaits review, or a session is parked for a person to answer, give more budget, or send to
+    /// the fallback step.
     AWAITING_PERSON("Waiting for a person"),
     /// A session is open, or nothing serves it yet and its next stream will open one.
     LEARNING("Learning"),

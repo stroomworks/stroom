@@ -47,20 +47,20 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 01 §11.7 and A30: **stepping is a dry run**. The stage serves, and does nothing
-/// else — no model asked, no fragment written, no binding written, no output row, no rolling
-/// score and no reprocess request. A learner nothing serves is reported rather than learned for.
+/// Tests that stepping through a pipeline in the stepper is a dry run.
 ///
-/// The case that makes it matter is the ordinary one: a person opens the stepper on a feed nobody has
-/// taught yet. Learning it by looking would spend a model call, write a fragment and write a binding, none
-/// of which they asked for and all of which would then be serving live data.
+/// When stepping, the stage serves and does nothing else: no model is asked, and no fragment, binding,
+/// output row, rolling score or reprocess request is written. A learner that nothing serves is reported
+/// rather than learned for. This matters because a person often opens the stepper on a feed nobody has
+/// taught yet. Learning it just by looking would spend a model call and write a fragment and a binding, none
+/// of which they asked for and all of which would then serve live data.
 class TestSteppingIsADryRun {
 
     private static final String FEED = "DOOR-ACCESS";
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
-    /// A transform that makes nothing of the records it is given: it compiles and runs, so the gate it
-    /// fails is the one that counts what came out.
+    /// A transform that produces no events from the records it is given. It compiles and runs, so the only
+    /// gate it fails is the one that counts the events produced.
     private static final String YIELDS_NOTHING = """
             <xsl:stylesheet xmlns="event-logging:3" xpath-default-namespace="records:2"
                             xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
@@ -94,9 +94,9 @@ class TestSteppingIsADryRun {
         assertThat(scenarios.wake.pipelines()).describedAs("and no pipeline was woken").isEmpty();
     }
 
-    /// Design 06 A121: a step is not the learner running. A pipeline stepped under another document than
-    /// the one its learner's rows were written under leaves them there — only a stream processed moves
-    /// them — and a stream served in a step is not scored into the learner's rolling score.
+    /// A step is not the learner running. Stepping a pipeline under a different document from the one its
+    /// learner's rows were written under leaves them where they are (only a processed stream moves them), and
+    /// a stream served in a step is not added to the learner's rolling score.
     @Test
     void aStepMovesNoRowsAndScoresNothing() {
         final Scenarios scenarios = new Scenarios();
@@ -142,7 +142,7 @@ class TestSteppingIsADryRun {
         final Stage stage = scenarios.stage(document -> script, scenarios.learnerBindings);
         final LearningFlowDoc doc = doc(LearningMode.AUTOMATIC);
 
-        // Learned for real first, so that there is something to step over.
+        // Learn for real first, so that there is something to step over.
         final StageRun learned = scenarios.process(script, doc, stream()).learned();
         assertThat(learned.produced()).isNotNull();
 
@@ -158,17 +158,16 @@ class TestSteppingIsADryRun {
                 .isEmpty();
     }
 
-    /// A provisional binding is on trial (A14): a stream that brings enough records and clears the floor
-    /// promotes it, and one that does not is served by it as it stands — the floor no longer retracts it
-    /// (A101) — so a step shows the binding serving, and what it made of the stream.
+    /// A binding whose transform fails its yield gate is still shown serving in a step, with what it made of
+    /// the stream, because a step decides nothing and leaves the binding in place.
     @Test
     void aProvisionalBindingBelowTheFloorIsShownServingAsItStands() {
         final Scenarios scenarios = new Scenarios();
         final Stage stage = scenarios.stage(document -> Script.of(), scenarios.learnerBindings);
         final LearningFlowDoc doc = doc(LearningMode.AUTOMATIC);
 
-        // A binding on trial, bound to a transform that makes nothing of the records: enough records to be
-        // judged on, and a score that cannot clear the floor.
+        // A binding added by hand, whose transform produces nothing from the records: there are enough
+        // records to judge it on, and it cannot pass the yield gate.
         final DocRef fragment = scenarios.stores.writer().write(
                 DocPath.fromParts("Learning Flow", FEED), "on-trial-v1",
                 List.of(new LearnedStep(scenarios.runners().getFirst(), CSV.configuration(),
@@ -189,8 +188,8 @@ class TestSteppingIsADryRun {
                 .describedAs("the binding is still there: a step decides nothing").hasSize(1);
     }
 
-    // A variant that would be bound is retired with routing (design 06 phase J slice 2a): a learner is one
-    // element in one pipeline, so no fragment is learned for a neighbouring learner to be tried on this one.
+    // There is no test of stepping with another learner's fragment: a learner is one element in one pipeline,
+    // so no fragment learned for another learner is tried on this one.
 
     private Script script(final Scenarios scenarios) {
         return scenarios.script(CSV.configuration(), XSLT)
@@ -200,6 +199,7 @@ class TestSteppingIsADryRun {
     }
 
     /// @param mode Whether the document may learn.
+    /// @return A document allowing a Data Splitter and an XSLT, with yield as a gate.
     private static LearningFlowDoc doc(final LearningMode mode) {
         return Scenarios.document()
                 .uuid("doc-1")
@@ -207,8 +207,7 @@ class TestSteppingIsADryRun {
                 .learningMode(mode)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Yield a gate, so that a binding that makes nothing of its records fails the gate it is on trial
-                // for.
+                // Yield is a gate, so that a binding that produces nothing from its records fails it.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

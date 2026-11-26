@@ -63,9 +63,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A120, A134, A135, in a node: a pipeline deleted through its store is heard of by its
-/// learning, which is marked deleted and lets go of the stream waiting on it; and a pipeline whose
-/// deletion no node heard is found by the retention job.
+/// Tests, in a running node, that learning stops when its pipeline is deleted.
+///
+/// Deleting a pipeline through its store raises an event that marks the pipeline's learning as deleted and
+/// drops the deferral of any stream waiting on it, because no task of that pipeline will run the stream
+/// again. A pipeline deleted while no node received the event is found later by the nightly retention job.
 class TestADeletedPipelinesLearningInANode extends AbstractCoreIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-DELETED";
@@ -104,7 +106,7 @@ class TestADeletedPipelinesLearningInANode extends AbstractCoreIntegrationTest {
         final DocRef pipeline = pipeline(feed, document());
         final Learner learner = new Learner(pipeline.getUuid(), "learningFlow");
         filter(pipeline);
-        // Learning is off, so the stream waits on a row and nothing is asked.
+        // Learning is disabled, so the stream is deferred and the model is never asked.
         advisor.set(Script.of());
         final Meta raw = rawStream();
         commonTranslationTestHelper.processAll();
@@ -123,7 +125,7 @@ class TestADeletedPipelinesLearningInANode extends AbstractCoreIntegrationTest {
 
     @Test
     void aPipelineGoneWithoutBeingHeardIsFoundAtMidnight() {
-        // Learning kept for a pipeline the node has no record of: deleted while no node was listening.
+        // A deferral for a pipeline that does not exist, as if it was deleted while no node was running.
         final String gone = UUID.randomUUID().toString();
         deferrals.deferred(new Learner(gone, "learningFlow"), "doc-gone", 1L, FEED, StreamTypeNames.RAW_EVENTS,
                 null, "Waiting.", 0);

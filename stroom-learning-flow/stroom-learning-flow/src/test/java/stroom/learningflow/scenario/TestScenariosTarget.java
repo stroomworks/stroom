@@ -52,13 +52,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenarios 34–37 (ruling A31): a stage learned against a target. The model proposes the
- * events before any configuration is written and is held to them: a target that says nothing is refused
- * where it is proposed; a splitter that keeps half the record is caught at the splitter; a transform that
- * puts a value in the wrong place is caught against the target; and the record boundary is settled first,
- * for whole records, before any target is asked.
- */
+/// Tests learning against targets, where the model proposes the events each kind of record should become
+/// before any configuration is written, and is then held to them.
+///
+/// A target that extracts nothing is refused where it is proposed. A splitter that keeps only half the
+/// record is caught at the splitter, and a transform that puts a value in the wrong place is caught against
+/// the target. The record boundary is settled first, so that targets are asked for whole records.
 class TestScenariosTarget {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -70,9 +69,7 @@ class TestScenariosTarget {
     private static final String NESTED_XSL = Scenarios.resource("nested-entries.xsl");
     private static final Golden MULTI_LINE = Scenarios.corpus("003_multiline_regex");
     private static final String DOC = "doc-1";
-    /**
-     * The degeneracy trap as a target: validates, extracts nothing.
-     */
+    /// A target event that validates but extracts nothing, putting every field under `Unknown`.
     private static final String DEGENERATE_EVENT = String.join("\n",
             "<Event xmlns=\"event-logging:3\">",
             "  <EventTime><TimeCreated>2020-06-17T08:00:00.000Z</TimeCreated></EventTime>",
@@ -131,7 +128,8 @@ class TestScenariosTarget {
     @Test
     void scenario34ATargetThatSaysNothingIsRefusedWhereItIsProposed() {
         final Scenarios scenarios = new Scenarios();
-        // The structure answers the second target and the split; the first target is scripted: the trap.
+        // The script answers the split and the second target automatically. The first target is scripted
+        // as the event that extracts nothing.
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.target().withoutFeedback()).reply(Scenarios.fenced(DEGENERATE_EVENT))
@@ -142,8 +140,8 @@ class TestScenariosTarget {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // Chain, split, target, target again, parser, transform: the refused target was re-asked with the
-        // shortfall of the document the model itself wrote, before any configuration existed.
+        // Chain, split, target, target again, parser, transform: the refused target was asked for again with
+        // feedback on the shortfalls of the event the model itself wrote, before any configuration existed.
         final List<Question> asked = script.asked();
         assertThat(asked).hasSize(6);
         assertThat(asked.get(1)).isInstanceOf(Split.class);
@@ -154,7 +152,7 @@ class TestScenariosTarget {
                 .anyMatch(message -> message.startsWith("Extraction quality scored"))
                 .anyMatch(message -> message.contains("records name Unknown in EventDetail"))
                 .anyMatch(message -> message.contains("Required field EventSource/User/Id is present in 0 of 1"));
-        // The targets went with the promotion, as the regression set's goldens.
+        // The targets are kept with the promotion, as the expected events in the regression corpus.
         final Binding binding = ((Promoted) run.decision()).binding();
         assertThat(scenarios.regressionSet.accepted(binding.getUuid()))
                 .describedAs("each entry carries what the flow said its kind of record should become")
@@ -165,8 +163,9 @@ class TestScenariosTarget {
     @Test
     void aNoneForAKindSeenMoreThanOnceIsQuestionedBeforeItIsTaken() {
         final Scenarios scenarios = new Scenarios();
-        // Design 02 §6.3: a live model answered none for the alarm kind. Six records of one kind: the first
-        // none is questioned; the structure then answers with the event, and the whole stream is learned.
+        // A model may answer "none" (no event) for a kind of record that should become one. With six records
+        // of one kind, the first "none" is questioned; the script then answers with the event, and the whole
+        // stream is learned.
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.target().withoutFeedback()).reply(TargetChecks.NONE)
@@ -191,7 +190,7 @@ class TestScenariosTarget {
     @Test
     void aSecondNoneIsTaken() {
         final Scenarios scenarios = new Scenarios();
-        // With one candidate: the questioning of the first none is not a candidate spent.
+        // With only one candidate, this shows that questioning the first "none" does not spend a candidate.
         final LearningFlowDoc doc = doc().copy()
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
                         FlowStep.of(QuestionKind.CHAIN), FlowStep.of(QuestionKind.SPLIT, StepGuard.TEXT),
@@ -220,8 +219,8 @@ class TestScenariosTarget {
     @Test
     void scenario39TheFlowIsTheDocuments() {
         final Scenarios scenarios = new Scenarios();
-        // A target from the raw sample, no split: the target's record is a line of the sample, and the split
-        // question is never asked. One kind, so one target.
+        // The document's flow asks for a target from the raw sample with no split step, so the target's record
+        // is a line of the sample and the split question is never asked. There is one kind, so one target.
         final LearningFlowDoc doc = doc().copy()
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
                         FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.TARGET).kinds(1).build(),
@@ -246,7 +245,8 @@ class TestScenariosTarget {
     @Test
     void scenario39AFlowTheStageCannotHoldIsAbandonedBeforeTheModelIsAsked() {
         final Scenarios scenarios = new Scenarios();
-        // The store refuses this on save; a document that reaches the stage with it anyway asks nothing.
+        // The document store refuses this flow on save; a document that reaches the stage with it anyway asks
+        // the model nothing.
         final LearningFlowDoc doc = doc().copy()
                 .flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
                         FlowStep.of(QuestionKind.CONFIGURE), FlowStep.of(QuestionKind.CHAIN))))
@@ -279,7 +279,7 @@ class TestScenariosTarget {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // Coverage was full — every line consumed — and the transform was not asked until the records
+        // Coverage was full (every line was consumed), and the transform was not asked for until the records
         // carried what the target needs.
         final Configuration reAsk = (Configuration) script.scripted().get(2);
         assertThat(reAsk.feedback()).extracting(error -> error.getMessage())
@@ -290,8 +290,8 @@ class TestScenariosTarget {
     @Test
     void scenario36TheTransformMustReproduceTheTarget() {
         final Scenarios scenarios = new Scenarios();
-        // Valid, extracts every field, names the user — and puts the place where the user goes and the
-        // user where the place goes. Every scorer of meaning passes it; only the target says no.
+        // Valid, extracts every field and names the user, but puts the place where the user goes and the user
+        // where the place goes. Every scorer of meaning passes it; only the comparison with the target fails.
         final String swapped = CsvLines.replacing(CsvLines.replacing(XSLT, DEVICE_NAME,
                         "          <Name><xsl:value-of select=\"data[@name='who']/@value\"/></Name>"),
                 SOURCE_USER_ID, String.join("\n",
@@ -319,7 +319,7 @@ class TestScenariosTarget {
 
     @Test
     void scenario37RecordBoundariesFirst() {
-        // Blocks of several lines between ---- lines. The scorers here are about structure alone.
+        // Blocks of several lines between ---- lines. The scorers here are about structure only.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc().copy()
                 .minRecordsToLearn(2)
@@ -338,16 +338,17 @@ class TestScenariosTarget {
                 .build();
         final Script script = Script.of()
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
-                // A split that keeps only the first line of each block consumed the block — coverage is full —
-                // and emitted a fraction of it as record text; that is what refuses it, before any target.
+                // A split that keeps only the first line of each block consumes the whole block, so coverage is
+                // full, but emits only a fraction of it as record text. That is what refuses it, before any
+                // target is asked for.
                 .expect(QuestionMatcher.split().withoutFeedback()).reply(Scenarios.fenced(BLOCK_SPLIT
                         .replace("<regex pattern=\"^(?s)\\s*(.+?)\\s*$\">",
                                 "<regex pattern=\"^\\s*([^\\n]+)\" maxMatch=\"1\">")
                         .replace("      </regex>\n", "      </regex>\n      <all/>\n")))
                 .expect(QuestionMatcher.split().withFeedbackMentioning("characters as record text"))
                 .reply(Scenarios.fenced(BLOCK_SPLIT))
-                // Three kinds of block by their first line, the most the conversation asks about; none becomes an
-                // event here, since this scenario is about the boundary.
+                // Three kinds of block by their first line, the most the session asks about. None becomes an
+                // event here, since this test is about the boundary.
                 .expect(QuestionMatcher.target()).reply(TargetChecks.NONE)
                 .expect(QuestionMatcher.target()).reply(TargetChecks.NONE)
                 .expect(QuestionMatcher.target()).reply(TargetChecks.NONE)
@@ -359,8 +360,8 @@ class TestScenariosTarget {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // The targets were asked for whole records — blocks of one and of five lines — not lines, and
-        // after the boundary was settled.
+        // The targets were asked for whole records (blocks of one and of five lines), not single lines, and
+        // only after the boundary was settled.
         final List<Question> asked = script.asked();
         assertThat(asked.get(1)).isInstanceOf(Split.class);
         assertThat(asked.get(2)).isInstanceOf(Split.class);
@@ -374,13 +375,10 @@ class TestScenariosTarget {
         assertThat(targets).allMatch(target -> !target.record().contains("----"));
     }
 
-    /**
-     * The nth block of the multi-line corpus case, trimmed, as the block split yields it.
-     */
     @Test
     void scenario37XmlVariantTheSplitNamesTheElementThatIsOneRecord() {
-        // A35: input already in XML, the records two levels down. The scorers are about structure and the
-        // schema; yield by records would count the root's one child, so it is not asked here (design 01 §10.1).
+        // The input is already XML, with the records two levels down. The scorers are about structure and the
+        // schema; yield is switched off.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc().copy()
                 .minRecordsToLearn(2)
@@ -398,7 +396,7 @@ class TestScenariosTarget {
                 .build();
         final Script script = scenarios.xmlScript("entry", NESTED_XSL)
                 .expect(QuestionMatcher.chain()).reply("XSLTFilter")
-                // The container of the records is not a record: one occurrence for three records.
+                // The container of the records is not a record: it occurs once, for three records.
                 .expect(QuestionMatcher.split().withoutFeedback()).reply("entries")
                 .expect(QuestionMatcher.split().withFeedbackMentioning("a container of records is not a record"))
                 .reply("<entry>")
@@ -408,9 +406,9 @@ class TestScenariosTarget {
                 new Input(1, "DOCVAULT", "Raw Events", Map.of("Format", "XML"), NESTED_XML)).learned();
 
         script.verifyExhausted();
-        // The conversation learned the whole stream; the record element the split settled reaches the stage's
-        // count (A35) — three entries, not the root's one <entries> — so the stream meets the two records the
-        // document asks and is promoted, and the binding carries the element for the streams it will serve.
+        // The stage counts records by the element the split settled: three entries, not the one <entries>
+        // container. So the stream meets the document's minimum of two records and is promoted, and the
+        // binding keeps the element as its record boundary for the streams it will serve.
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         assertThat(((Promoted) run.decision()).score()).isEqualTo(1.0);
         assertThat(((Promoted) run.decision()).binding().getRecordBoundary())
@@ -426,6 +424,7 @@ class TestScenariosTarget {
         assertThat(transform.targets().get(0).event()).isPresent();
     }
 
+    /// Returns the nth block of the multi-line corpus case, trimmed, as the block split yields it.
     private static String block(final int n) {
         final String[] blocks = MULTI_LINE.input().split("----\n");
         int seen = 0;

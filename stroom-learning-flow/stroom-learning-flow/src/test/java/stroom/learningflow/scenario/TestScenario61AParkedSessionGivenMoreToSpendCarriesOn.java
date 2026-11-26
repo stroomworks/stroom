@@ -32,13 +32,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Design 02 §5, scenario 61: **a parked session given more to spend carries on** (A65, A77; design 04
-/// §4 and §6).
+/// Tests that a session parked for running out of budget carries on when a person grants it more.
 ///
-/// A session out of its token budget parks for a person. A person grants it more — against the attempt
-/// alone, the document untouched — and the worker carries it on from the turns already recorded, spending
-/// only what the grant allows, and finishes it. The grant stands on the row. A grant to anything but a
-/// parked attempt is refused.
+/// A session that runs out of its token budget is parked for a person. The person grants it more tokens,
+/// for that attempt alone and without changing the document, and the worker resumes it from the turns
+/// already recorded, spending only what the grant allows, and finishes it. The grant stays recorded on the
+/// attempt. A grant to an attempt that is not parked is refused.
 class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
 
     private static final String DOC = "doc-1";
@@ -49,8 +48,8 @@ class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
     @Test
     void theGrantIsTheAttemptsAloneAndTheWorkerFinishesWithIt() {
         final Scenarios scenarios = new Scenarios();
-        // Two tokens to spend, at a token a question: the chain and the parser, and the transform's
-        // question is over the budget.
+        // Two tokens to spend, at one token per question: enough for the chain and the parser, so the
+        // transform question goes over the budget.
         final LearningFlowDoc doc = DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
                 .tokenBudget(2L)
@@ -72,8 +71,8 @@ class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
         assertThat(parked.report().getDetails()).first().asString().startsWith("A run may spend 2 tokens;");
         assertThat(parked.grant().tokens()).isZero();
 
-        // A grant to a running or finished attempt is refused; to the parked one it is recorded and the
-        // attempt opened again.
+        // A grant of nothing is refused. A real grant to the parked attempt is recorded and reopens it, after
+        // which a further grant is refused because it is no longer parked.
         assertThatThrownBy(() -> scenarios.supervisorActions().grant(doc, parked.id(), 0L, 0L))
                 .isInstanceOf(IllegalArgumentException.class);
         scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
@@ -85,7 +84,7 @@ class TestScenario61AParkedSessionGivenMoreToSpendCarriesOn {
         assertThatThrownBy(() -> scenarios.supervisorActions().grant(doc, parked.id(), 1L, 0L))
                 .describedAs("not parked any more").isInstanceOf(IllegalStateException.class);
 
-        // Carried on: the recorded turns are replayed for nothing, the transform is asked, and the
+        // The worker resumes it: the recorded turns are replayed at no cost, the transform is asked, and the
         // session finishes within what was granted.
         final Script carryingOn = scenarios.script(CSV.configuration(), XSLT).charging(1L)
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));

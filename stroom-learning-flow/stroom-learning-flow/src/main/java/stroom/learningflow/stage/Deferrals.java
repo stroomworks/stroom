@@ -19,29 +19,31 @@ package stroom.learningflow.stage;
 import java.util.List;
 import java.util.Optional;
 
-/// The streams that are waiting, and on what (design 04 §3, §6): one row per stream a learner has put
-/// back — the stream, the transform it failed against, and since when. A wake names the learner's
-/// pipeline, not a row's task (A129), so a row does not say which task deferred it. Nothing about which
-/// of its records failed and none of its text (A69): the session works that out for the one stream it
-/// learns from, and for the rest it would be stale the moment the transform moved.
+/// Storage for the streams that are waiting, and what they are waiting on: one row per stream a learner has
+/// deferred, recording the stream, the transform it fell short against, and when it started waiting.
 ///
-/// A row is a stream that waits: its task deferred it, and a wake or a person brings it back (design 04
-/// §3, §5.3). In-memory in scenarios; a table in a node.
+/// A wake targets the learner's pipeline rather than a particular task, so a row does not record which task
+/// deferred the stream. Nor does it record which records failed or any of the stream's text: a session works
+/// that out for the one stream it learns from, and for the other streams it would be out of date as soon as
+/// the transform changed.
+///
+/// A row exists while its stream waits: its task deferred it, and a wake or a person brings it back. Tests
+/// keep the rows in memory; a node uses a table.
 public interface Deferrals {
 
-    /// A stream the stage would put back, or has. A second call for the same stream and learner is the
-    /// same row, with what it failed against and why brought up to date and its attempts counted; the
-    /// time it first waited is kept, since a new reason does not make it newly late.
+    /// Records that the stage has deferred a stream. A second call for the same stream and learner updates
+    /// the same row: what it fell short against and why are brought up to date and its attempts are
+    /// counted. The time it first waited is kept, since a new reason does not make it any less overdue.
     ///
     /// @param learner        The learner it waits on, whose pipeline is processing it.
-    /// @param docUuid        The document the learner runs under.
+    /// @param docUuid        The UUID of the document the learner runs under.
     /// @param inputId        The stream's meta id.
     /// @param feed           Its feed.
-    /// @param type           Its type.
-    /// @param failedAgainst  What the stream was run through and fell short of: the binding's fragment and
-    ///                       its version, or null where there was no binding to run it through.
+    /// @param type           Its stream type.
+    /// @param failedAgainst  What the stream was run through and fell short of (the binding's fragment and
+    ///                       its version), or null if there was no binding to run it through.
     /// @param reason         Why it waits, in words.
-    /// @param failingRecords How many of its records fell short of the bar; zero where there was no binding.
+    /// @param failingRecords How many of its records fell short of the bar; zero if there was no binding.
     void deferred(Learner learner,
                   String docUuid,
                   long inputId,
@@ -51,50 +53,50 @@ public interface Deferrals {
                   String reason,
                   int failingRecords);
 
-    /// The stream has been served, or errored, and waits no more.
+    /// Removes a stream's row once it has been served or errored and no longer waits.
     ///
     /// @param learner The learner it waited on.
     /// @param inputId The stream's meta id.
     void released(Learner learner, long inputId);
 
-    /// Every stream waiting on a pipeline's learners waits no more: the pipeline has been deleted, and no
-    /// task of it will run them again (design 06 A135).
+    /// Removes the rows of every stream waiting on a pipeline's learners, because the pipeline has been
+    /// deleted and none of its tasks will run them again.
     ///
-    /// @param pipelineUuid The pipeline.
-    /// @return How many rows went.
+    /// @param pipelineUuid The UUID of the deleted pipeline.
+    /// @return How many rows were removed.
     int releasedAll(String pipelineUuid);
 
-    /// A page of what waits on one learner, oldest first: its pipeline's waiting streams tab (design 06
-    /// A115).
+    /// Gets a page of the streams waiting on one learner, oldest first, for the Supervisor's waiting
+    /// streams list.
     ///
     /// @param learner The learner.
     /// @param offset  The first row of the page.
-    /// @param limit   How many rows.
-    /// @return The page, and how many wait in all.
+    /// @param limit   The maximum number of rows.
+    /// @return The page, and how many streams wait in total.
     Waiting waitingOn(Learner learner, long offset, int limit);
 
-    /// What is waiting for a document, oldest first.
+    /// Gets the streams waiting under a document, oldest first.
     ///
-    /// @param docUuid The document.
+    /// @param docUuid The UUID of the document.
     /// @return Its rows.
     List<Deferral> forDocument(String docUuid);
 
-    /// The learners with a stream waiting, and what each waits against, each pair once: what the learning
-    /// job sweeps for streams a promotion's wake could not reach (A130, see [Stage#wakeSuperseded]). As
-    /// many as there are learners and transforms, not streams.
+    /// Gets each distinct pair of a learner with a waiting stream and the transform it waits against. The
+    /// learning job uses these to find streams that a promotion's wake could not reach (see
+    /// [Stage#wakeSuperseded]). There are as many pairs as learners and transforms, not as many as streams.
     ///
-    /// Rows waiting for a **first** learning are included, with a null stamp (W7-4). They have nothing to
-    /// have failed against, and leaving them out meant a stream deferred just after a promotion's wake
-    /// waited the full retry delay for a translation that already existed.
+    /// Streams waiting for a **first** learning are included, with a null stamp. They have nothing to have
+    /// fallen short against, but if they were left out, a stream deferred just after a promotion's wake
+    /// would wait the full retry delay for a translation that already exists.
     ///
     /// @return The pairs.
     List<Stamp> stampsWaiting();
 
-    /// One stream's row, where it has one.
+    /// Gets one stream's row, if it has one.
     ///
     /// @param learner The learner it waits on.
     /// @param inputId The stream's meta id.
-    /// @return Its row.
+    /// @return Its row, if it is waiting.
     Optional<Deferral> of(Learner learner, long inputId);
 
 
@@ -111,15 +113,15 @@ public interface Deferrals {
     /// One waiting stream.
     ///
     /// @param learner         The learner it waits on, whose pipeline is processing it.
-    /// @param docUuid         The document the learner ran under when the stream last waited.
+    /// @param docUuid         The UUID of the document the learner ran under when the stream last waited.
     /// @param inputId         The stream's meta id.
     /// @param feed            Its feed.
-    /// @param type            Its type.
-    /// @param failedAgainst   What it last fell short of, or null where there was no binding.
+    /// @param type            Its stream type.
+    /// @param failedAgainst   What it last fell short of, or null if there was no binding.
     /// @param reason          Why it waits.
     /// @param failingRecords  How many records fell short, the last time it was tried.
     /// @param firstDeferredMs When it first waited.
-    /// @param attempts        How many times it has been tried and put back.
+    /// @param attempts        How many times it has been tried and deferred.
     record Deferral(Learner learner,
                     String docUuid,
                     long inputId,
@@ -131,13 +133,14 @@ public interface Deferrals {
                     long firstDeferredMs,
                     int attempts) {
 
-        /// Whether the stream has waited past a document's maximum deferral age (A57, A78): raised, and
-        /// still waiting (A79). Computed when read, since age is not a thing to store.
+        /// Whether the stream has waited longer than a document's maximum deferral age, which makes it
+        /// *raised* (flagged for attention) while it goes on waiting. It is computed when read, because an
+        /// age changes continuously and is not worth storing.
         public boolean raised(final long maxAgeMs, final long nowMs) {
             return nowMs - firstDeferredMs > maxAgeMs;
         }
 
-        /// @return The pipeline processing the stream: the learner's.
+        /// @return The UUID of the pipeline processing the stream, which is the learner's pipeline.
         public String pipeline() {
             return learner.pipelineUuid();
         }
@@ -151,8 +154,8 @@ public interface Deferrals {
     /// A transform a learner's streams wait against.
     ///
     /// @param learner       The learner.
-    /// @param failedAgainst The stamp of the transform they fell short of, or **null** where they wait
-    ///                      for a first learning and so fell short of nothing (W7-4).
+    /// @param failedAgainst The stamp of the transform they fell short of, or **null** if they are waiting
+    ///                      for a first learning and so fell short of nothing.
     record Stamp(Learner learner, String failedAgainst) {
 
     }

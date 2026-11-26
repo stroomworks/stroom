@@ -22,11 +22,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/**
- * One turn of an attempt as the Supervisor view shows it (A28): what was asked, what was answered and
- * by whom, and what the answer scored. A turn with no answer is the question the attempt stopped at and
- * is what <em>answer instead</em> answers.
- */
+/// One turn of a learning session as the Supervisor shows it: what was asked, what was answered and by whom,
+/// and what the answer scored. A turn with no answer is the question the session stopped at, which a person
+/// can answer with "answer instead".
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SupervisorTurn {
 
@@ -46,11 +44,11 @@ public class SupervisorTurn {
     private final String answeredBy;
     @JsonProperty
     private final StepOutcome outcome;
-    /// The score of the check that decided it (design 06 A144), where a scorer decided it.
+    /// The score of the check that decided the turn, where a check decided it.
     @JsonProperty
     private final TurnScore score;
 
-    /// A turn no scorer decided.
+    /// Creates a turn that no check decided, so it has no score.
     public SupervisorTurn(final int number,
                           final String stepId,
                           final int candidate,
@@ -115,7 +113,7 @@ public class SupervisorTurn {
         return outcome;
     }
 
-    /// @return The score of the check that decided it, or null where no scorer did.
+    /// @return The score of the check that decided it, or null where no check did.
     public TurnScore getScore() {
         return score;
     }

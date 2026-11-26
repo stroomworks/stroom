@@ -24,24 +24,28 @@ import stroom.widget.util.client.HasRefresh;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
-/// The Smart Pipelines screen (A28), a content tab opened from the Monitoring menu: every Smart Pipeline of
-/// every Learning Flow the user may read, with where each stands, as a Learning Flow's Pipelines tab lists its
-/// own ([FeedListController]). It is an Admin's one view of them all: each row names its Learning Flow, says
-/// why a pipeline stopped or what waits, and opens the pipeline at its Learning Status tab, where its learning is
-/// followed and acted on, by the pipeline's permissions. Nothing is done to a pipeline's learning here.
+/// The Smart Pipelines screen, a content tab opened from the Monitoring menu, that lists every Smart Pipeline
+/// of every Learning Flow the user may read, with its current status.
 ///
-/// The screen is the list alone, so it shows the list's widget as its own.
+/// It uses the same list as a Learning Flow's Pipelines tab ([FeedListController]), but across all Learning
+/// Flows, giving an administrator one view of them all. Each row names its Learning Flow and says why a
+/// pipeline has stopped or what is waiting. Opening a row opens the pipeline at its Learning Status tab, where
+/// its learning can be followed and acted on, subject to the pipeline's permissions. This screen itself takes
+/// no actions on a pipeline's learning.
+///
+/// The screen consists of the list alone, so it shows the list's widget as its own.
 public class SupervisorController extends ContentTabController implements HasRefresh {
 
-    /// The tab's type, kept from when the screen was the Supervisor, so that a tab left open is opened again.
+    /// The tab's type. It keeps the name from when this screen was called the Supervisor, so that a tab left
+    /// open in a saved tab session from an earlier version is still opened again.
     public static final String TAB_TYPE = "LearningFlowSupervisor";
 
     private final FeedListController feedList;
 
-    /// Made by GIN, with its list.
+    /// Made by GIN.
     ///
     /// @param eventBus The application's event bus.
-    /// @param view     The list.
+    /// @param view     The list of pipelines.
     /// @param feedList The list's controller.
     @Inject
     public SupervisorController(final EventBus eventBus,
@@ -53,7 +57,7 @@ public class SupervisorController extends ContentTabController implements HasRef
         feedList.showEveryLearningFlow();
     }
 
-    /// Reads the pipelines again, as Stroom refreshes the tab it is shown in, unless auto refresh is off.
+    /// Reads the pipelines again when Stroom refreshes the tab, unless the user has turned auto refresh off.
     @Override
     public void refresh() {
         if (feedList.isAutoRefresh()) {

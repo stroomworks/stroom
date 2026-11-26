@@ -16,12 +16,13 @@
 
 package stroom.learningflow.stage;
 
-/// One input stream a person might put through again, and the pipeline that processed it: what the
-/// outputs hand back when a binding is retracted. The stage asks for none of them to be reprocessed (A129);
-/// it counts them.
+/// An input stream that a binding produced output for, and the pipeline that processed it. [Outputs]
+/// returns these when a binding is retracted, so that the person can be told how many streams they may want
+/// to reprocess. The stage does not reprocess them itself; it only counts them.
 ///
-/// @param pipeline The uuid of the pipeline, or null where nothing was processing it: a harness, or the
-///                 deferred worker, which runs no pipeline of its own.
+/// @param inputId  The id of the input stream.
+/// @param pipeline The UUID of the pipeline, or null if no pipeline was processing it, i.e. a test harness,
+///                 or the deferred worker, which runs no pipeline of its own.
 public record Replayable(long inputId, String pipeline) {
 
 }

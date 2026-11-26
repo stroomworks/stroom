@@ -44,16 +44,17 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The corpus inversion of design §9: withhold each golden configuration, give a model the input and the
- * expected output, and run what comes back through the same compile, run and diff as the calibration. The
- * result is a reconstruction rate for the extraction stage — the measurement ruling A8 was made without.
- * <p>
- * This needs a model, so it runs only when one is named in the environment: {@code LEARNING_FLOW_BASE_URL}
- * and {@code LEARNING_FLOW_LEARNING_MODEL} for an OpenAI-compatible endpoint, and {@code LEARNING_FLOW_API_KEY}
- * if it wants one. Samples go to that endpoint unredacted; ruling A17 governs production, not this
- * evaluation, so the endpoint should be one the corpus may be sent to.
- */
+/// Measures how often a real model can write a correct Data Splitter configuration, using the extraction corpus.
+///
+/// For each corpus case the golden configuration is withheld, and the model is given the input and the expected
+/// records. What it replies is compiled, run and compared with the expected records exactly as in
+/// `TestExtractionCalibration`. The result is a reconstruction rate: evidence of whether a model can write
+/// extraction configurations, rather than only choose between them.
+///
+/// This needs a model, so it runs only when one is named in the environment: `LEARNING_FLOW_BASE_URL` and
+/// `LEARNING_FLOW_LEARNING_MODEL` for an OpenAI-compatible endpoint, and `LEARNING_FLOW_API_KEY` if the
+/// endpoint needs one. The corpus samples are sent to that endpoint as they are, so use an endpoint the corpus
+/// may be sent to.
 @EnabledIfEnvironmentVariable(named = LiveAdvisor.BASE_URL, matches = ".+")
 class TestExtractionReconstruction {
 
@@ -63,16 +64,12 @@ class TestExtractionReconstruction {
 
     private static final NodeFixture FIXTURE = new NodeFixture();
 
-    /**
-     * Improvement attempts per case, each fed the previous attempt's failure. Transport failures are retried
-     * by the client and do not count.
-     */
+    /// The maximum number of attempts per case. Each attempt after the first is given the previous attempt's
+    /// failure. Transport failures are retried by the client and do not count as attempts.
     private static final int ATTEMPTS = 3;
 
-    /**
-     * The stage's own extraction question, so that this measures the words the stage will use (design 02
-     * §6.2), plus what only this test needs: the expected records, and the reply grammar.
-     */
+    /// The built-in extraction rules the learning flow itself sends, so this measures the wording that will be
+    /// used in production, plus what only this test needs: the expected records and the reply format.
     private static final String OBJECTIVE = """
             You write Stroom Data Splitter 3.0 configurations. Given a sample of raw input and the records \
             document it must produce, reply with a configuration that produces exactly that document.
@@ -190,10 +187,8 @@ class TestExtractionReconstruction {
                         + "\n\nReply with a corrected configuration.");
     }
 
-    /**
-     * Every case is shown one other case, so the prompt leans on a worked example (design §4.1) without
-     * ever being shown the answer.
-     */
+    /// Picks another case to show as a worked example, so the prompt includes an example without ever
+    /// including the answer to the case being asked.
     private static Golden workedExample(final List<Golden> goldens, final Golden golden) {
         return goldens.stream()
                 .filter(other -> !other.equals(golden))
@@ -208,17 +203,13 @@ class TestExtractionReconstruction {
                 .orElse("");
     }
 
-    /**
-     * Ordered worst to best. The final outcome of a case is that of its last attempt.
-     */
+    /// How a case ended, taken from its last attempt. Apart from `FAILED`, the values run from worst to best.
     private enum Outcome {
         REFUSED,
         REJECTED,
         ERRORS,
-        /**
-         * The run itself failed on this case — a request refused, a connection lost past the client's
-         * retries — recorded so the other cases still count.
-         */
+        /// The run itself failed on this case, e.g. a request was refused or the connection was lost after the
+        /// client's retries. It is recorded so the other cases still count.
         FAILED,
         DIFFERENT,
         EXACT

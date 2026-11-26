@@ -33,17 +33,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/// The Setup tab's route map, which is how the tab is found around ([SetupTab]): a translation's life down
-/// one line, each stop a place the tab shows beside the map ([SetupStop]). The sections come in the order a
-/// translation meets them; under Learning steps, the steps of the learning flow, each with what its rules do,
-/// rules that go back drawn as arcs on the left, rules that skip ahead or finish dashed, then the fallback,
-/// where there is one, and the translation learned. A section says what it is set to, and a section or a
-/// step what is wrong in it.
+/// The route map used to navigate the Setup tab ([SetupTab]). It draws a translation's life as stops down one
+/// line; choosing a stop ([SetupStop]) shows that part of the setup beside the map.
 ///
-/// Every stop is a button: a click or Enter chooses it ([#setOnSelect]), and the arrow keys, Home and End
-/// move between them. Only the stop chosen is in the tab order. Under the step chosen, where a step may be
-/// added after it, is an Add step button ([#setOnAdd]), next in the tab order. The map is drawn by
-/// [RouteMapDrawing].
+/// The sections are in the order a translation passes through them. Under Learning steps come the steps of
+/// the learning flow, each with a summary of its rules. Rules that go back are drawn as arcs on the left, and
+/// rules that skip ahead or finish are drawn dashed. After the steps come the fallback step, if there is one,
+/// and the learned translation. Each section shows a summary of its settings, and a section or step with a
+/// problem shows the problem.
+///
+/// Every stop is a button: a click, Enter or Space chooses it ([#setOnSelect]), and the arrow keys, Home and
+/// End move the focus between stops. Only the chosen stop is in the tab order. If a step may be added after the
+/// chosen step, an Add step button ([#setOnAdd]) appears under it, next in the tab order. The SVG itself is
+/// built by [RouteMapDrawing].
 public class RouteMap extends Composite {
 
     private static final String STOP_SELECTOR = "[" + RouteMapDrawing.DATA_STOP + "]";
@@ -73,24 +75,24 @@ public class RouteMap extends Composite {
         html.addDomHandler(this::onKeyDown, KeyDownEvent.getType());
     }
 
-    /// @param onSelect Told the stop chosen.
+    /// @param onSelect Called with the stop the user chooses.
     public void setOnSelect(final Consumer<SetupStop> onSelect) {
         this.onSelect = onSelect;
     }
 
-    /// @param onAdd Given the Add step button under the step chosen, where the menu of the kinds of step to add
-    ///              after it opens.
+    /// @param onAdd Called with the Add step button's element when it is pressed, so that the menu of kinds of
+    ///              step to add can be opened next to it.
     public void setOnAdd(final Consumer<Element> onAdd) {
         this.onAdd = onAdd;
     }
 
-    /// Draws the map. Where a stop had the focus, the same stop has it again.
+    /// Draws the map. If a stop had the keyboard focus, the same stop is given the focus again after redrawing.
     ///
     /// @param steps        The learning flow's steps.
-    /// @param summary      What each section is set to and what is wrong in it; null before a document is read.
-    /// @param stepProblems What is wrong with a step, by its index; a step that is fine has none.
-    /// @param selected     The stop chosen.
-    /// @param canAdd       Whether a step may be added after the step chosen.
+    /// @param summary      Each section's summary and problem; null before a document has been read.
+    /// @param stepProblems The problem with each step, by index; a step without a problem has no entry.
+    /// @param selected     The chosen stop.
+    /// @param canAdd       Whether a step may be added after the chosen step.
     public void show(final List<FlowStep> steps,
                      final SetupSummary summary,
                      final Map<Integer, String> stepProblems,
@@ -186,7 +188,7 @@ public class RouteMap extends Composite {
         return null;
     }
 
-    // The key of the stop that has the focus, or null where none does
+    // Gets the key of the stop that has the keyboard focus, or null if none does
     private String focusedKey() {
         final Element active = activeElement();
         if (active == null || !html.getElement().isOrHasChild(active)) {

@@ -36,20 +36,19 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * A proposed target is judged as one event: it must be one well-formed event, and only the scorers of
- * meaning weigh it, since a stream's coverage and yield say nothing about one event on its own.
- */
+/// Tests `TargetChecks`, which judges the target events the model proposes and the record boundaries it
+/// names.
+///
+/// A proposed target is judged as one event: it must be one well-formed event, and only the scorers of
+/// meaning weigh it, since a stream's coverage and yield say nothing about one event on its own.
 class TestTargetChecks {
 
     private static final String RECORD = "2020-06-17T08:00:00.000Z,jim,warehouse,logon";
     private static final String EVENT = firstEvent(Scenarios.resource("csv-logon.events.xml"));
     private static final String JSON = "http://www.w3.org/2013/XSL/json";
 
-    /**
-     * The full scorer set of a strict document, with a yield expectation of one event in five lines that
-     * no single-line record could meet were it applied.
-     */
+    /// Builds the scorecard of a strict document, with an expected yield of one event per five lines, which
+    /// no single-line record could meet if yield were applied to a target.
     private static Scorecard scorecard() {
         return Scorecard.of(List.of(
                 CheckSetting.of(Check.COMPILE, CheckState.GATE),
@@ -75,9 +74,8 @@ class TestTargetChecks {
 
     @Test
     void aTargetThatIsAlreadyADocumentIsNotWrappedAgain() {
-        // Audit finding W1-2. It used to be decided by whether the text held the characters "<Events"
-        // anywhere, so a prefixed root was wrapped a second time and the scorers judged a document inside
-        // a document.
+        // A target whose root is an Events element with a namespace prefix is already a document. Wrapping it
+        // again would make the scorers judge a document inside a document.
         final String prefixed = "<evt:Events xmlns:evt=\"event-logging:3\"><evt:Event/></evt:Events>";
 
         assertThat(TargetChecks.asDocument(prefixed))
@@ -87,8 +85,8 @@ class TestTargetChecks {
 
     @Test
     void anEventThatMerelyMentionsTheRootIsStillWrapped() {
-        // The same fault the other way round: the characters appearing in an attribute or a comment are
-        // not a root
+        // Conversely, the characters "<Events" appearing in text, an attribute or a comment do not make a
+        // root.
         final String mentions = "<Event><Description>wrapped in &lt;Events&gt;</Description></Event>";
 
         assertThat(TargetChecks.asDocument(mentions))
@@ -119,7 +117,7 @@ class TestTargetChecks {
 
     @Test
     void aMeaninglessEventIsRefusedByTheScorersOfMeaning() {
-        // The degeneracy trap of design 01 §8.3: valid, and the record's fields carried as Data in Unknown.
+        // An event that is valid but extracts nothing, carrying the record's fields as Data under Unknown.
         final String degenerate = String.join("\n",
                 "<Event xmlns=\"event-logging:3\">",
                 "  <EventTime><TimeCreated>2020-06-17T08:00:00.000Z</TimeCreated></EventTime>",
@@ -138,7 +136,7 @@ class TestTargetChecks {
                 "</Event>");
         final List<StoredError> refusal = TargetChecks.judge(scorecard(), RECORD,
                 TargetChecks.asDocument(degenerate));
-        // Only extraction quality speaks: no coverage or yield shortfall for one event on its own.
+        // Only extraction quality refuses it; coverage and yield do not apply to one event on its own.
         assertThat(refusal).isNotEmpty();
         assertThat(refusal).allMatch(error -> "ExtractionQuality".equals(error.getElementId().getId())
                                               || error.getMessage().startsWith("Extraction quality"));
@@ -146,7 +144,7 @@ class TestTargetChecks {
 
     @Test
     void fidelityReadsNamesByNamespaceNotPrefix() {
-        // The same tree written with a prefix on every element, as one live transform did.
+        // The same tree written with a namespace prefix on every element, as some transforms write it.
         final String prefixed = ("<evt:Events xmlns:evt=\"event-logging:3\">" + EVENT + "</evt:Events>")
                 .replaceAll("<(/?)([A-Z])", "<$1evt:$2")
                 .replace("<evt:Events xmlns:evt", "<evt:Events xmlns:evt");
@@ -168,7 +166,7 @@ class TestTargetChecks {
 
     @Test
     void preservationDoesNotDemandAJsonKeyThatTheTargetUsesAsAName() {
-        // A JSONParser record: every key is a `key` attribute, a name no parser emits as a value.
+        // A JSONParser record: every key is a `key` attribute, which is a name, not a value the parser emits.
         final String record = "<map xmlns=\"" + JSON + "\"><string key=\"traceId\">a479ab28</string>"
                               + "<string key=\"name\">Get variable</string></map>";
         final String event = """
@@ -210,7 +208,8 @@ class TestTargetChecks {
 
     @Test
     void preservationOfATextRecordIsUnchanged() {
-        // A DSParser record is text: the record itself is the only value, so any part of it counts.
+        // A DSParser record is text, so the record itself is the only source of values and any part of it
+        // counts.
         final String parsed = "<records xmlns=\"records:2\"><record>"
                               + "<data name=\"when\" value=\"2020-06-17T08:00:00.000Z\"/>"
                               + "<data name=\"who\" value=\"jim\"/></record></records>";
@@ -263,8 +262,8 @@ class TestTargetChecks {
 
     @Test
     void aBoundaryThatIsNotANameNamesNothingRatherThanBreakingTheXPath() {
-        // What the model replies goes into a predicate: a reply that could close one must not reach Saxon,
-        // and a boundary from elsewhere that is not a name names nothing here.
+        // The model's reply is put into an XPath predicate, so a reply that could close the predicate must not
+        // reach Saxon. A boundary that is not a valid name matches nothing.
         final OutputRecords document = OutputRecords.parse("<log><item/><item/></log>").orElseThrow();
 
         assertThat(document.recordsBy(RecordBoundary.ofElement("item"))).hasSize(2);
@@ -275,8 +274,8 @@ class TestTargetChecks {
 
     @Test
     void theRootsRecordsAreATopLevelArraysItems() {
-        // The parser wraps a top-level array in a keyless array under the root map, which no key could name:
-        // root reaches its items. A root map of values, as JSON lines make, gives the values.
+        // The parser wraps a top-level array in a keyless array under the root map, which no key could name,
+        // so `root` reaches its items. A root map of values, as JSON lines produce, gives the values.
         final String ns = "http://www.w3.org/2013/XSL/json";
         final OutputRecords array = OutputRecords.parse("<map xmlns=\"" + ns + "\"><array>"
                 + "<map><string key=\"a\">1</string></map><map><string key=\"a\">2</string></map></array></map>")

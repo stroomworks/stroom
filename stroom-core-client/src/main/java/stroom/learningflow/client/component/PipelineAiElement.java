@@ -31,10 +31,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/// A Learning Flow element of a pipeline, as its AI Translation tab ([PipelineAiTab]) offers it: its id, the
-/// name it is given in the pipeline, and the document it learns under, where one is set. A pipeline's elements
-/// are those of its layers merged, so one inherited from a parent pipeline counts. A plain class, so that it
-/// is tested without a browser.
+/// One Smart Pipeline element in a pipeline, as offered for selection on the pipeline's Learning Status tab
+/// ([PipelineAiTab]) and Quality Assurance tab. It holds the element's id, its name in the pipeline, and the
+/// Learning Flow document it learns under, if one is set.
+///
+/// The elements are found in the pipeline merged with all its ancestors, so an element inherited from a
+/// parent pipeline is included. This is a plain class so that it can be unit tested without a browser.
 public final class PipelineAiElement implements HasDisplayValue {
 
     private final String id;
@@ -47,10 +49,10 @@ public final class PipelineAiElement implements HasDisplayValue {
         this.document = document;
     }
 
-    /// The Learning Flow elements of a pipeline, ordered by name.
+    /// Finds the Smart Pipeline elements of a pipeline, ordered by display name and then id.
     ///
-    /// @param layers The pipeline's layers, its ancestors' first, as the pipeline resource gives them.
-    /// @return Its AI elements; empty where it has none.
+    /// @param layers The pipeline's layers, ancestors first, as returned by the pipeline resource.
+    /// @return The pipeline's Smart Pipeline elements; empty if it has none.
     public static List<PipelineAiElement> of(final List<PipelineLayer> layers) {
         if (NullSafe.isEmptyCollection(layers)) {
             return List.of();
@@ -72,17 +74,19 @@ public final class PipelineAiElement implements HasDisplayValue {
         return found;
     }
 
-    /// @return The element's id in the pipeline, which with the pipeline names its learner.
+    /// @return The element's id in the pipeline. Together with the pipeline's UUID, it identifies the
+    ///         element's learner.
     public String getId() {
         return id;
     }
 
-    /// @return The document it learns under, or null where none is set.
+    /// @return The Learning Flow document the element learns under, or null if none is set.
     public DocRef getDocument() {
         return document;
     }
 
-    /// @return Its name in the pipeline, or its id where it has none, and the document it learns under.
+    /// @return The element's name in the pipeline (or its id if it has no name), followed by the name of the
+    ///         Learning Flow it learns under in brackets, if one is set.
     @Override
     public String getDisplayValue() {
         final String shown = NullSafe.isBlankString(name)

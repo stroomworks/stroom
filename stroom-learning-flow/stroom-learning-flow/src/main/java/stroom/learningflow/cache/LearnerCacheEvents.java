@@ -23,23 +23,25 @@ import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
 
-/// How a cache keyed by learner is kept true across the cluster: a write invalidates the learner here and
-/// fires an event of the learner's own type naming its pipeline, and the event clears that pipeline's
-/// learners on every node.
+/// Helpers that keep the learner-keyed caches ([CachedLearnerBindings], [CachedLearnerStates]) consistent
+/// across the cluster.
 ///
-/// The learner's own type rather than the pipeline's: a learner's rows are the feature's own, and an event
-/// on the pipeline would have every node drop its merged pipeline data each time a learner changed.
+/// A write invalidates the learner's entry on this node and fires an event naming the learner's pipeline;
+/// the event then clears that pipeline's learners on every node. The event uses the learner's own event type
+/// rather than the pipeline type, because a pipeline event would also make every node discard its cached
+/// merged pipeline data each time a learner changed.
 final class LearnerCacheEvents {
 
     private LearnerCacheEvents() {
     }
 
-    /// Clears what an event names: a pipeline's learners, a pipeline at a time since a pipeline's learners
-    /// are few, or everything where it names no pipeline.
+    /// Handles a learner change event by clearing the entries it names. An event naming a pipeline clears
+    /// every learner of that pipeline (a pipeline has few learners, so this costs little); an event naming
+    /// no pipeline clears the whole cache.
     ///
-    /// @param cache The cache.
-    /// @param event The event.
-    /// @param <V>   What the cache holds for a learner.
+    /// @param cache The cache to clear entries from.
+    /// @param event The event received, whose doc ref holds the pipeline UUID, if any.
+    /// @param <V>   The type of value the cache holds for a learner.
     static <V> void onChange(final StroomCache<Learner, V> cache, final EntityEvent event) {
         final String pipelineUuid = event.getDocRef() == null
                 ? null
@@ -51,13 +53,13 @@ final class LearnerCacheEvents {
         }
     }
 
-    /// What changed here must be known everywhere: this node's entry goes at once, and the others' go
-    /// when the event reaches them.
+    /// Called after a learner's rows have been written. This node's entry is invalidated at once, and an
+    /// event is fired so that every other node invalidates its entries when the event reaches it.
     ///
-    /// @param cache          The cache.
-    /// @param entityEventBus Where the event is fired.
+    /// @param cache          The cache to invalidate the learner in.
+    /// @param entityEventBus The bus the cluster-wide clear-cache event is fired on.
     /// @param learner        The learner whose rows were written.
-    /// @param <V>            What the cache holds for a learner.
+    /// @param <V>            The type of value the cache holds for a learner.
     static <V> void changed(final StroomCache<Learner, V> cache,
                             final EntityEventBus entityEventBus,
                             final Learner learner) {

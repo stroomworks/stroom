@@ -118,9 +118,9 @@ class TestAdvancedSettings {
                 .doesNotContain(SetupSection.LEARNING);
     }
 
-    // A Learning Flow as new, to change one thing of
-    /// A document as a new one is: with `Direct`'s steps, which the store gives it (Track 2 step 1c).
-    /// One built here would otherwise have none, and every check that reads the approach would say so.
+    /// Makes a builder for a document as it is when new, for a test to change one setting of.
+    /// A new document is given the `Direct` flow's steps by the store. A document built here would otherwise
+    /// have no steps, and every check that reads the flow would report that as a problem.
     ///
     /// @return The builder.
     private static LearningFlowDoc.Builder doc() {

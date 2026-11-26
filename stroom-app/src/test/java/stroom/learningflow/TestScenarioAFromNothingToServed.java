@@ -94,18 +94,19 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 04 §8.1, **test A, steps 1 to 3** — phase 4's first slice, end to end against real processor
+/// Tests the whole path for a new feed, from nothing learned to streams served, against real processor
 /// tasks and a real database.
 ///
-/// Two streams arrive on a feed nothing has been learned for. Both tasks end `DEFERRED`; one session is
-/// open, not two; no output stream and no error stream exists for either. The worker carries the
-/// session with the scripted model; a pipeline is written for the feed and type and promoted; the
-/// promotion wakes both tasks, which are run again and complete, each stream's output its six events.
-/// Nothing is sentinelled to make anything wait, at any point (§8, scenario 7).
+/// Two streams arrive on a feed nothing has been learned for. Both tasks end `DEFERRED`, one session is
+/// opened rather than two, and neither stream gets an output or error stream. The worker runs the session
+/// with the scripted model, and a fragment is written for the feed and type and promoted. The promotion
+/// wakes both tasks, which run again and complete, each writing six events. At no point is any output
+/// written just to make a stream wait.
 ///
-/// The feed is the mixed CSV of scenario 52 — logons and logoffs — and the script's stylesheet translates
-/// both, so that this test is about the flow and not about what the transform can do; steps 4 to 6, where
-/// a later stream brings a type the transform has not met, are phase 5's.
+/// The feed is mixed CSV with logons and logoffs, and the script's stylesheet translates both, so that this
+/// test is about the flow of tasks and sessions and not about what the transform can do. The case where a
+/// later stream brings a kind of record the transform has not met is tested by
+/// `TestScenarioAStepsFourToSix`.
 class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -113,7 +114,7 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
     private static final String TRANSLATES_BOTH = Scenarios.resource("csv-logon.xsl");
     private static final Pattern EVENT = Pattern.compile("<Event>");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -166,16 +167,16 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         filter = filterOver(pipeline(document));
     }
 
-    /// Run both ways round (simplification option H): off is the default, and was the case the
-    /// removed requirement refused outright. With the master queue this is the whole of an AI
-    /// feed end to end — its streams defer, learning promotes, the wake returns the tasks to
-    /// `CREATED`, the master hands them out, and they complete.
+    /// Runs with `claimTasksOnWorker` both off and on, as a pipeline with a Learning Flow element must work
+    /// with either way of handing tasks to workers. Off is the default. With the master node's queue, this
+    /// covers a learning feed end to end: its streams are deferred, learning promotes, the wake returns the
+    /// tasks to `CREATED`, the master hands them out, and they complete.
     @ParameterizedTest(name = "claimTasksOnWorker={0}")
     @ValueSource(booleans = {false, true})
     void twoStreamsOfAnUnseenFeedWaitOnOneSessionAndAreServedWhenItPromotes(
             final boolean claimTasksOnWorker) {
         processorConfigProvider.get().setClaimTasksOnWorker(claimTasksOnWorker);
-        // Step 1: both tasks end deferred, one session is open, nothing is written for either stream.
+        // Step 1: both tasks end deferred, one session is open, and nothing is written for either stream.
         final Script silent = Script.of();
         advisor.set(silent);
         final Meta first = rawStream();
@@ -203,8 +204,8 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         });
         assertThat(learnerBindings.forLearner(learner)).isEmpty();
 
-        // Step 2: the worker carries the session on the stream it was raised on. The promotion writes
-        // the pipeline and wakes both tasks: back to CREATED ahead of the retry delay.
+        // Step 2: the worker runs the session on the stream that opened it. The promotion writes the
+        // fragment and wakes both tasks, which return to CREATED before the retry delay has passed.
         final Script script = script(CSV.configuration(), TRANSLATES_BOTH);
         advisor.set(script);
         deferredLearning.exec();
@@ -214,7 +215,8 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         assertThat(statusByInput()).containsEntry(first.getId(), TaskStatus.CREATED)
                 .containsEntry(second.getId(), TaskStatus.CREATED);
 
-        // Step 3: both tasks run again and complete; each stream's output is its six events; the rows go.
+        // Step 3: both tasks run again and complete, each stream's output has six events, and the
+        // deferral rows are removed.
         advisor.set(silent);
         for (final ProcessorTask task : tasks(2)) {
             final ProcessorResult result = commonTranslationTestHelper.process(task);
@@ -224,9 +226,9 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         assertThat(statusByInput()).containsEntry(first.getId(), TaskStatus.COMPLETE)
                 .containsEntry(second.getId(), TaskStatus.COMPLETE);
         for (final Meta input : List.of(first, second)) {
-            // One output stream each. (The stage also says what it decided at INFO on the pipeline's
-            // error receiver, as it always has, which Stroom keeps as a stream of its own; it carries no
-            // error, and the markers were counted above.)
+            // One events stream each. The element also logs its decision at INFO to the pipeline's error
+            // receiver, which Stroom keeps as a separate stream. That stream holds no errors, as the marker
+            // counts above show, so only the events streams are checked here.
             final List<Meta> outputs = childrenOf(input).stream()
                     .filter(meta -> StreamTypeNames.EVENTS.equals(meta.getTypeName()))
                     .toList();
@@ -239,7 +241,7 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         assertThat(deferrals.forDocument(document.getUuid())).describedAs("nothing waits").isEmpty();
     }
 
-    /// Create what tasks there are to create and hand out `count` of them.
+    /// Creates and queues any tasks due, assigns them, and checks that exactly `count` were assigned.
     private List<ProcessorTask> tasks(final int count) {
         processorTaskAvailability.clear();
         processorTaskTestHelper.createAndQueueTasks();
@@ -268,14 +270,15 @@ class TestScenarioAFromNothingToServed extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// The pack's document with the model left off: the script answers.
+    /// Creates a document configured like the demo content pack's, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName() + " " + feed);
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .build());
         return docRef;

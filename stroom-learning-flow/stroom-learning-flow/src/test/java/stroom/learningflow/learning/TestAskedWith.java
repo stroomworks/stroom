@@ -29,8 +29,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Decision N9, option D extended: a run records the words it was asked with, so that it resumes in
-/// them rather than in whatever the Learning Flow says by the time the worker reaches it.
+/// Tests `AskedWith`, the record of the question text a learning run was asked with.
+///
+/// A run records its templates and instructions when it opens, so that when it resumes it asks in the same
+/// words, rather than in whatever the Learning Flow says by the time the worker reaches it. The record also
+/// lets a turn's prompt be rebuilt later.
 class TestAskedWith {
 
     private static final Sample SAMPLE = new Sample("a,b,c", Map.of());
@@ -57,8 +60,8 @@ class TestAskedWith {
 
     @Test
     void aRunResumesInItsOwnWordsAfterTheFlowIsEdited() {
-        // The point of the whole thing. A session is a conversation: every turn before this one was put
-        // in the words the run began with, and the model is shown its own history as it resumes.
+        // This is the main reason for recording the words. A session is a conversation: every earlier turn
+        // was asked in the words the run began with, and the model is shown that history when it resumes.
         final LearningFlowDoc opened = doc("Badge readers.", "Pick one:\n${elements}${sample}${feedback}");
         final AskedWith asked = AskedWith.of(opened, "7.13-beta.3");
 
@@ -81,8 +84,8 @@ class TestAskedWith {
 
     @Test
     void aRunWhoseWordsWereNotRecordedFallsBackToTheFlow() {
-        // Every attempt opened before N9. Saying "unknown" and using the document is honest; offering
-        // today's words as though they were the ones used would not be.
+        // Attempts opened by an earlier version did not record their words. Saying "unknown" and using the
+        // document's words is honest; presenting today's words as the ones that were used would not be.
         final LearningFlowDoc doc = doc("Turnstiles now.", "Choose:\n${elements}${sample}${feedback}");
 
         assertThat(AskedWith.UNKNOWN.known()).isFalse();
@@ -96,7 +99,8 @@ class TestAskedWith {
 
     @Test
     void aRunAskedAgainstAnOlderBuiltInSaysSo() {
-        // What makes a rebuilt prompt worth a caveat: the checks' wording travels with the built-ins.
+        // A rebuilt prompt needs a caveat when the built-in version has changed since the run was asked,
+        // because the wording of the checks comes from the current built-in text.
         final AskedWith older = new AskedWith(Templates.VERSION - 1,
                 Map.of(Template.CHAIN, "Pick one:${elements}${sample}${feedback}"), null, "7.12");
 
@@ -106,7 +110,7 @@ class TestAskedWith {
 
     @Test
     void aTemplateThisBuildDoesNotKnowFallsBackToTheBuiltIn() {
-        // A recording made before a template was added names everything but it; rendering must not fail.
+        // A recording made before a template was added lacks that template, and rendering must not fail.
         final AskedWith partial = new AskedWith(Templates.VERSION,
                 Map.of(Template.CHAIN, "Pick one:${elements}${sample}${feedback}"), null, "7.13");
 

@@ -42,11 +42,10 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
-/**
- * Runs a compiled Data Splitter configuration over one input, headlessly, and captures everything the
- * scorers need. This is the extraction-stage replay unit of design §4: the whole input, re-run from the
- * top for every candidate.
- */
+/// Runs a compiled Data Splitter configuration over one input, outside any pipeline, and captures what the
+/// scorers need: the records XML, the span of input each record came from, and the diagnostics.
+///
+/// The whole input is run from the start for every candidate configuration.
 public final class DataSplitterRunner {
 
     private static final String RECORD_ELEMENT = "record";
@@ -78,9 +77,9 @@ public final class DataSplitterRunner {
             try {
                 parser.parse(new InputSource(new StringReader(input)));
             } catch (final RuntimeException | SAXException | IOException e) {
-                // The configuration is untrusted: a group reference with no group behind it, for
-                // instance, escapes as an unchecked exception. That is a fault in the candidate and
-                // scores as one, not a fault in the harness.
+                // The configuration comes from the model and may be faulty. A group reference with no group
+                // behind it, for instance, escapes as an unchecked exception. That is a fault in the
+                // candidate, so it is recorded as a diagnostic rather than allowed to fail the run.
                 errorReceiver.log(Severity.FATAL_ERROR, null, DataSplitterCompiler.ELEMENT_ID, e.getMessage(), e);
             } finally {
                 mergeFilter.endProcessing();
@@ -95,11 +94,9 @@ public final class DataSplitterRunner {
                 List.copyOf(errorReceiver.getList()));
     }
 
-    /**
-     * Passes every event through unchanged, noting the input span of each record as it closes. The Data
-     * Splitter publishes its own reader as the document locator, and that reader knows where the current
-     * record began and where it is now.
-     */
+    // Passes every SAX event through unchanged, noting the input span of each record as it closes. The Data
+    // Splitter sets its own reader as the document locator, and that reader knows where the current record
+    // began and where it is now.
     private static final class RecordRangeRecorder extends XMLFilterImpl {
 
         private final List<TextRange> ranges = new ArrayList<>();

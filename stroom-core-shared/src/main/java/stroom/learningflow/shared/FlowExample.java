@@ -20,17 +20,20 @@ import stroom.docref.HasDisplayValue;
 
 import java.util.List;
 
-/// The flows as measured (design 02 §6.3), which the Setup tab loads into a document's steps and nothing
-/// more (A34, A37) — a document owns its steps, and these are three it might start from. `DIRECT` asks for
-/// the chain and then each element's configuration (A21), and is what a new document starts with.
-/// `TARGET_FIRST` first settles the record boundary, then asks what one record of each kind should become,
-/// and holds every configuration to those events (A31), a value the records lack sending the parser back.
-/// `ESCALATING` settles the split, then goes direct and asks for a target only when the transform stays
-/// short (A39, A40).
+/// The example learning flows that the Setup tab can load into a document's steps. Loading one only copies its
+/// steps; the document owns its steps from then on, and these are starting points.
 ///
-/// **The steps themselves are not here.** They are JSON on the server, read by `FlowExamples` (Track 2
-/// step 1c), because this enum is compiled to JavaScript and the browser has neither classpath
-/// resources nor Jackson. This is the identity and the name; the client is given the steps by
+/// - `DIRECT` asks for the chain and then each element's configuration, and is what a new document starts
+///   with.
+/// - `TARGET_FIRST` first settles the record boundary, then asks what one record of each kind should become,
+///   and holds every configuration to those target events; a value the records lack sends the session back
+///   to the parser.
+/// - `ESCALATING` settles the split, then asks directly for the configurations, and asks for a target only
+///   when the transform keeps falling short.
+///
+/// The steps themselves are not defined here. They are JSON resources on the server, read by `FlowExamples`,
+/// because this enum is compiled to JavaScript and the browser has neither classpath resources nor Jackson.
+/// This enum holds only the identity and the name; the client gets the steps from
 /// `LearningFlowResource.flowExamples()`.
 public enum FlowExample implements HasDisplayValue {
     DIRECT("Direct"),

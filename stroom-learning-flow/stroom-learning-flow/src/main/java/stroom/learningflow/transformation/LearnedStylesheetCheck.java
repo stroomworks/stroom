@@ -23,29 +23,29 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/// The static check of decision N1: a learned stylesheet may use only what is on the
-/// [allow-list][AiXsltAllowList], and this reads the stylesheet to say whether it does. It runs when a
-/// candidate is judged and again when it is promoted, and what it refuses is fed back to the model as the
-/// reason, like any other check.
+/// Checks a stylesheet written by the model, without running it, for anything that is not on the
+/// [allow-list][AiXsltAllowList]. It runs when a candidate is judged and again when it is promoted, and what
+/// it refuses is given back to the model as the reason, like any other check.
 ///
 /// **It refuses what it cannot read.** A stylesheet that does not parse, an XPath it cannot take apart, a
-/// function reference such as `stroom:http-call#5`, a namespace prefix that is not declared — each is a
-/// refusal, not a pass, because the point of an allow-list is that an unfamiliar route is closed. There is
-/// no run-time enforcement until Track 2 step 6, so a route this misses runs unchecked on a node.
+/// function reference such as `stroom:http-call#5`, or a namespace prefix that is not declared are each
+/// refused rather than passed, because the point of an allow-list is that an unfamiliar route is closed.
+/// Nothing enforces the list at run time, so a route this check misses would run unchecked on a node.
 public final class LearnedStylesheetCheck {
 
-    /// A name followed by an open bracket: the shape of a function call, and of several things that are
-    /// not one, which [#NOT_CALLS] sorts out.
+    /// A name followed by an opening bracket: the shape of a function call, and of several things that are
+    /// not calls, which [#NOT_CALLS] filters out.
     private static final Pattern CALL = Pattern.compile(
             "(?<![-\\w.])(?:([\\w.-]+):)?([\\w.-]+)\\s*\\(");
 
-    /// A reference to a function by name and arity, such as `concat#3`, which calls it without the call
-    /// ever appearing. Refused outright, whatever the function.
+    /// A reference to a function by name and arity, such as `concat#3`, which lets it be called without the
+    /// call appearing. It is refused outright, whatever the function.
     private static final Pattern REFERENCE = Pattern.compile(
             "(?<![-\\w.])(?:([\\w.-]+):)?([\\w.-]+)\\s*#\\s*\\d+");
 
-    /// Words that take a bracket without being a function call: XPath's kind tests and sequence types, and
-    /// the keywords of its expressions. None reaches outside the document being transformed.
+    /// Words that can be followed by a bracket without being a function call: XPath's kind tests and
+    /// sequence types, and the keywords of its expressions. None of them reaches outside the document being
+    /// transformed.
     private static final Set<String> NOT_CALLS = Set.of(
             // kind tests and sequence types
             "node", "text", "comment", "processing-instruction", "element", "attribute", "document-node",
@@ -67,7 +67,7 @@ public final class LearnedStylesheetCheck {
     private LearnedStylesheetCheck() {
     }
 
-    /// Reads a stylesheet and says what it uses that it may not.
+    /// Reads a stylesheet and lists what it uses that it may not.
     ///
     /// @param stylesheet The candidate stylesheet.
     /// @param allowList  What it may use.
@@ -96,6 +96,8 @@ public final class LearnedStylesheetCheck {
         return refusals.messages();
     }
 
+    /// Whether a stylesheet uses only what the allow-list allows.
+    ///
     /// @param stylesheet The candidate stylesheet.
     /// @param allowList  What it may use.
     /// @return Whether the stylesheet uses only what is allowed.
@@ -103,13 +105,13 @@ public final class LearnedStylesheetCheck {
         return refusals(stylesheet, allowList).isEmpty();
     }
 
-    /// Every value a stylesheet writes out as itself: the text of a literal result element, and the string
-    /// literals of its XPath. What the literals check reads to find a value copied from the stream the
+    /// Returns every literal value in a stylesheet: the text of literal result elements, and the string
+    /// literals in its XPath. The literals check uses these to find values copied from the stream the
     /// translation was learned on.
     ///
     /// @param stylesheet The stylesheet.
     /// @return The values, in the order they appear; empty where it cannot be read, since a stylesheet
-    ///         that will not parse is the compile check's business and not this one's.
+    ///         that will not parse is for the compile check to report, not this one.
     public static List<String> literals(final String stylesheet) {
         if (stylesheet == null || stylesheet.isBlank()) {
             return List.of();
@@ -127,7 +129,7 @@ public final class LearnedStylesheetCheck {
         return literals;
     }
 
-    /// The contents of each string literal in an XPath expression.
+    /// Returns the contents of each non-empty string literal in an XPath expression.
     ///
     /// @param text The expression.
     /// @return What each literal holds, without its quotes.
@@ -174,7 +176,7 @@ public final class LearnedStylesheetCheck {
                 continue;
             }
             if (declaredFunctions.contains(qualified(prefix, localName))) {
-                // A function the stylesheet declares itself, whose body this check reads like any other
+                // A function the stylesheet declares itself; its body is checked like any other expression
                 continue;
             }
             final String namespaceUri = expression.resolve(prefix);
@@ -214,8 +216,8 @@ public final class LearnedStylesheetCheck {
     }
 
     /// Replaces the contents of every string literal with spaces, so that a name inside one is not read as
-    /// a call. XPath escapes a quote by doubling it, which falls out of this: the closing quote ends the
-    /// literal and the next one opens another.
+    /// a call. XPath escapes a quote by doubling it, which this handles without special treatment: the first
+    /// quote ends the literal and the second opens another.
     ///
     /// @param text An XPath expression.
     /// @return The expression with its literals blanked, the same length as it was.
@@ -243,7 +245,7 @@ public final class LearnedStylesheetCheck {
     // --------------------------------------------------------------------------------
 
 
-    /// The refusals met so far, each said once however many times it is met, and in the order first met.
+    // The refusals found so far, each kept once however many times it is found, in the order first found.
     private static final class Refusals {
 
         private final Set<String> messages = new LinkedHashSet<>();

@@ -49,9 +49,9 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// The Supervisor's learning pipelines list (design 06 A115, A142) as the node reads it in one statement,
-/// held to the in-memory list the scenarios read: the same learners in the same states in the same order,
-/// filtered and paged the same way.
+/// Tests [LearningPipelinesDao], which reads the Supervisor's list of learning pipelines in one query, by
+/// comparing it with [InMemoryLearningPipelines], which the scenario tests use. Both must list the same
+/// learners in the same states and order, filtered and paged the same way.
 class TestLearningPipelinesDao {
 
     private final String run = Long.toString(System.nanoTime());
@@ -66,7 +66,8 @@ class TestLearningPipelinesDao {
     private final Learner deleted = learner("deleted");
     private final Learner forgotten = learner("forgotten");
     private final Learner unread = learner("unread");
-    /// Known by its state alone: given up, its streams long since errored, no binding or session left.
+    /// A learner known only by its state row: it has given up, its streams have long since failed, and it
+    /// has no binding or session left.
     private final Learner quiet = learner("quiet");
     private final List<String> readable = List.of(doc, offDoc);
     private final Set<String> learningOff = Set.of(offDoc);
@@ -146,7 +147,7 @@ class TestLearningPipelinesDao {
         assertThat(summarise(rows.learners(readable, learningOff, List.of(), false, 1L, 2).learners()))
                 .describedAs("a page from the middle")
                 .isEqualTo(summarise(memory.learners(readable, learningOff, List.of(), false, 1L, 2).learners()));
-        // One pipeline's learners, as its own editor asks for them
+        // One pipeline's learners, as that pipeline's own editor asks for them.
         final String onePipeline = rows.learners(readable, learningOff, List.of(), false, 0L, 100).learners()
                 .getFirst().getLearner().getPipelineUuid();
         final List<SupervisorLearner> ofOne = rows.learners(readable, learningOff, List.of(), false, onePipeline,
@@ -183,8 +184,9 @@ class TestLearningPipelinesDao {
                 .isZero();
     }
 
-    /// A learner's document is the one it is listed under, in both forms; for a deleted pipeline's learner
-    /// that never bound anything too, which its sessions alone name, so that it can be read (A137).
+    /// A learner's document is the one it is listed under, in both implementations. This includes a
+    /// deleted pipeline's learner that never had a binding, whose document only its sessions record, so
+    /// that its learning can still be read when deleted pipelines are shown.
     @Test
     void aLearnersDocumentIsTheOneItIsListedUnder() {
         for (final LearningPipelines pipelines : List.of(rows, memory)) {
@@ -198,7 +200,8 @@ class TestLearningPipelinesDao {
         }
     }
 
-    /// The same learners, in whichever form: written through the seams, as the stage writes them.
+    /// Writes the same learners to either implementation, through the same interfaces the processing
+    /// code uses.
     private void given(final LearnerBindings bindings,
                               final LearnerStates learnerStates,
                               final Attempts sessions,
@@ -228,7 +231,7 @@ class TestLearningPipelinesDao {
         bindings.append(deleted, doc, binding("deleted", false, 0.9));
         marks.deleted(deleted.pipelineUuid(), 1_000L);
 
-        // A deleted pipeline that only ever had a session: nothing but the session names its document.
+        // A deleted pipeline that only ever had a session, so only the session records its document.
         sessions.opened(new Attempt(forgotten, doc, "GATE", "Raw Events", 3L, "node-1",
                 PromotionMode.AUTOMATIC, Long.MAX_VALUE), 500L);
         marks.deleted(forgotten.pipelineUuid(), 1_000L);

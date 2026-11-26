@@ -32,10 +32,13 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
-/// What a learner's translations produced, day by day (UTC), read from the output rows each binding recorded of
-/// each stream it translated: a row is a stream, and its record count the records it held. A stream recorded
-/// before record counts were kept counts as a stream and no records. A stream is counted on the day it was first
-/// translated, whatever reprocessing came later.
+/// The database implementation of [Volumes], which reports how much a learner's translations produced per
+/// day (UTC), for the volume chart on a Smart Pipeline's Quality Assurance tab.
+///
+/// It reads the output rows that each binding recorded for each stream it translated: each row counts as a
+/// stream, with its record and skip counts. A row written before record counts were kept counts as a stream
+/// with no records. A stream is counted on the day it was first translated, however often it was
+/// reprocessed later.
 @Singleton
 public class VolumesDao implements Volumes {
 

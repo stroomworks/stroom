@@ -82,29 +82,25 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/// The Supervisor's logic, behind its REST resource ([SupervisorResourceImpl]), which does the auditing and
-/// delegates here (simplification option iii: resource, then service, then DAO).
+/// The service behind the Supervisor screen, which lists learning pipelines, their sessions and waiting
+/// streams across every Learning Flow document, and lets a person act on them. Its REST resource
+/// ([SupervisorResourceImpl]) does the audit logging and delegates here.
 ///
-/// The Supervisor of A28: attempts across every Learning Flow document, and what a person may do to
-/// one they are reading.
-///
-/// What is learned for a feed belongs to the feed's pipeline, and is held to the pipeline's permissions: a
-/// person who may view a pipeline may read its learners' sessions, waiting streams and notes (an attempt's
-/// transcript carries what the model was told about that feed's data), and a person who may edit it may
-/// act on them: leave a note, approve, reject, give more, relearn, give up, improve, accept or retract. A
-/// pipeline since deleted has no permissions to ask; its learning is read by its document's VIEW instead,
-/// and nothing more is done with it (A137). The lists across documents (the learners and attempts of every
-/// document) are of the documents a person may view, as an administrator's overview.
+/// What is learned for a feed belongs to the feed's pipeline, so access follows the pipeline's permissions.
+/// A user who may view a pipeline may read its learners' sessions, waiting streams and guidance (a session's
+/// transcript includes what the model was shown of the feed's data). A user who may edit the pipeline may
+/// also act on them: leave guidance, approve, reject, grant more budget, relearn, give up, improve or
+/// retract. A deleted pipeline has no permissions to check, so its learning may be viewed by anyone with
+/// VIEW on its Learning Flow document, and it cannot be changed. The lists that span documents only include
+/// documents the user may view.
 public class SupervisorService {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SupervisorService.class);
 
-    /// The most rows a page of the serving bindings may ask for, whatever it asks for.
-    /// The attempts beside them have always clamped; these did not, so any person with VIEW on one
-    /// document could ask for the whole table in one request, and a negative length reached the database
-    /// as `LIMIT -1`.
+    /// The maximum number of rows a page may hold, whatever the request asks for. Without a limit, any user
+    /// with VIEW on one document could fetch the whole table in one request.
     private static final int PAGE_LIMIT = 1000;
-    /// The rows a page holds where the request does not say.
+    /// The number of rows a page holds if the request does not say.
     private static final int PAGE_LENGTH = 100;
 
     private final Provider<Attempts> attemptsProvider;
@@ -114,7 +110,7 @@ public class SupervisorService {
     private final Provider<SecurityContext> securityContextProvider;
     private final Provider<Guidance> guidanceProvider;
     private final Provider<Deferrals> deferralsProvider;
-    /// Who may do what with a learner, as the Quality Assurance tab's resource also asks it.
+    /// Checks whether the user may view or change a learner, shared with the Quality Assurance tab.
     private final LearnerAccess access;
     private final Provider<DeletedPipelines> deletedPipelinesProvider;
     private final Provider<LearnerBindings> learnerBindingsProvider;
@@ -157,9 +153,10 @@ public class SupervisorService {
         this.inputsProvider = inputsProvider;
     }
 
-    /// The learning pipelines (design 06 A115, A142): read and paged where the rows are, each named with
-    /// its pipeline and document, and its oldest wait judged against its document's maximum deferral age
-    /// (A57). The documents this person may read go into the query, as they do for the other lists.
+    /// Lists the learning pipelines (one row per learner) for the Supervisor's top level, filtered and paged
+    /// by the database. Each row is named with its pipeline and document, and is flagged if its oldest
+    /// waiting stream is older than its document's maximum deferral age. The documents the user may view
+    /// are passed into the query, as they are for the other lists, so that counts and paging are correct.
     public ResultPage<SupervisorLearner> learners(final LearnerCriteria criteria) {
         final LearnerCriteria asked = criteria == null
                 ? new LearnerCriteria()
@@ -174,8 +171,9 @@ public class SupervisorService {
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), found.total(), true));
     }
 
-    /// The learners of one pipeline, as its own editor shows them: those of its Learning Flow elements that
-    /// have learned or are learning, under whichever documents they run under. Held to the pipeline's VIEW.
+    /// Lists the learners of one pipeline, for the pipeline's own editor: those of its Smart Pipeline
+    /// elements that have learned or are learning, under whichever documents they run under. Requires VIEW
+    /// on the pipeline.
     public List<SupervisorLearner> pipelineLearners(final String pipelineUuid) {
         if (NullSafe.isBlankString(pipelineUuid) || !access.mayPipeline(pipelineUuid, DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
@@ -191,7 +189,7 @@ public class SupervisorService {
                 .toList();
     }
 
-    /// The documents with learning turned off, whose learners are listed as such.
+    /// The UUIDs of documents with learning disabled, so that their learners can be shown as such.
     private static Set<String> learningOff(final Map<String, LearningFlowDoc> docs) {
         return docs.values().stream()
                 .filter(doc -> doc.getLearningMode() == LearningMode.DISABLED)
@@ -199,9 +197,10 @@ public class SupervisorService {
                 .collect(Collectors.toSet());
     }
 
-    /// A page of learners, each named with its pipeline and document, its oldest wait judged against its
-    /// document's maximum deferral age (A57), and what its document says of its score, its fallback and its
-    /// spend.
+    /// Completes a page of learner rows with the names of their pipeline and document, and with flags
+    /// derived from the document: whether the oldest wait exceeds the maximum deferral age, whether the
+    /// rolling score is below the relearn threshold, whether there is no marked-Unknown fallback, and why
+    /// learning is paused by the spend breaker, if it is.
     private List<SupervisorLearner> named(final LearningPipelines.Page found,
                                           final Map<String, DocRef> docRefs,
                                           final Map<String, LearningFlowDoc> docs) {
@@ -220,15 +219,16 @@ public class SupervisorService {
                 .toList();
     }
 
-    /// The document a learner runs under, for its pipeline's editor to show where it stands: its flow,
-    /// pass mark and limits. Held to the pipeline's VIEW: the settings are how that pipeline's feed is
-    /// learned, which a person who may see the pipeline may read without being able to open the document.
+    /// Gets the document a learner runs under, so that its pipeline's editor can show the flow, pass mark
+    /// and limits. Requires VIEW on the pipeline rather than on the document: the settings describe how
+    /// that pipeline's feed is learned, which anyone who may see the pipeline may read, even if they cannot
+    /// open the document itself.
     public LearningFlowDoc settings(final String docUuid, final String pipelineUuid, final String elementId) {
         readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid);
         return document(docUuid);
     }
 
-    /// What waits on one learner (design 06 A115), oldest first, a page at a time.
+    /// Lists the streams waiting on one learner, oldest first, a page at a time.
     public ResultPage<BacklogStream> waiting(final String docUuid,
                                              final String pipelineUuid,
                                              final String elementId,
@@ -248,7 +248,7 @@ public class SupervisorService {
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), waiting.total(), true));
     }
 
-    /// Send a learner back to learn afresh from its next stream (A28, A29), from its row.
+    /// Sends a learner back to learn afresh from its next stream. Requires EDIT on its pipeline.
     public Boolean relearnLearner(final String docUuid, final LearnerRequest request) {
         final Learner learner = changeable(docUuid, request);
         final String who = securityContextProvider.get().getUserIdentityForAudit();
@@ -260,8 +260,7 @@ public class SupervisorService {
         return Boolean.TRUE;
     }
 
-    /// Give a learner up (design 06 A115). The reason is asked for rather than assumed: its streams error
-    /// with it.
+    /// Gives a learner up. A reason is required, because the learner's streams error with it.
     public Boolean giveUp(final String docUuid, final LearnerRequest request) {
         if (request == null || NullSafe.isBlankString(request.getReason())) {
             throw new IllegalArgumentException("Giving a learner up says why: its streams error with the "
@@ -274,8 +273,8 @@ public class SupervisorService {
         return Boolean.TRUE;
     }
 
-    /// The learner a request about a row names, where this person may edit its pipeline and the pipeline has
-    /// not been deleted (A137).
+    /// Gets the learner a request names, checking that its pipeline has not been deleted and that the user
+    /// may edit it.
     private Learner changeable(final String docUuid, final LearnerRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Say which learner: its pipeline and element");
@@ -283,7 +282,8 @@ public class SupervisorService {
         return changeable(live(learnerOf(docUuid, request.getLearner())));
     }
 
-    /// The documents, read once each; one that cannot be read is left out, and its rows take the defaults.
+    /// Reads each document once. A document that cannot be read is left out, and its rows use the default
+    /// settings.
     private Map<String, LearningFlowDoc> documents(final Collection<DocRef> docRefs) {
         final Map<String, LearningFlowDoc> docs = new LinkedHashMap<>();
         for (final DocRef docRef : docRefs) {
@@ -300,9 +300,9 @@ public class SupervisorService {
         return docs;
     }
 
-    /// The documents whose target schema isn't event-logging, so has no marked Unknown for *Finish with
-    /// Unknowns* to write (task 7, W1-3). A document naming no target, or one this node can't read, is
-    /// event-logging as it always was.
+    /// The UUIDs of documents whose target schema isn't event-logging, which therefore have no marked
+    /// Unknown event for *Finish with Unknowns* to write. A document naming no target, or one whose target
+    /// this node can't read, is treated as event-logging.
     private Set<String> noFallback(final Collection<LearningFlowDoc> docs) {
         final TargetSchemas targetSchemas = targetSchemasProvider.get();
         return docs.stream()
@@ -313,17 +313,17 @@ public class SupervisorService {
                 .collect(Collectors.toSet());
     }
 
-    /// A learner's row with the zone its pipeline reads timestamps in (decision N6, Track 2 step 4): the
-    /// one a stream with no `TimeZone` header is read in, where it comes from, and what is wrong with the
-    /// pipeline's property, so that a surprising date can be traced to what set the zone.
+    /// Adds to a learner's row the time zone its pipeline reads timestamps in when a stream has no
+    /// `TimeZone` header, where that zone was set, and any problem with the pipeline's property, so that a
+    /// surprising date can be traced to what set the zone.
     private SupervisorLearner withTimeZone(final SupervisorLearner row) {
         final ResolvedZone zone = pipelineZonesProvider.get().of(learner(row.getLearner()), null);
         return row.withTimeZone(zone.id(), zone.source(), zone.problem());
     }
 
-    /// Why each document can't open a learning run now, where a spend ceiling has been reached (A24, Track 2
-    /// step 4): its own, or the cluster's. Asked of the breaker the stages use, so the list says exactly
-    /// what holds the streams back.
+    /// For each document that cannot start a learning session now because a spend ceiling (its own or the
+    /// cluster's) has been reached, the reason why. It asks the same breaker the stages use, so the list
+    /// shows exactly what is holding the streams back.
     private Map<String, String> spendPaused(final Collection<LearningFlowDoc> docs) {
         final SpendBreaker breaker = stageFactoryProvider.get().breaker();
         final Map<String, String> paused = new HashMap<>();
@@ -333,8 +333,8 @@ public class SupervisorService {
         return paused;
     }
 
-    /// Whether a learner's rolling score is below its document's relearn threshold (design 04 §6): where
-    /// the document has one and the learner has served enough to be scored.
+    /// Whether a learner's rolling score is below its document's relearn threshold. False if the document
+    /// could not be read or the learner has not yet served enough records to have a rolling score.
     private static boolean belowThreshold(final LearningFlowDoc doc, final Double rollingScore) {
         return doc != null
                && rollingScore != null
@@ -348,7 +348,7 @@ public class SupervisorService {
                 : doc.getMaxDeferralAgeMs();
     }
 
-    /// Give a parked session more to spend (A77), and carry it on.
+    /// Grants a parked session more budget and reopens it for the worker. Requires EDIT on its pipeline.
     public SupervisorAttempt grant(final long id, final GrantRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Nothing was granted");
@@ -359,30 +359,31 @@ public class SupervisorService {
         return detail(read(id));
     }
 
-    /// Send a parked session to the exhaustion step (A65), and carry it on.
+    /// Sends a parked session to the exhaustion step and reopens it for the worker. Requires EDIT on its
+    /// pipeline.
     public SupervisorAttempt exhaust(final long id) {
         final Recorded attempt = live(change(id));
         stageFactoryProvider.get().supervisorActions().exhaust(documentOf(attempt), id);
         return detail(read(id));
     }
 
-    /// The learning runs a person may read, newest first, as the criteria narrow them.
+    /// Finds the learning sessions the user may read, newest first, filtered by the criteria.
     ///
-    /// @param criteria Which runs, and which page of them.
-    /// @return The page.
+    /// @param criteria The filters, and which page of results to return.
+    /// @return The page of sessions, without their turns.
     public ResultPage<SupervisorAttempt> find(final AttemptCriteria criteria) {
         final AttemptCriteria asked = criteria == null
                 ? new AttemptCriteria()
                 : criteria;
-        // The documents this person may see go into the query rather than filtering its answer: a count
-        // taken before the filtering would tell them how many attempts exist on documents they may not
-        // see, and the pages they turned would come back short with no way to reach the end. One learner's
-        // sessions, as its pipeline's editor asks for them, are held to the pipeline instead, and may be
-        // under any document.
+        // The documents the user may see are passed into the query rather than used to filter its result.
+        // Filtering afterwards would make the total count reveal how many sessions exist on documents they
+        // may not see, and pages would come back short with no way to reach the end. One learner's
+        // sessions, as its pipeline's editor asks for them, are checked against the pipeline instead, and
+        // may be under any document.
         final Page page = attemptsProvider.get().found(asked, asked.getLearner() == null
                 ? List.copyOf(readable(asked.getDocUuid()).keySet())
                 : learnersDocuments(asked.getLearner()));
-        // Which of the page's pipelines are deleted, asked once for the page rather than once a row.
+        // Which of the page's pipelines are deleted, looked up once for the page rather than once per row.
         final Set<String> deleted = deletedPipelinesProvider.get().deletedOf(page.attempts().stream()
                 .map(attempt -> attempt.attempt().learner().pipelineUuid())
                 .collect(Collectors.toSet()));
@@ -396,18 +397,18 @@ public class SupervisorService {
         return new ResultPage<>(rows, new PageResponse(offset, rows.size(), page.total(), true));
     }
 
-    /// Ask for a binding that is already serving to be made better (A46).
+    /// Asks for a binding that is already serving to be improved.
     ///
-    /// Held to EDIT on the binding's pipeline, as approving a draft is: it spends a model's tokens and may
-    /// rebind the learner.
+    /// Requires EDIT on the binding's pipeline, as approving a draft does, because it spends a model's
+    /// tokens and may rebind the learner.
     ///
-    /// The request opens the attempt and parks it; the worker asks the model (A46). A model conversation
-    /// is minutes long, and holding an HTTP thread for it would not survive the node restarting or the
-    /// browser giving up. Nothing waits on it: the incumbent serves every stream throughout, and a
-    /// candidate takes over only through the ordinary gate.
+    /// The request opens a session and leaves it waiting at its first question; the worker then asks the
+    /// model. A model conversation can last minutes, and holding an HTTP thread for it would not survive the
+    /// node restarting or the browser giving up. Nothing waits on it: the serving binding goes on serving
+    /// every stream, and a candidate takes over only by passing the ordinary promotion gate.
     ///
-    /// So what comes back says the improvement was asked for, not what it came to. What it comes to
-    /// appears on the Learning Status tab, as every other run's does.
+    /// The result therefore says only that the improvement was requested, not how it turned out. The
+    /// outcome appears on the Learning Status tab, as every other session's does.
     public ImproveOutcome improve(final String docUuid, final String bindingUuid, final ImproveRequest request) {
         changeableBinding(docUuid, bindingUuid);
         final String by = securityContextProvider.get().getUserIdentityForAudit();
@@ -417,22 +418,24 @@ public class SupervisorService {
         final LearningFlowDoc doc = document(docUuid);
         final Decision decision = pipelineScopeProvider.get().scopeResult(() ->
                 stageFactoryProvider.get().create().improve(doc, bindingUuid, message, by).decision());
-        // A refusal is the one thing that is decided here and now — the binding is a draft, the records
-        // have gone, learning is off — and it is said rather than left to show up as an abandoned run.
+        // If the session could not be opened, the reason is returned to the person now rather than left to
+        // show up as an abandoned session. (Other problems, such as the binding being a draft, having no
+        // accepted records, or learning being disabled, are thrown as exceptions by the stage.)
         if (decision instanceof final Sentinel refused) {
             return new ImproveOutcome(refused.reason());
         }
         return new ImproveOutcome("Asked. The AI is working on it; what it comes to will show here.");
     }
 
-    /// Take back a binding that is serving (A28, design 01 §11.6).
+    /// Retracts a binding that is serving.
     ///
-    /// The reason is asked for rather than assumed: it is recorded against the attempt that wrote the binding.
+    /// A reason is required, because it is recorded against the session that wrote the binding.
     ///
-    /// Answers how many streams the binding produced output for, which is the one consequence the person
-    /// cannot see for themselves, and what they would reprocess (A129).
+    /// Returns how many streams the binding produced output for. That is the one consequence the person
+    /// cannot see for themselves, and tells them how many streams they may want to reprocess.
     ///
-    /// Held to EDIT on the binding's pipeline, as approving a draft is: it changes what serves it.
+    /// Requires EDIT on the binding's pipeline, as approving a draft does, because it changes what serves the
+    /// pipeline.
     public Integer retract(final String docUuid, final String bindingUuid, final RejectRequest request) {
         if (request == null || NullSafe.isBlankString(request.getReason())) {
             throw new IllegalArgumentException("A retraction says why: the reason is recorded against "
@@ -444,17 +447,17 @@ public class SupervisorService {
         return stageFactoryProvider.get().promotion().retract(doc, bindingUuid, request.getReason(), by);
     }
 
-    /// What has been said to a learner (A46), oldest first.
+    /// Lists the guidance standing for a learner, oldest first. Requires VIEW on its pipeline.
     public List<SupervisorGuidance> guidance(final String docUuid,
                                              final String pipelineUuid,
                                              final String elementId) {
         return said(readable(learnerOf(docUuid, new LearnerRef(pipelineUuid, elementId)), docUuid));
     }
 
-    /// Tell a learner something, without asking for anything to be run.
+    /// Leaves guidance for a learner, without asking for anything to be run.
     ///
-    /// Held to EDIT on the pipeline rather than VIEW: what is written here is carried into every question
-    /// the learner asks from now on, which is a change to how its feed is learned.
+    /// Requires EDIT on the pipeline rather than VIEW, because the guidance is included in every question
+    /// the learner asks from now on, which changes how its feed is learned.
     public List<SupervisorGuidance> hint(final String docUuid, final GuidanceRequest request) {
         if (request == null || NullSafe.isBlankString(request.getMessage())) {
             throw new IllegalArgumentException("There is nothing to record: the message is empty");
@@ -465,11 +468,11 @@ public class SupervisorService {
         return said(learner);
     }
 
-    /// Take back something said to a learner. A hint that turned out to be wrong is worse than no hint:
-    /// it is carried into every question the learner asks until it is withdrawn.
+    /// Withdraws guidance left for a learner. Guidance that turns out to be wrong is worse than none,
+    /// because it is included in every question the learner asks until it is withdrawn.
     ///
-    /// The turns that already carried it still say they did (A45), which is what a re-walk replays: what
-    /// was withdrawn stops being carried, and does not stop having been.
+    /// Turns that already included it still record that they did, and a replayed session replays them as
+    /// they were. Withdrawn guidance is only left out of questions asked from now on.
     public List<SupervisorGuidance> withdraw(final String docUuid,
                                              final long id,
                                              final String pipelineUuid,
@@ -480,21 +483,22 @@ public class SupervisorService {
         return said(learner);
     }
 
-    /// One learning run with its turns, held to its pipeline's VIEW.
+    /// Gets one learning session with its turns. Requires VIEW on its pipeline.
     ///
-    /// @param id The run.
-    /// @return It.
+    /// @param id The session's id.
+    /// @return The session and its turns.
     public SupervisorAttempt fetch(final long id) {
         return detail(read(id));
     }
 
-    /// A person's answer in place of a turn's (A28), held to its pipeline's EDIT; the run is left for the
-    /// learning job to carry on.
+    /// Records a person's answer in place of the model's for one turn, and leaves the session for the
+    /// learning job to resume. Requires EDIT on its pipeline, and the pipeline must still run under the
+    /// session's document.
     ///
-    /// @param id      The run.
-    /// @param number  The turn.
-    /// @param request The answer.
-    /// @return The run as it now stands.
+    /// @param id      The session's id.
+    /// @param number  The number of the turn being answered.
+    /// @param request The person's answer.
+    /// @return The session as it now stands.
     public SupervisorAttempt amend(final long id, final int number, final AmendTurnRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("No answer was given for turn " + number);
@@ -506,9 +510,11 @@ public class SupervisorService {
         return detail(read(id));
     }
 
-    /// Rebuilt rather than stored (N9): stored, the prompt would be a copy of the stream's text readable
-    /// without the data permission and outliving the stream under retention. Whatever stops it being
-    /// rebuilt is said, never guessed past.
+    /// Rebuilds the prompt that was sent to the model for one turn, for a person to inspect.
+    ///
+    /// Prompts are rebuilt rather than stored, because a stored prompt would be a copy of the stream's text
+    /// that could be read without the view-data permission and would outlive the stream under retention.
+    /// If the prompt cannot be rebuilt exactly, the reason is returned rather than an approximation.
     public RebuiltPrompt prompt(final long id, final int number) {
         final Recorded attempt = read(id);
         if (attempt.turns().stream().noneMatch(turn -> turn.number() == number)) {
@@ -528,8 +534,9 @@ public class SupervisorService {
                                          + "read, so its prompt can't be rebuilt.");
         }
         final LearningFlowDoc doc = documentOf(attempt);
-        // In a pipeline scope, though there is no pipeline: rebuilding runs pipelines, and what a stage is
-        // built from reports through the scoped error receiver, as it does for the deferred worker.
+        // Run in a pipeline scope even though there is no pipeline here, because rebuilding runs pipelines
+        // and the stage's components report errors through the scoped error receiver, as they do for the
+        // deferred worker.
         final Optional<Rebuilt> rebuilt = pipelineScopeProvider.get().scopeResult(() ->
                 stageFactoryProvider.get().create().rebuild(doc, id, input.get()));
         if (rebuilt.isEmpty()) {
@@ -556,10 +563,10 @@ public class SupervisorService {
         return new RebuiltPrompt(prompt, notes, null);
     }
 
-    /// Approve the draft a run wrote (A25), held to its pipeline's EDIT, recording who approved it.
+    /// Approves the draft a session wrote, recording who approved it. Requires EDIT on its pipeline.
     ///
-    /// @param id The run.
-    /// @return The run as it now stands.
+    /// @param id The session's id.
+    /// @return The session as it now stands.
     public SupervisorAttempt approve(final long id) {
         final Recorded attempt = live(change(id));
         final String by = securityContextProvider.get().getUserIdentityForAudit();
@@ -567,11 +574,12 @@ public class SupervisorService {
         return detail(read(id));
     }
 
-    /// Reject the draft a run wrote (A25), held to its pipeline's EDIT, recording who rejected it and why.
+    /// Rejects the draft a session wrote, recording who rejected it and why. Rejecting a draft also gives
+    /// the learner up with the reason. Requires EDIT on its pipeline.
     ///
-    /// @param id      The run.
-    /// @param request Why.
-    /// @return The run as it now stands.
+    /// @param id      The session's id.
+    /// @param request The reason for the rejection, which is required.
+    /// @return The session as it now stands.
     public SupervisorAttempt reject(final long id, final RejectRequest request) {
         if (request == null || request.getReason() == null || request.getReason().isBlank()) {
             throw new IllegalArgumentException("A rejection says why: the learner gives up with the reason");
@@ -590,30 +598,29 @@ public class SupervisorService {
                 .toList();
     }
 
-    /// How many rows a page may hold: what was asked for, within what the server will give. A request
-    /// is not to be trusted with either end of it — an unbounded length hands over the whole table in
-    /// one call, and a negative one reaches the database as `LIMIT -1` and answers with a server error
-    /// rather than a refusal.
+    /// The number of rows a page may hold: what was asked for, clamped to between 1 and [#PAGE_LIMIT].
+    /// Both ends are clamped because an unbounded length would return the whole table in one call, and a
+    /// negative one would reach the database as `LIMIT -1` and cause a server error.
     private static int pageLength(final PageRequest page) {
         final int asked = NullSafe.getOrElse(page.getLength(), Integer::intValue, PAGE_LENGTH);
         return Math.max(1, Math.min(asked, PAGE_LIMIT));
     }
 
-    /// The page asked for, or the first page where none was.
+    /// The page asked for, or the first page if none was.
     private static PageRequest pageOf(final PageRequest asked) {
         return asked == null
                 ? new PageRequest(0, PAGE_LENGTH)
                 : asked;
     }
 
-    /// Where a page starts: never before the first row.
+    /// The offset a page starts at, which is never negative.
     private static long offsetOf(final PageRequest page) {
         return Math.max(0L, NullSafe.getOrElse(page.getOffset(), Integer::longValue, 0L));
     }
 
-    /// The documents this person may read, by uuid and keeping their names, narrowed to the one they
-    /// asked about if they asked about one. A handful per installation, so asking the store about each
-    /// costs nothing next to the query it saves.
+    /// The documents the user may view, keyed by UUID, narrowed to the one asked about if there is one.
+    /// An installation has only a handful of documents, so checking each one costs little compared with the
+    /// query it saves.
     private Map<String, DocRef> readable(final String asked) {
         final Map<String, DocRef> readable = new LinkedHashMap<>();
         storeProvider.get().listDocuments().stream()
@@ -623,7 +630,7 @@ public class SupervisorService {
         return readable;
     }
 
-    /// The learner a request names, as the row it was made from carried it (design 06 phase J slice 2b).
+    /// The learner a request names, by its pipeline UUID and element id.
     private static Learner learner(final LearnerRef ref) {
         if (ref == null || NullSafe.isBlankString(ref.getPipelineUuid())
             || NullSafe.isBlankString(ref.getElementId())) {
@@ -632,9 +639,9 @@ public class SupervisorService {
         return new Learner(ref.getPipelineUuid(), ref.getElementId());
     }
 
-    /// The learner a request names, held to the document the request was permitted on. The request names
-    /// the two separately and the permission was the document's: without this, a person who may edit one
-    /// document could act on another's learner by naming it.
+    /// The learner a request names, checked to be one that runs under the document the request names. The
+    /// request names the learner and the document separately, so without this check a user permitted on
+    /// one document could act on another document's learner by naming it.
     private Learner learnerOf(final String docUuid, final LearnerRef ref) {
         final Learner learner = learner(ref);
         if (!runsUnder(learner, docUuid)) {
@@ -644,15 +651,15 @@ public class SupervisorService {
         return learner;
     }
 
-    /// An attempt whose pipeline has not been deleted. A deleted pipeline's learning is kept to be read
-    /// until it ages out, and nothing more is done with it (design 06 A137): what a person would change
-    /// from here would serve, or teach, a pipeline that will never run again.
+    /// Checks that a session's pipeline has not been deleted. A deleted pipeline's learning is kept, read
+    /// only, until it ages out, because anything a person changed would serve or teach a pipeline that will
+    /// never run again.
     private Recorded live(final Recorded attempt) {
         live(attempt.attempt().learner());
         return attempt;
     }
 
-    /// The learner, where its pipeline has not been deleted.
+    /// Checks that the learner's pipeline has not been deleted.
     private Learner live(final Learner learner) {
         if (deletedPipelinesProvider.get().isDeleted(learner.pipelineUuid())) {
             throw new IllegalStateException("The pipeline of element " + learner.elementId() + " has been "
@@ -662,9 +669,9 @@ public class SupervisorService {
         return learner;
     }
 
-    /// A binding this person may change: its learner runs under the document named, its pipeline has not
-    /// been deleted, and they may edit the pipeline. A binding that isn't there answers as one they may not
-    /// change, or the answer would say which bindings exist.
+    /// Checks that the user may change a binding: its learner runs under the document named, its pipeline
+    /// has not been deleted, and the user may edit the pipeline. A binding that doesn't exist gets the same
+    /// permission error, so that the response doesn't reveal which bindings exist.
     private void changeableBinding(final String docUuid, final String bindingUuid) {
         final Learner learner = learnerBindingsProvider.get().byUuid(bindingUuid)
                 .map(held -> held.learner())
@@ -674,9 +681,9 @@ public class SupervisorService {
         changeable(live(learner));
     }
 
-    /// An attempt whose learner still runs under the document it was learning for. An attempt is history
-    /// and keeps its document, but a change made from one is a change to its learner: once the pipeline
-    /// has been pointed at another document, the old document's editors are no longer the ones to make it.
+    /// Checks that a session's learner still runs under the document the session was learning for. A
+    /// session keeps its document as a historical record, but changing a session changes its learner, and
+    /// once the pipeline has been pointed at another document the old document no longer governs it.
     private Recorded stillUnder(final Recorded attempt) {
         if (!runsUnder(attempt.attempt().learner(), attempt.attempt().docUuid())) {
             throw new IllegalStateException("Attempt " + attempt.id() + " was learning for a pipeline that no "
@@ -686,10 +693,10 @@ public class SupervisorService {
         return attempt;
     }
 
-    /// Whether the learner runs under the document: as its pipeline says now, or for a pipeline since
-    /// deleted, which says nothing, as the learning pipelines list says, so that what it learned can still
-    /// be read from the document it is listed under (A137) — whether or not it ever bound anything.
-    /// Nothing is changed for a deleted pipeline's learner, so this lets a person read and no more.
+    /// Whether the learner runs under the document. For a live pipeline this is the document its element
+    /// names now. For a deleted pipeline, which names nothing, it is the document the learning pipelines
+    /// list has for it, so that what it learned can still be viewed under that document, whether or not it
+    /// ever bound anything. A deleted pipeline's learner cannot be changed, so this only allows viewing.
     private boolean runsUnder(final Learner learner, final String docUuid) {
         return access.documentOf(learner).filter(docUuid::equals).isPresent();
     }
@@ -707,16 +714,15 @@ public class SupervisorService {
         return Optional.ofNullable(storeProvider.get().readDocument(new DocRef(LearningFlowDoc.TYPE, docUuid)));
     }
 
-    /// An attempt a person may read. An attempt they may not see and an attempt that never existed
-    /// answer the same way, or the answer itself says which documents exist and what has been learned
-    /// for them.
+    /// Gets a session the user may view. A session they may not see and one that does not exist give the
+    /// same error, so that the response doesn't reveal which sessions exist.
     private Recorded read(final long id) {
         return permitted(id, DocumentPermission.VIEW);
     }
 
-    /// An attempt a person may change. Approving a draft puts its binding in force, rejecting one gives a
-    /// learner up, and running an attempt again spends a model's tokens: these change what serves the
-    /// attempt's pipeline and are held to the same permission as editing the pipeline.
+    /// Gets a session the user may change. Approving a draft puts its binding in force, rejecting one gives
+    /// the learner up, and resuming a session spends a model's tokens. All of these change what serves the
+    /// session's pipeline, so they require the same permission as editing the pipeline.
     private Recorded change(final long id) {
         return permitted(id, DocumentPermission.EDIT);
     }
@@ -731,7 +737,7 @@ public class SupervisorService {
         return attempt;
     }
 
-    /// The learner, where this person may view its pipeline (or, for a pipeline since deleted, its document).
+    /// Checks the user may view the learner's pipeline (or, for a deleted pipeline, its document).
     private Learner readable(final Learner learner, final String docUuid) {
         if (!access.mayLearner(learner, docUuid, DocumentPermission.VIEW)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
@@ -740,7 +746,7 @@ public class SupervisorService {
         return learner;
     }
 
-    /// The learner, where this person may edit its pipeline. Called once the pipeline is known to be live.
+    /// Checks the user may edit the learner's pipeline. Only called once the pipeline is known to be live.
     private Learner changeable(final Learner learner) {
         if (!access.mayPipeline(learner.pipelineUuid(), DocumentPermission.EDIT)) {
             throw new PermissionException(securityContextProvider.get().getUserRef(),
@@ -750,8 +756,8 @@ public class SupervisorService {
         return learner;
     }
 
-    /// The documents a learner's sessions may be under, where this person may read its pipeline: every
-    /// document, since its pipeline may have run under more than one; none where they may not.
+    /// The documents a learner's sessions may be under: every document, since its pipeline may have run
+    /// under more than one, if the user may view the learner; none if they may not.
     private List<String> learnersDocuments(final LearnerRef ref) {
         final Learner learner = learner(ref);
         return storeProvider.get().listDocuments().stream()
@@ -767,7 +773,7 @@ public class SupervisorService {
         return attempt.bindingUuid();
     }
 
-    /// The Learning Flow an attempt ran under, which must still exist for anything to be done to it.
+    /// The Learning Flow a session ran under, which must still exist for anything to be done to it.
     private LearningFlowDoc documentOf(final Recorded attempt) {
         return stored(attempt.attempt().docUuid())
                 .orElseThrow(() -> new IllegalStateException("The Learning Flow of attempt " + attempt.id()

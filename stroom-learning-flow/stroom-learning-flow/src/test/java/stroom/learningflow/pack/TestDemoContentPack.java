@@ -46,31 +46,29 @@ import java.util.zip.ZipFile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// Checks every document the demo content pack is made of.
+/// Checks every document in the demo content pack, and that the committed pack and data are up to date.
 ///
-/// The pack itself is written by [GenerateDemoContentPack], not here: what this is for is the documents
-/// and how they name each other. What the *arrangement* does is
-/// `TestScenario51AnyFormatFromAnyFeedInAPipeline`, which runs the pack's own document, and a pipeline and
-/// filter per feed, over four formats in real pipelines.
+/// The pack is written by [GenerateDemoContentPack], not here. These tests check the documents and how they
+/// refer to each other. Whether the arrangement works is tested by `TestScenario51AnyFormatFromAnyFeedInAPipeline`,
+/// which runs the pack's own document, with a pipeline and filter per feed, over four formats in real pipelines.
 ///
-/// **What this can prove and what it cannot.** Every file is read back with the very classes Stroom's
-/// importer reads it with, so a property name that does not exist, a document that will not
-/// deserialise, an asset with no `.node` beside it or a reference that names nothing in the pack are all
-/// caught here. What is not caught is the importer's own behaviour, which needs a database; the format
-/// is the one Stroom has always read and the pack is written to match an export of it file for file.
+/// Every file is read back with the same classes Stroom's importer uses, so a property name that does not exist,
+/// a document that will not deserialise, an asset with no `.node` file beside it, or a reference to something
+/// not in the pack is caught here. The importer's own behaviour is not tested, because it needs a database; the
+/// pack is written to match an export file for file.
 class TestDemoContentPack {
 
-    /// Where the pack is committed, relative to the root of the repository.
+    /// The committed pack's path, relative to the root of the repository.
     private static final String PACK = "smart-pipelines-demo-v1.0.zip";
-    /// Where the data to post is committed, beside the pack.
+    /// The directory, beside the pack, where the demo data to post is committed.
     private static final String DATA = "demo-data";
 
     @Test
     void theDocumentIsTheOneScenario51Proves() {
         final LearningFlowDoc document = read(LearningFlowDoc.TYPE, LearningFlowDoc.class);
 
-        // Field for field the settings of design 02 §5 scenario 51. Not "much the same as": if this
-        // fails, the pack has drifted from the only run that says it works.
+        // Field for field, the settings that TestScenario51AnyFormatFromAnyFeedInAPipeline runs with. If this
+        // fails, the pack has drifted from the only test that shows it works.
         final LearningFlowDoc scenario = DemoDocument
                 .configure(LearningFlowDoc.builder())
                 .uuid(document.getUuid())
@@ -78,11 +76,11 @@ class TestDemoContentPack {
                 .name(document.getName())
                 .description(document.getDescription())
                 .model(document.getModel())
-                // The time budget is the environment's, as the model is: scenario 51's model is scripted
-                // and its clock fixed, so the budget says nothing about what it proves.
+                // The time budget depends on the environment, as the model does. The scenario's model is
+                // scripted and its clock fixed, so the budget is irrelevant to what it tests.
                 .attemptBudgetMs(document.getAttemptBudgetMs())
-                // The stamp of the built-in question text is the store's to write, and the pack carries
-                // it because the pack is written as a saved document would be.
+                // The built-in question text version is normally stamped by the store on save. The pack
+                // carries it because the pack is written as a saved document would be.
                 .flow(document.getFlow().withBuiltInVersion(Templates.VERSION))
                 .build();
         assertThat(document).isEqualTo(scenario);
@@ -127,8 +125,8 @@ class TestDemoContentPack {
                 .isIn(DemoContentPack.FEEDS));
     }
 
-    /// A pipeline's elements travel in their own asset, and the one thing that would make the demo do
-    /// nothing at all is a stage being attached to no document.
+    /// A pipeline's elements are in their own asset file. A Smart Pipeline element attached to no Learning
+    /// Flow document would make the demo do nothing at all.
     @Test
     void everyStageIsAttachedToTheDocument() {
         final List<String> elements = pathsFor(PipelineDoc.TYPE, ".json");
@@ -155,11 +153,11 @@ class TestDemoContentPack {
                 .noneMatch(property -> "feed".equals(property.getName()));
     }
 
-    /// Task 7, W1-6: the document's translations are judged against one set of schemas and the pipeline's
-    /// Schema filter validates against another, unless the two agree. The demo document names no target
-    /// schema, so it works on any installation whatever version of event-logging is installed: it is
-    /// asked for event-logging 3.0.0, which its content writes, and judged against the `EVENTS` group,
-    /// which is what each pipeline's Schema filter validates against too.
+    /// The document's translations are judged against one set of schemas and the pipeline's Schema filter
+    /// validates against another, so the two must agree. The demo document names no target schema, so it works
+    /// on any installation whatever version of event-logging is installed: it is asked for event-logging 3.0.0,
+    /// which its content writes, and is judged against the `EVENTS` group, which each pipeline's Schema filter
+    /// also validates against.
     @Test
     void thePipelinesValidateAgainstTheSchemasTheDocumentIsJudgedAgainst() {
         assertThat(DemoContentPack.document().getTargetSchema())
@@ -175,8 +173,8 @@ class TestDemoContentPack {
         });
     }
 
-    /// A filter carrying an id, a processor or a tracker is refused on import, and the pack would then
-    /// need a filter building by hand — which is most of what it exists to save.
+    /// A filter carrying an id, a processor or a tracker is refused on import, and a person would then have to
+    /// build each filter by hand, which is most of what the pack exists to save.
     @Test
     void everyFilterIsOneThatCanBeImported() {
         final List<ProcessorFilter> filters = readAll(ProcessorFilter.ENTITY_TYPE, ProcessorFilter.class);
@@ -210,15 +208,15 @@ class TestDemoContentPack {
                         .orElseThrow());
     }
 
-    /// A document with no version cannot be written at all — the column it lands in does not take null —
-    /// and the import records that against the document while the explorer entry is made anyway. What a
-    /// person then sees is a pack that imported and a document that will not open.
+    /// A document with no version cannot be stored, because its database column does not accept null. The
+    /// import records that as an error against the document but creates the explorer entry anyway, so a person
+    /// would see a pack that imported and a document that will not open.
     @Test
     void everyDocumentCarriesTheVersionASavedDocumentHas() {
         final Map<String, byte[]> files = DemoContentPack.files();
         final List<String> documents = files.keySet().stream()
                 .filter(name -> name.endsWith(".meta"))
-                // A processor filter is not a document in the store and has a version of its own kind.
+                // A processor filter is not a stored document, and its version is of a different kind.
                 .filter(name -> !name.contains("." + ProcessorFilter.ENTITY_TYPE + "."))
                 .toList();
         assertThat(documents).describedAs("the document, the model, and a pipeline and a feed per feed")
@@ -229,8 +227,8 @@ class TestDemoContentPack {
                 .isNotNull());
     }
 
-    /// Every asset has the `.node` beside it that tells the importer what it is, and every `.node` says
-    /// the same thing about its document as the document's file name does.
+    /// Every asset has a `.node` file beside it that tells the importer what it is, and every `.node` file
+    /// agrees with the document's file name.
     @Test
     void everyAssetIsAnnouncedByANodeFile() {
         final Map<String, byte[]> files = DemoContentPack.files();
@@ -259,7 +257,7 @@ class TestDemoContentPack {
                 .allSatisfy(name -> assertThat(name).startsWith("stroomContent/Smart_Pipelines_Demo/"));
     }
 
-    /// Four files of four unrelated formats, so that a demo has something to post.
+    /// The pack includes one data file per feed, in unrelated formats, so a demo has something to post.
     @Test
     void thereIsSomethingToPost() {
         final Map<String, byte[]> files = DemoContentPack.files();
@@ -270,9 +268,9 @@ class TestDemoContentPack {
                 .allSatisfy(name -> assertThat(files.get(name)).isNotEmpty());
     }
 
-    /// The pack is committed to the repository, so it can fall behind the code that writes it — and a
-    /// demo run from a stale zip is a demo of something nobody has tested. Regenerate it by running
-    /// [GenerateDemoContentPack] with the path this looks in.
+    /// The pack is committed to the repository, so it can fall behind the code that writes it, and a demo run
+    /// from a stale zip demonstrates something nobody has tested. Regenerate it by running
+    /// [GenerateDemoContentPack] with the path this test reads.
     @Test
     void theCommittedPackIsTheOneThisCodeWrites() throws IOException {
         final Path committed = repositoryRoot().resolve(PACK);
@@ -283,9 +281,9 @@ class TestDemoContentPack {
         assertThatZipHolds(committed, DemoContentPack.files());
     }
 
-    /// One zip per feed, each holding the sample that feed is demonstrated with and a `.meta` naming the
-    /// feed, so that posting it needs nothing said in the request. Committed beside the pack, and so
-    /// checked against what the code writes, as the pack is.
+    /// There is one data zip per feed, holding that feed's demo sample and a `.meta` file naming the feed, so
+    /// posting it needs no headers in the request. The zips are committed beside the pack and so are checked
+    /// against what the code writes, as the pack is.
     @Test
     void everyFeedHasDataToPostAndItIsWhatThisCodeWrites() throws IOException {
         for (final String feed : DemoContentPack.FEEDS) {
@@ -323,8 +321,8 @@ class TestDemoContentPack {
         }
     }
 
-    /// The directory the build is rooted in, found by climbing until the settings file appears rather
-    /// than by counting `..` from wherever a test happens to be run.
+    /// Finds the repository root by climbing until `settings.gradle` appears, rather than by counting `..`
+    /// from wherever the test happens to be run.
     private static Path repositoryRoot() {
         Path directory = Paths.get("").toAbsolutePath();
         while (directory != null && !Files.exists(directory.resolve("settings.gradle"))) {

@@ -20,14 +20,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * What a person wants better about a binding that is already serving (A46).
- * <p>
- * The message is optional: asking again from the incumbent, with the records it was accepted on and the
- * score it achieved on them, is itself worth something. When there is one it is kept as guidance for the
- * learner rather than for this attempt, so it is carried into every question asked about that learner from
- * then on — including the relearning of A29 months later.
- */
+/// A person's request to improve a binding that is already serving, with what they want done better.
+///
+/// The message is optional: asking the model again, starting from the serving binding with the records it was
+/// accepted on and the score it achieved on them, can be worthwhile on its own. A message is kept as guidance
+/// for the learner rather than for this session alone, so it is carried into every later question about that
+/// learner, including any relearning long afterwards.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ImproveRequest {
 

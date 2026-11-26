@@ -31,9 +31,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/// What the Setup tab's route map says under each section ([SetupSection]): a line of what the section
-/// is set to, e.g. "Standard · 7 gates", and what is wrong in it, if anything. What is wrong is what the
-/// Feeds tab's readiness check says ([Readiness]), shown against the section its fix is made in.
+/// Works out the text the Setup tab's route map shows under each section ([SetupSection]): a one-line summary
+/// of the section's settings, e.g. "Standard · 7 gates", and the problem with it, if there is one.
+///
+/// The problems are those found by the same readiness checks ([Readiness]) that the Pipelines tab
+/// (`FeedsTab`) shows. Each is shown against the section where it can be fixed.
 public final class SetupSummary {
 
     private final Map<SetupSection, String> summaries;
@@ -44,11 +46,11 @@ public final class SetupSummary {
         this.problems = problems;
     }
 
-    /// Sums up a document's setup, section by section.
+    /// Summarises a document's setup, section by section.
     ///
-    /// @param doc      The document, as the Setup tab has it now.
-    /// @param examples The built-in setups, as fetched (Track 2 step 1c).
-    /// @return What each section says.
+    /// @param doc      The document, including any unsaved changes made on the Setup tab.
+    /// @param examples The built-in learning flows, as fetched from the server.
+    /// @return The summary and any problem for each section.
     public static SetupSummary of(final LearningFlowDoc doc, final List<BuiltInFlow> examples) {
         final Map<SetupSection, String> summaries = new EnumMap<>(SetupSection.class);
         summaries.put(SetupSection.LEARNING, learning(doc));
@@ -69,13 +71,13 @@ public final class SetupSummary {
     }
 
     /// @param section A section.
-    /// @return What it is set to, e.g. "On · GPT-4o".
+    /// @return A summary of the section's settings, e.g. "On · GPT-4o".
     public String summary(final SetupSection section) {
         return summaries.get(section);
     }
 
     /// @param section A section.
-    /// @return What is wrong in it, or null for nothing.
+    /// @return The first problem found in the section, or null if there is none.
     public String problem(final SetupSection section) {
         return problems.get(section);
     }

@@ -26,33 +26,34 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/// What a schema says a document of it holds, written for the model (task 7, decision D2 option G).
+/// Describes the structure of a target schema in text for the model's prompts, for any schema other than
+/// event-logging.
 ///
-/// Event-logging has guidance written by hand — which branch means what, which element order the
-/// validator enforces, what not to reach for — and that stays its built-in text. Every other schema is
-/// described from its own XSD, by the same content-model reading the conformance check already uses for
-/// its feedback: the root, what it holds, and what those hold, a level at a time outwards from the root
-/// until the budget runs out.
+/// Event-logging has hand-written guidance (which branch means what, which element order the validator
+/// enforces, what to avoid), which is part of the built-in templates. Every other schema is described from
+/// its own XSD, using the same content-model reading the conformance check uses for its feedback: the root,
+/// what it holds, and what those hold, a level at a time outwards from the root until the size budget runs
+/// out.
 ///
-/// It is a starting point, not a specification. A model given it still learns the rest from what the
-/// validator says when a candidate falls short, which is the loop the whole stage is built on; the
-/// summary's job is to stop the first few attempts being spent discovering that the root is called
-/// `Sightings`.
+/// The description is a starting point, not a specification. The model still learns the rest from what the
+/// validator says when a candidate falls short. The description saves the first few candidates from being
+/// spent discovering basic facts such as the name of the root element.
 public final class TargetStructure {
 
-    /// How much of a schema is worth carrying in every question. A large schema described in full would
-    /// crowd out the sample and the feedback, which are what a candidate is actually judged on.
+    /// The maximum number of characters of schema description included in every question. A large schema
+    /// described in full would crowd out the sample and the feedback, which matter more to the candidate.
     static final int BUDGET = 2_000;
-    /// However much room there is, a model shown this many lines has the shape of the thing.
+    /// The maximum number of description lines, whatever the character budget; this many is enough to show
+    /// the model the overall structure.
     static final int LINES = 12;
 
     private TargetStructure() {
     }
 
-    /// The passage describing a target schema.
+    /// Returns the passage of prompt text describing a target schema.
     ///
     /// @param target The schema. Never event-logging, which has its own built-in text, and never null.
-    /// @return The passage, or a short honest sentence where the XSD gives nothing to describe.
+    /// @return The passage, or a short sentence saying so where the XSD gives nothing to describe.
     public static String of(final TargetSchema target) {
         final String root = target.rootElement();
         if (root == null) {
@@ -72,9 +73,9 @@ public final class TargetStructure {
                 .toString();
     }
 
-    /// The element one record becomes, where the schema makes it plain: the root's only child (task 7,
-    /// W1-1). A record is a child of the root (W1-5), so a root that may hold only one kind of element
-    /// names it; a root holding several, or a schema declaring no root, does not.
+    /// Returns the element one record becomes, where the schema makes it clear: the root's only child. Each
+    /// record is a child of the root, so a root that may hold only one kind of element identifies it; a root
+    /// that may hold several, or a schema that declares no root, does not.
     ///
     /// @param target The schema. Never event-logging, whose record is `Event`, and never null.
     /// @return The element's local name, or empty where the schema doesn't make it plain.
@@ -85,13 +86,13 @@ public final class TargetStructure {
                 : Optional.empty();
     }
 
-    /// The elements a schema's root may hold (task 7, W1-5). Every child of the root is read as one record,
-    /// so a root that may hold more than one kind of element, such as a header beside its records, would
-    /// have the header counted as a record; the Setup tab warns of it.
+    /// Returns the elements a schema's root may hold. Every child of the root is treated as one record, so a
+    /// root that may hold more than one kind of element, such as a header beside its records, would have the
+    /// header counted as a record; the Setup tab warns about this.
     ///
     /// @param target The schema, never null.
-    /// @return Their names, in the order the XSD gives them; empty where the XSD declares no root, or it
-    ///         holds no elements.
+    /// @return Their names, in the order the XSD gives them; empty where the XSD declares no root, or the
+    ///         root holds no elements.
     public static List<String> rootChildren(final TargetSchema target) {
         final String root = target.rootElement();
         if (root == null || target.text() == null) {
@@ -100,9 +101,9 @@ public final class TargetStructure {
         return new ContentModels(List.of(target.text())).childrenOf(root);
     }
 
-    /// The content models from the root outwards, broadest first, until the budget or the line count
-    /// runs out. Breadth first rather than depth first because the elements nearest the root are the
-    /// ones a candidate has to get right before anything deeper matters.
+    // Describes the content models from the root outwards, breadth first, until the character budget or the
+    // line limit runs out. Breadth first, because a candidate has to get the elements nearest the root right
+    // before anything deeper matters.
     private static List<String> describe(final ContentModels models, final String root) {
         final List<String> lines = new ArrayList<>();
         final Set<String> seen = new LinkedHashSet<>();

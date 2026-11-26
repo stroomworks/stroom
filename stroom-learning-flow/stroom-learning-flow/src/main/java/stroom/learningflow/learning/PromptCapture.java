@@ -27,13 +27,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/// The advisor a rebuild walks with (decision N9): it answers every question from the record, as a resume
-/// does, and keeps the prompt each recorded turn was put to the model with — the system text with the
-/// guidance the turn carried, and the question — in the words the run was asked in. It never asks anyone:
-/// a question the record does not answer stops the walk, which is where the run itself stopped.
+/// An advisor used to rebuild the prompts a past run sent to the model, so a person can see them.
 ///
-/// The earlier exchanges that went with each question are not repeated here: they are the turns before
-/// it, which the conversation already shows.
+/// It walks the run's flow again, answering every question from the recorded turns as a resumed attempt
+/// does, and keeps the prompt each recorded turn was sent with: the system text, the guidance the turn had,
+/// and the question, in the wording the run used. It never asks the model. A question the record does not
+/// answer stops the walk, which is where the run itself stopped.
+///
+/// The earlier exchanges sent with each question are not repeated in the captured prompt, because they are
+/// the turns before it, which the conversation already shows.
 public final class PromptCapture implements Advisor {
 
     private final RecordedAdvisor replay;
@@ -43,10 +45,10 @@ public final class PromptCapture implements Advisor {
     private final Map<Integer, Integer> withdrawn = new HashMap<>();
 
     /// @param turns    The run's recorded turns.
-    /// @param words    The run's own words, as [QuestionText#of(stroom.learningflow.shared.LearningFlowDoc,
-    ///                 AskedWith, TargetSchema)] builds them from what it recorded.
-    /// @param standing The guidance standing now, from which each turn's is read back by the ids it
-    ///                 recorded carrying; anything since withdrawn is no longer there to show.
+    /// @param words    The run's own wording, as [QuestionText#of(stroom.learningflow.shared.LearningFlowDoc,
+    ///                 AskedWith, TargetSchema)] builds it from what the run recorded.
+    /// @param standing The guidance in force now. Each turn's guidance is found in it by the ids the turn
+    ///                 recorded; guidance withdrawn since can no longer be shown.
     public PromptCapture(final List<Turn> turns, final QuestionText words, final List<Given> standing) {
         this.replay = new RecordedAdvisor(turns, RecordedAdvisor.awaiting());
         this.words = words;
@@ -60,8 +62,8 @@ public final class PromptCapture implements Advisor {
 
     @Override
     public String ask(final List<Exchange> transcript, final Question question, final List<Given> guidance) {
-        // Rendered before the record is consulted: a question the record doesn't answer throws, and its
-        // prompt is no part of what was sent
+        // Render before consulting the record: a question the record doesn't answer throws, and its prompt
+        // was never sent, so it must not be captured
         final String rendered = words.render(question);
         final String answer = replay.ask(transcript, question, guidance);
         final Optional<Turn> turn = replay.lastReplayed();
@@ -88,13 +90,13 @@ public final class PromptCapture implements Advisor {
         return replay.carried(offered);
     }
 
-    /// @return The prompt each turn the walk reached was put to the model with, by its number.
+    /// @return The prompt each turn the walk reached was sent to the model with, keyed by turn number.
     public Map<Integer, String> prompts() {
         return Map.copyOf(prompts);
     }
 
-    /// @return How many notes each turn carried that have since been withdrawn, and so can't be shown, by
-    ///         its number; turns with none are absent.
+    /// @return For each turn, keyed by turn number, how many items of the guidance it was asked with have
+    ///         since been withdrawn and so can't be shown. Turns with none are absent.
     public Map<Integer, Integer> withdrawn() {
         return Map.copyOf(withdrawn);
     }

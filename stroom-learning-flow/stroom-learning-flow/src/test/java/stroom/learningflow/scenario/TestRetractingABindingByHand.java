@@ -37,18 +37,17 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Ruling A28, design 01 §11.6: **taking a binding back by hand.**
+/// Tests a person retracting a serving binding by hand, having read its output and decided it is wrong.
 ///
-/// The gate retracts a provisional binding that fails it (§6). This is the same act for a reason no gate
-/// can see — a person has read what the binding is producing and decided it should not be — and what
-/// follows is deliberately identical: the binding goes, the learner knows nothing again, and everything the
-/// binding produced is asked to be processed again as it would be now (A12).
+/// The outcome is the same as when the promotion gate retracts a provisional binding that fails it: the
+/// binding is removed, the learner is left with nothing learned, and the streams the binding produced are
+/// counted so that a person can reprocess them.
 ///
-/// It is neither of the two things that look like it. Removing the binding's row is exactly what it says:
-/// a binding taken out of the table, leaving the learner thinking it is bound and the streams it produced
-/// standing as though they were right. `reject` is A25's decision about a draft that served nothing, and
-/// gives the learner up so it does not learn again. A retracted learner *does* learn again — the binding
-/// was wrong, the feed is not.
+/// Retracting differs from two similar operations. Simply deleting the binding's row would leave the
+/// learner's state as though it were bound, and the streams it produced as though they were right.
+/// Rejecting is the decision on a draft that never served anything, and it gives the learner up so that
+/// it does not learn again. A retracted learner does learn again, because the binding was wrong, not the
+/// feed.
 class TestRetractingABindingByHand {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -61,7 +60,7 @@ class TestRetractingABindingByHand {
         final LearningFlowDoc doc = doc();
         scenarios.process(learn(scenarios), doc, stream(1L)).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
-        // A second stream, so that the binding has produced something to ask for again.
+        // A second stream, so that the binding has served a stream as well as the one it was learned from.
         scenarios.process(learn(scenarios), doc, stream(2L)).learned();
         assertThat(scenarios.outputs.boundBy(bound.getUuid(), bound.getPipeline().getUuid()))
                 .describedAs("the binding has produced output rows to take back")
@@ -90,7 +89,7 @@ class TestRetractingABindingByHand {
                 .isEmpty();
     }
 
-    /// The next stream of a retracted learner is learned afresh. That is the whole difference from
+    /// The next stream of a retracted learner is learned from scratch. That is the main difference from
     /// rejecting, and the reason retracting is safe to offer for a binding that is merely wrong.
     @Test
     void theNextStreamOfTheLearnerLearnsItAgain() {
@@ -113,8 +112,8 @@ class TestRetractingABindingByHand {
                 .isNotEqualTo(bound.getUuid());
     }
 
-    /// The two states in which retracting must refuse rather than proceed, each of which would undo
-    /// something somebody else decided.
+    /// Retracting is refused, with a reason, for a UUID that is not a binding of the document and for a draft
+    /// awaiting review, which must be approved or rejected instead.
     @Test
     void whatCannotBeRetractedSaysSoRatherThanGuessing() {
         final Scenarios scenarios = new Scenarios();
@@ -133,12 +132,12 @@ class TestRetractingABindingByHand {
                 .hasMessageContaining("draft awaiting review");
     }
 
-    /// The attempt that wrote the binding says it has been taken back.
+    /// The attempt that promoted the binding is marked as retracted, with who retracted it and why.
     ///
-    /// Not through the door A25's decisions use: that one closes the attempt *awaiting review* for a
-    /// binding, and a retraction is about a binding that was **serving** — whose attempt closed promoted a
-    /// long time ago. Sent through it, the call matched nothing and the attempt went on reading
-    /// "Promoted 0.93" for a binding that no longer exists.
+    /// This is a different update from the one approving or rejecting a draft makes, which closes an attempt
+    /// that is awaiting review. A retracted binding was serving, so its attempt closed as promoted, possibly
+    /// long ago, and it is that promoted attempt that must change. Otherwise the attempt would go on
+    /// showing as promoted for a binding that no longer exists.
     @Test
     void theAttemptThatBoundItSaysSo() {
         final Scenarios scenarios = new Scenarios();
@@ -159,20 +158,19 @@ class TestRetractingABindingByHand {
                 });
     }
 
-    /// A learner that was given up learns again when somebody asks, from its next stream (A28, design 01
-    /// §11.6).
+    /// A learner that was given up learns again from its next stream when a person sends it back.
     ///
-    /// This is the door the ruling leans on — "they raise an attempt for a given-up learner from the same
-    /// screen, so no on-request learning mode is needed". Marking the learner is not enough on its own:
-    /// every path reads the give-up first and sentinels the stream before it ever looks at the mark, so
-    /// a mark on a given-up learner says nothing at all.
+    /// This is how a person gets a given-up learner to learn again, so no separate on-request learning mode is
+    /// needed. Marking the learner for relearning is not enough on its own: every path checks the give-up
+    /// first and errors the stream before it looks at the mark, so the give-up must be cleared as well.
     @Test
     void aLearnerThatGaveUpLearnsAgainWhenSomebodyAsks() {
         final Scenarios scenarios = new Scenarios();
         scenarios.states.giveUp(Scenarios.LEARNER, "doc-1", "The model could not make sense of it");
 
-        // Sent back from the attempt that gave up (A28). The streams that errored are ordinary error
-        // streams, reprocessed on the pipeline as any others are (A129, A131): this counts none of them.
+        // The learner is sent back from the attempt that gave up. The streams that errored are ordinary error
+        // streams, which a person reprocesses on the pipeline like any others, so sending back counts none
+        // of them.
         scenarios.supervisorActions().relearn(doc(), Scenarios.LEARNER,
                 "Sent back to be learned again by jo: the feed has been fixed");
 
@@ -200,7 +198,7 @@ class TestRetractingABindingByHand {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Named, because a document with no scorers scores every chain 1.0.
+                // The checks are set explicitly, because a document with no scorers scores every chain 1.0.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

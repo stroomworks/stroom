@@ -37,8 +37,8 @@ class TestHeartbeatingAdvisor {
 
     @Test
     void theClaimIsPushedOutWhileTheModelIsAnswering() throws InterruptedException {
-        // A45: a call longer than the lease must not let the claim lapse. The model here answers only once
-        // the claim has been pushed out three times while it was working.
+        // A session's claim on its learner is a lease, and a model call longer than the lease must not let the
+        // claim lapse. The model here answers only once the claim has been renewed three times while it works.
         final AtomicInteger beats = new AtomicInteger();
         final CountDownLatch threeBeats = new CountDownLatch(3);
         final Advisor slow = (transcript, question) -> {
@@ -56,8 +56,8 @@ class TestHeartbeatingAdvisor {
 
         assertThat(advisor.ask(List.of(), null)).isEqualTo("answer");
 
-        // And it stops with the answer: no beat for a question that is no longer out, not even one that
-        // was running as the answer came back.
+        // The heartbeat stops with the answer: there is no beat for a question that has been answered, not even
+        // one that was already due as the answer came back.
         final int atAnswer = beats.get();
         Thread.sleep(EVERY.toMillis() * 10);
         assertThat(beats.get()).describedAs("no beats once answered").isEqualTo(atAnswer);

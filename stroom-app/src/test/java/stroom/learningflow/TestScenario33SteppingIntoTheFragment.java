@@ -89,28 +89,24 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/**
- * Design 02 §5, scenario 33 (Tier 2): <b>stepping into a supervised stage</b> (A30, design 01 §11.7,
- * §12 item 19).
- * <p>
- * A supervised stage looks, from outside, like one element that takes a stream and emits events.
- * Everything that decided the shape of them — the records the learned parser cut, what the learned
- * transform made of each — happens inside it and is invisible to the person debugging the pipeline it
- * sits in. This is what opens it: the fragment's own elements, beneath the stage, each with what it was
- * given and what it wrote for the record at the cursor, stepping like any other pair.
- * <p>
- * The chain shown is the fragment as it was learned. Two elements the runner adds to make a fragment
- * runnable — a parser in front of a chain that has none, and a filter at the tail to keep the events —
- * are its scaffolding and are no part of what was learned, so they are not shown, exactly as the walk
- * that scores the chain reads the fragment as the fragment has it.
- */
+/// Tests stepping into the fragment that a Learning Flow element runs, in a running node.
+///
+/// From outside, a Learning Flow element looks like a single element that takes a stream and emits events.
+/// The records the learned parser produced, and what the learned transform made of each, happen inside it
+/// and would be invisible to a person debugging the pipeline. The stepper therefore shows the fragment's
+/// own elements beneath the Learning Flow element, each with its input and output for the record at the
+/// cursor, and they step like any other element.
+///
+/// The chain shown is the fragment as it was learned. The runner adds two elements to make a fragment
+/// runnable: a parser in front of a chain that has none, and a filter at the end to collect the events.
+/// These are not part of what was learned, so they are not shown.
 class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -138,10 +134,8 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
     @Inject
     private SteppingService steppingService;
 
-    /**
-     * Learn a feed, then step the pipeline that learned it: the supervisor's step details carry the
-     * fragment's own chain, each element with the record's real input and output.
-     */
+    /// Learns a feed, then steps the pipeline that learned it, and checks that the element's step details
+    /// hold the fragment's own chain, with each element's real input and output for the record.
     @Test
     void theFragmentsElementsStepBeneathTheStage() {
         final DocRef feed = storeCreationTool.getOrCreateFeedDoc(FEED);
@@ -193,14 +187,13 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
                 .contains("<Event");
     }
 
-    /**
-     * A chain that splits steps record by record.
-     * <p>
-     * A stage standing where a parser stands is handed the stream, so the learned parser reads the
-     * whole of it once; the split then cuts what the parser wrote and the transform is given one record
-     * at a time (design 04 §3), and so is the stepper: each record under the cursor shows the transform
-     * given that record and writing that record's event, and stepping forward moves them on.
-     */
+    /// Checks that a chain with a split steps record by record.
+    ///
+    /// The Learning Flow element sits where a parser would, so it is given the whole stream, and the learned
+    /// parser reads all of it once. The split then divides the parser's output into records and the
+    /// transform is given one record at a time. The stepper shows the same: for the record at the cursor,
+    /// the transform's input is that record and its output is that record's event, and stepping forward
+    /// moves on to the next record.
     @Test
     void aChainThatSplitsStepsRecordByRecord() {
         final DocRef feed = storeCreationTool.getOrCreateFeedDoc(FEED);
@@ -234,23 +227,22 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
                 .doesNotContain("2020-06-17T08:00:00.000Z");
     }
 
-    /// **A feed nobody has taught can be stepped**, which is the case the stage pane exists for.
+    /// Checks that a feed nothing has been learned for can still be stepped, which is the main case the
+    /// element's stepping pane exists for.
     ///
-    /// A stage that binds nothing emits nothing, and the stepper stops at records — a record being an
-    /// `endDocument` reaching the detector below the element. So an untaught feed produced no records,
-    /// the stepper found nothing to stop at, and the pane that says *would learn*, with the learner and
-    /// the reason, was the one thing that could never be reached in the one case it was written for.
-    ///
-    /// A step is a dry run, so one empty document costs nothing and is what carries the explanation. In
-    /// a task the same document would be an empty stream, which reads as a feed that had nothing in it,
-    /// and that is why it is done only here.
+    /// The stepper stops at records, where a record is an `endDocument` reaching the record detector below
+    /// the element. An element with no binding emits nothing, so without special handling the stepper
+    /// would find nothing to stop at, and the pane that says the element *would learn*, with the learner
+    /// and the reason, could never be shown. When stepping, the element therefore emits one empty document
+    /// to carry the explanation. This is only done when stepping, which is a dry run. In a processing task
+    /// the same document would produce an empty output stream, which would look like a feed with no data.
     @Test
     void aFeedNobodyHasTaughtCanStillBeStepped() {
         final DocRef feed = storeCreationTool.getOrCreateFeedDoc(FEED);
         final DocRef doc = document();
         final DocRef pipeline = pipeline(feed, doc);
         rawStream();
-        // Nothing has run it, so nothing is bound and the model must not be asked by looking.
+        // Nothing has processed the stream, so nothing is bound, and stepping must not ask the model.
         advisor.set(Script.of());
 
         final SteppingResult stepped = step(pipeline, StepType.FIRST);
@@ -295,10 +287,8 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
                 .build();
     }
 
-    /**
-     * One stream through the pipeline, which teaches it: after this the learner is bound and stepping has a
-     * fragment to open.
-     */
+    /// Processes one stream through the pipeline so that the learner learns and is bound, giving stepping
+    /// a fragment to open.
     private void learn(final DocRef pipeline, final DocRef doc) {
         processorFilterService.create(CreateProcessFilterRequest.builder()
                 .pipeline(pipeline)
@@ -331,17 +321,14 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
         assertThat(fragment.getPipelineData().getAddedElements())
                 .extracting(PipelineElement::getType)
                 .containsExactly("Source", "DSParser", "SplitFilter", "XSLTFilter");
-        // The model must not be asked again: a step is a dry run, and anything it consulted would be a
-        // model call spent by looking.
+        // A step is a dry run and must not call the model, so the script is emptied to catch any call.
         advisor.set(Script.of());
     }
 
-    /**
-     * The split and target questions are answered from the configurations the script will give, as the
-     * module's scenarios do; the script states only what the scenario is about. The structure's compiler
-     * is built when a question is asked, inside the processing pipeline's scope, so it reaches the node's
-     * parser factory the way the element does.
-     */
+    /// Starts the script of model answers. As in the module's scenarios, the split and target questions are
+    /// answered from the configurations given to [Structure], so the script only needs the chain and
+    /// configuration answers this test is about. The Data Splitter compiler uses the node's parser factory,
+    /// as the element does.
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of().structure(new Structure(
@@ -353,8 +340,8 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
@@ -375,11 +362,9 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
         return docRef;
     }
 
-    /**
-     * {@code Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter → XMLWriter →
-     * StreamAppender}: the supervised stage where a parser and its translation would be, and the standard
-     * tail of an event pipeline after it.
-     */
+    /// Creates the pipeline `Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter →
+    /// XMLWriter → StreamAppender`. The Learning Flow element takes the place of a parser and its
+    /// translation, followed by the usual elements at the end of an event pipeline.
     private DocRef pipeline(final DocRef feed, final DocRef doc) {
         final PipelineData data = new PipelineDataBuilder()
                 .addElement(new PipelineElement("Source", "Source"))
@@ -436,9 +421,8 @@ class TestScenario33SteppingIntoTheFragment extends AbstractProcessIntegrationTe
         return new String(streamStore.getFileData().get(meta.getId()).get(meta.getTypeName()), StandardCharsets.UTF_8);
     }
 
-    /**
-     * The two serialisers indent differently and one writes a declaration; the events are the same.
-     */
+    /// Normalises XML for comparison, because the two serialisers indent differently and only one writes an
+    /// XML declaration.
     private static String canonical(final String xml) {
         return xml.replaceAll("<\\?xml[^>]*\\?>", "").replaceAll(">\\s+<", "><").strip();
     }

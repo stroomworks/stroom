@@ -13,7 +13,8 @@
     </Events>
   </xsl:template>
 
-  <!-- One record is one action on a document; the note is unquoted here, a doubled quote being one -->
+  <!-- One record is one action on a document. The note's CSV quoting is removed here, with a doubled
+       quote inside it standing for one quote. -->
   <xsl:template match="record">
     <xsl:variable name="raw" select="data[@name='note']/@value"/>
     <xsl:variable name="note" select="if (starts-with($raw, '&quot;'))

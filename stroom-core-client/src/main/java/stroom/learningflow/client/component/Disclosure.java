@@ -28,12 +28,13 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.Iterator;
 import java.util.function.Consumer;
 
-/// What is out of sight until someone asks for it (disclosure.css): a link with a chevron, e.g. "Advanced
-/// options", that unfolds what a template puts inside it. Folded, its content is hidden; the link says which
-/// it is (`aria-expanded`) and what it opens (`aria-controls`).
+/// A section that is hidden until someone asks for it: a link with a chevron, e.g. "Advanced options", that
+/// expands to show the widgets a template puts inside it (styled by `disclosure.css`). When collapsed, its
+/// content is hidden; the link tells assistive technology whether it is expanded (`aria-expanded`) and what
+/// it controls (`aria-controls`).
 ///
-/// Whoever fills it decides when it opens of its own accord, e.g. where what it holds is not as a new
-/// document has it, so that nothing changed is ever out of sight.
+/// The screen that uses it decides when to expand it automatically, e.g. when its content holds a setting
+/// that differs from a new document's, so that a changed setting is never hidden.
 public class Disclosure extends Composite implements HasWidgets.ForIsWidget {
 
     private final LinkButton toggle = new LinkButton();
@@ -42,7 +43,7 @@ public class Disclosure extends Composite implements HasWidgets.ForIsWidget {
     private Consumer<Boolean> onToggle = opened -> {
     };
 
-    /// Makes it folded, with no text.
+    /// Creates it collapsed, with no link text.
     public Disclosure() {
         final FlowPanel root = new FlowPanel();
         root.setStyleName("disclosure");
@@ -66,7 +67,7 @@ public class Disclosure extends Composite implements HasWidgets.ForIsWidget {
         toggle.setText(text);
     }
 
-    /// @param open Whether its content is shown.
+    /// @param open Whether to show its content.
     public void setOpen(final boolean open) {
         this.open = open;
         body.setVisible(open);
@@ -78,12 +79,12 @@ public class Disclosure extends Composite implements HasWidgets.ForIsWidget {
         return open;
     }
 
-    /// @param onToggle Told whether it is open, each time the user opens or folds it.
+    /// @param onToggle Called with whether it is now expanded, each time the user expands or collapses it.
     public void setOnToggle(final Consumer<Boolean> onToggle) {
         this.onToggle = onToggle;
     }
 
-    /// Puts the focus on its link.
+    /// Puts the focus on the link.
     public void focus() {
         toggle.setFocus(true);
     }

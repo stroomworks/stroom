@@ -25,9 +25,9 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// The bindings in memory, held to what the table holds them to: a uuid names one binding across every
-/// learner, and a write names the learner whose binding it is. A scenario that wrote another learner's
-/// binding by mistake would pass in memory and fail on a node otherwise.
+/// Tests that the in-memory learner bindings enforce the same rules as the database table: a UUID identifies one
+/// binding across every learner, and a write must name the learner the binding belongs to. Otherwise a scenario
+/// test that wrote another learner's binding by mistake would pass in memory and fail on a real node.
 class TestInMemoryLearnerBindings {
 
     private static final Learner LEARNER = new Learner("pipeline-1", "learningFlow");

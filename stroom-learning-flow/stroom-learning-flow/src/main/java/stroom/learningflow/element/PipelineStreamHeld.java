@@ -31,14 +31,14 @@ import stroom.util.logging.LogUtil;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
-/// Holds a judged stream in the pipeline's state, the way a processor task holds the stream it is
-/// processing (`AbstractProcessorTaskExecutor`). This is what makes `stroom:format-date` take a missing
-/// year from the stream being judged rather than from the clock, and `stroom:meta` answer for it
-/// (assumption AS6).
+/// Puts the stream being judged by the background worker into the pipeline's state, the way a processor
+/// task does for the stream it is processing (`AbstractProcessorTaskExecutor`). This makes
+/// `stroom:format-date` take a missing year from the stream being judged rather than from the clock, and
+/// makes `stroom:meta` return that stream's metadata.
 ///
-/// Both holders are pipeline-scoped, so this must run inside the scope the attempt is carried in, and must
-/// run for **every** attempt: the worker carries a batch in one scope, and an attempt that did not replace
-/// the previous one's meta would take the previous stream's year without saying so.
+/// Both holders are pipeline-scoped, so this must be called inside the scope the attempt runs in, and
+/// for **every** attempt: the worker runs a batch of attempts in one scope, and an attempt that did not
+/// replace the previous one's meta would silently use the previous stream's year.
 public class PipelineStreamHeld implements StreamHeld {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PipelineStreamHeld.class);
@@ -67,21 +67,21 @@ public class PipelineStreamHeld implements StreamHeld {
         try {
             final Meta meta = metaService.getMeta(metaId);
             if (meta == null) {
-                // The stream has gone since the attempt was raised. The attempt is abandoned for that
-                // reason anyway; leaving a previous stream's meta in place would be worse than none.
+                // The stream has been deleted since the attempt was opened, so the attempt will be
+                // abandoned anyway; leaving a previous stream's meta in place would be worse than none.
                 clear();
                 return;
             }
             final MetaHolder metaHolder = metaHolderProvider.get();
             metaHolder.setMeta(meta);
             final StreamMetaDataProvider provider = new StreamMetaDataProvider(metaHolder, pipelineStore);
-            // The zone goes in the metadata while learning as well as while serving: a date judged in one
-            // zone and served in another would be a translation that changed meaning on promotion
+            // The zone goes in the metadata while learning as well as while serving, otherwise a date
+            // judged in one zone and served in another would change meaning on promotion.
             final ResolvedZone zone = zones.of(learner, provider.get(ResolvedZone.HEADER));
             metaDataHolderProvider.get().setMetaDataProvider(new ZonedMetaData(provider, zone));
         } catch (final RuntimeException e) {
-            // A judged run that cannot be told which stream it is judging must not quietly use the last
-            // one's: it is better for a date without a year to fail than to be given a stale year.
+            // A run that cannot be told which stream it is judging must not quietly use the previous one:
+            // it is better for a date without a year to fail than to be given a stale year.
             LOGGER.error(() -> LogUtil.message(
                     "The stream {} could not be held for judging, so a date with no year has nothing to "
                     + "take its year from: {}", metaId, e.getMessage()), e);

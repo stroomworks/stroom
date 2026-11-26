@@ -18,22 +18,21 @@ package stroom.learningflow.shared;
 
 import java.util.List;
 
-/// Two of the built-in setups, for the shared tests that walk them.
+/// Two of the built-in example flows, for the tests in this module that need them.
 ///
-/// **This is a copy, and knowingly so.** The setups are defined once, as JSON beside `FlowExamples` in
-/// `stroom-learning-flow`, and `TestFlowExamples` is what holds them to their shape. A test in
-/// `stroom-core-shared` cannot reach that module — it is the other way round — so a test here that
-/// needs the *shape* of a setup, because the turns it walks follow its steps, builds it.
+/// **This is a deliberate copy.** The examples are defined once, as JSON read by `FlowExamples` in
+/// `stroom-learning-flow`, and `TestFlowExamples` checks their shape. A test in `stroom-core-shared` cannot
+/// reach that module (the dependency runs the other way), so a test here that needs the shape of an example
+/// builds it.
 ///
-/// Only `FlowStep` and `LearningFlowDoc`'s tests need this. Anything that merely wants *a* valid flow should
-/// build the steps it means instead; a test that starts from a setup it does not care about says less
-/// than one that says what it is testing.
+/// Only the `FlowStep` and `LearningFlowDoc` tests need this. A test that merely wants some valid flow should
+/// build the steps it means, which says more clearly what it is testing.
 final class FlowFixtures {
 
     private FlowFixtures() {
     }
 
-    /// `Direct`: the chain, the two configures, and the exhaustion step.
+    /// `Direct`: the chain, the parser and transform configuration steps, and the fallback step.
     ///
     /// @return Its steps.
     static List<FlowStep> direct() {
@@ -45,8 +44,8 @@ final class FlowFixtures {
                 step(null, QuestionKind.ADMIT, null, null, null, List.of()));
     }
 
-    /// `Target first`: the boundary and the events settled before any configuration, a value the records
-    /// lack sending the parser back.
+    /// `Target first`: the record boundary and the target events settled before any configuration, with a
+    /// transition back to the parser when the records lack a value the targets need.
     ///
     /// @return Its steps.
     static List<FlowStep> targetFirst() {

@@ -25,11 +25,11 @@ import org.slf4j.LoggerFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The compile gate on the kinds of configuration a model is most likely to hand back wrongly. Each must be
- * rejected with a diagnostic that says what to change, since that diagnostic is the feedback the next
- * attempt is built on.
- */
+/// Tests the Data Splitter compile check against the mistakes a model is most likely to make in a
+/// configuration.
+///
+/// Each must be rejected with a diagnostic that says what to change, because that diagnostic is sent back to
+/// the model as the feedback for its next attempt.
 class TestDataSplitterCompiler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TestDataSplitterCompiler.class);

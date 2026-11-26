@@ -29,26 +29,26 @@ import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
-/// The built-in default setups, fetched once (Track 2 step 1c).
+/// Fetches the built-in learning flows (the default setups a Learning Flow document can start from) from the
+/// server once, and caches them for every screen in the client.
 ///
-/// They used to be constants the client could read straight out of `FlowExample`. They are now JSON on
-/// the server, because the same enum is compiled to JavaScript and the browser has neither classpath
-/// resources nor Jackson; so the client is given them, as it is given the built-in question templates.
+/// The built-in flows are held as JSON resources on the server. The client cannot read them directly, because
+/// the shared `FlowExample` enum is compiled to JavaScript and the browser has neither classpath resources nor
+/// Jackson, so the server supplies them, as it does the built-in question templates.
 ///
-/// Fetched once and kept: a built-in setup cannot change while the server runs, so there is nothing to
-/// refresh and no timer here. A screen that needs them asks with [#get], which answers at once where
-/// they are already in hand; one that is drawing and cannot wait reads [#known], which is empty until
-/// the fetch lands — a document then reads as having its own approach for the moment it takes, which is
-/// why every screen that shows the setup's name fetches before it draws.
+/// They cannot change while the server runs, so they are fetched once and never refreshed. A screen that
+/// needs them calls [#get], which answers immediately if they are already cached. A screen that is drawing and
+/// cannot wait calls [#known], which is empty until the fetch completes; until then a document appears to have
+/// its own custom flow. That is why every screen that shows the built-in flow's name fetches before it draws.
 @Singleton
 public class FlowExamplesCache {
 
     private static final LearningFlowResource RESOURCE = GWT.create(LearningFlowResource.class);
 
     private final RestFactory restFactory;
-    /// Null until the first fetch returns; never emptied afterwards.
+    /// The cached flows. Null until the first successful fetch; never cleared afterwards.
     private List<BuiltInFlow> examples;
-    /// Asked while a fetch is in flight, so that two screens opening at once make one request.
+    /// Callers waiting for a fetch in progress, so that two screens opening at once make only one request.
     private final List<Consumer<List<BuiltInFlow>>> waiting = new ArrayList<>();
     private boolean fetching;
 
@@ -57,13 +57,13 @@ public class FlowExamplesCache {
         this.restFactory = restFactory;
     }
 
-    /// The setups, fetching them where this is the first ask.
+    /// Gets the built-in flows, fetching them from the server if they are not cached yet.
     ///
-    /// The consumer is told once they are in hand, and not at all where the fetch fails — which is shown
-    /// — so it is never called with nothing.
+    /// The consumer is called once the flows are available. If the fetch fails, the consumer is not called at
+    /// all (and no error is shown), so it is never called without the flows.
     ///
-    /// @param consumer           Told the setups.
-    /// @param taskMonitorFactory Shows the fetch.
+    /// @param consumer           Called with the built-in flows.
+    /// @param taskMonitorFactory Shows the fetch as in progress.
     public void get(final Consumer<List<BuiltInFlow>> consumer, final TaskMonitorFactory taskMonitorFactory) {
         if (examples != null) {
             consumer.accept(examples);
@@ -87,8 +87,8 @@ public class FlowExamplesCache {
                     told.forEach(one -> one.accept(examples));
                 })
                 .onFailure(error -> {
-                    // Left unfetched so the next ask tries again: a setup's name is worth another go,
-                    // and nothing is broken meanwhile — a document still shows its steps.
+                    // Leave the cache empty so the next call tries again. Nothing is broken meanwhile: a
+                    // document still shows its steps, just not the built-in flow's name.
                     fetching = false;
                     waiting.clear();
                 })
@@ -96,9 +96,9 @@ public class FlowExamplesCache {
                 .exec();
     }
 
-    /// What is in hand, for a screen that is drawing and cannot wait.
+    /// Gets the cached flows without fetching, for a screen that is drawing and cannot wait.
     ///
-    /// @return The setups, or empty where they have not been fetched yet.
+    /// @return The built-in flows, or empty if they have not been fetched yet.
     public List<BuiltInFlow> known() {
         return examples == null
                 ? List.of()

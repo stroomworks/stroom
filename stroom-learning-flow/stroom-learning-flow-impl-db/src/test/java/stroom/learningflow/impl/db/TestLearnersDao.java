@@ -30,8 +30,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// A learner's rows brought to the document it runs under (design 06 phase J slice 2b): every table that
-/// keeps them, none of another learner's, and once per node until it moves again.
+/// Tests [LearnersDao]: when a learner moves to another document, its rows in every table are updated to
+/// that document, no other learner's rows are touched, and each node does this only once per move.
 class TestLearnersDao {
 
     private static final String RUN = String.valueOf(System.nanoTime());
@@ -87,9 +87,9 @@ class TestLearnersDao {
                 .satisfies(row -> assertThat(row.learner()).isEqualTo(neighbour));
     }
 
-    /// The task decision asks for every stream, so a node does nothing while the document is the one it
-    /// last brought the learner to: a row written under another since is left for the next node — or
-    /// the next move — to bring.
+    /// This is called for every stream, so a node does nothing while the document is the one it last
+    /// applied for the learner. A row written under another document since then is left for the learner's
+    /// next move to update.
     @Test
     void aNodeBringsALearnerOnceUntilItMovesAgain() {
         Guice.createInjector(new TestModule()).injectMembers(this);

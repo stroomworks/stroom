@@ -36,15 +36,18 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/// A pipeline's AI Translation tab ([PipelineAiTab]; design 07): the learning of the pipeline's Learning Flow
-/// elements, followed and acted on from the pipeline rather than from the document they learn under, by the
-/// pipeline's permissions (a person who may view it reads; one who may edit it acts). It finds the elements in
-/// the pipeline as merged with its parents ([PipelineAiElement]), tells its owner whether there are any (for
-/// the tab to be shown only where there are), and shows the chosen one's feed ([FeedDetailController]) with the
-/// settings of the document it learns under, which the server gives to anyone who may view the pipeline.
+/// Controls a pipeline's Learning Status tab ([PipelineAiTab]), where the learning of the pipeline's Smart
+/// Pipeline elements is followed and acted on.
 ///
-/// A pipeline's tab isn't refreshed by Stroom as a content tab is, so the tab reads the feed again itself,
-/// every ten seconds while it is on the page.
+/// The learning is managed from the pipeline rather than from the Learning Flow document it learns under, so
+/// access follows the pipeline's permissions: a user who may view the pipeline can see its learning, and one
+/// who may edit it can act on it. The controller finds the Smart Pipeline elements in the pipeline merged with
+/// its ancestors ([PipelineAiElement]), tells its owner whether there are any (so the tab is shown only when
+/// there are), and shows the chosen element's learning ([FeedDetailController]) together with the settings of
+/// the Learning Flow it learns under. The server returns those settings to anyone who may view the pipeline.
+///
+/// Stroom does not refresh a document's tabs as it does a content tab, so this tab refreshes itself every ten
+/// seconds while it is visible.
 public class PipelineAiTabController extends Controller {
 
     private static final PipelineResource PIPELINE_RESOURCE = GWT.create(PipelineResource.class);
@@ -58,25 +61,26 @@ public class PipelineAiTabController extends Controller {
     private final PipelineAiTab view;
     private final FeedDetailController detail;
     private final RestFactory restFactory;
-    /// The settings of each document a feed learns under, read once while the tab is open.
+    /// Finds learners and caches the settings of each Learning Flow they learn under while the tab is open.
     private final PipelineLearners learners;
     private DocRef pipeline;
     private List<PipelineAiElement> elements = List.of();
     private PipelineAiElement chosen;
-    /// The id of the element to show once the elements are known, e.g. from a document's Feeds tab.
+    /// The id of the element asked to be shown (e.g. from a Learning Flow's Pipelines tab), to be selected once
+    /// the pipeline's elements are known.
     private String wanted;
-    /// Whether the tab is the one shown, in the pipeline shown: it isn't read again while it isn't.
+    /// Whether this tab is the selected tab of the visible pipeline. It is only refreshed while it is.
     private boolean showing;
     private Consumer<Boolean> onAvailable = any -> {
     };
     private Consumer<List<PipelineAiElement>> onElements = found -> {
     };
 
-    /// Made by GIN, with its tab and the feed's controller.
+    /// Made by GIN.
     ///
     /// @param eventBus    The application's event bus.
     /// @param view        The tab.
-    /// @param detail      Where the element chosen stands.
+    /// @param detail      The controller for the chosen element's learning.
     /// @param restFactory Makes REST requests.
     @Inject
     public PipelineAiTabController(final EventBus eventBus,
@@ -111,7 +115,8 @@ public class PipelineAiTabController extends Controller {
         onDispose(timer::cancel);
     }
 
-    /// Finds the pipeline's AI elements, tells its owner whether it has any, and shows the one chosen.
+    /// Finds the pipeline's Smart Pipeline elements, tells the owner whether there are any, and shows the
+    /// chosen one.
     ///
     /// @param pipelineRef The pipeline.
     public void read(final DocRef pipelineRef) {
@@ -136,7 +141,8 @@ public class PipelineAiTabController extends Controller {
                 .exec();
     }
 
-    /// Shows one of the pipeline's AI elements, now if they are known, else once they are.
+    /// Shows one of the pipeline's Smart Pipeline elements, now if the elements are known, otherwise once
+    /// they have been read.
     ///
     /// @param elementId The element's id.
     public void showElement(final String elementId) {
@@ -148,22 +154,22 @@ public class PipelineAiTabController extends Controller {
         }
     }
 
-    /// @param onAvailable Told whether the pipeline has any AI elements, each time it is read, for the tab to
-    ///                    be shown only where it has.
+    /// @param onAvailable Called each time the pipeline is read, with whether it has any Smart Pipeline
+    ///                    elements, so that the owner shows the tab only when it does.
     public void setOnAvailable(final Consumer<Boolean> onAvailable) {
         this.onAvailable = onAvailable;
     }
 
-    /// @param onElements Told the pipeline's Smart Pipeline elements, each time it is read, e.g. for its Quality
-    ///                   Assurance tab, so that the pipeline isn't read twice.
+    /// @param onElements Called each time the pipeline is read, with its Smart Pipeline elements, e.g. for the
+    ///                   Quality Assurance tab, so that the pipeline doesn't have to be read twice.
     public void setOnElements(final Consumer<List<PipelineAiElement>> onElements) {
         this.onElements = onElements;
     }
 
-    /// Says whether the tab is on screen: it is read again every ten seconds only while it is, and at once
-    /// when it comes back.
+    /// Tells the controller whether the tab is visible. It refreshes every ten seconds only while visible, and
+    /// refreshes at once when it becomes visible again.
     ///
-    /// @param showing Whether it is the tab shown, in the pipeline shown.
+    /// @param showing Whether this tab is the selected tab of the visible pipeline.
     public void setShowing(final boolean showing) {
         final boolean back = showing && !this.showing;
         this.showing = showing;
@@ -172,8 +178,8 @@ public class PipelineAiTabController extends Controller {
         }
     }
 
-    /// Reads the chosen element's feed again: its learner row, and the settings of the document it learns
-    /// under where they haven't been read.
+    /// Reads the chosen element's learner again, and the settings of the Learning Flow it learns under if they
+    /// have not already been read.
     public void refresh() {
         final PipelineAiElement element = chosen;
         if (pipeline == null || element == null) {
@@ -199,7 +205,7 @@ public class PipelineAiTabController extends Controller {
                 .exec();
     }
 
-    // The element asked for, else the one chosen before, else the first
+    // Picks the element asked for, else the one chosen before, else the first
     private PipelineAiElement pick() {
         for (final String id : new String[]{wanted, NullSafe.get(chosen, PipelineAiElement::getId)}) {
             for (final PipelineAiElement element : elements) {
@@ -213,7 +219,7 @@ public class PipelineAiTabController extends Controller {
                 : elements.get(0);
     }
 
-    // Shows a feed, where the element chosen still is the one it was read for
+    // Shows the learner, unless the user has chosen another element while it was being read
     private void show(final PipelineAiElement element, final SupervisorLearner row, final LearningFlowDoc doc) {
         if (!Objects.equals(element, chosen)) {
             return;
@@ -231,7 +237,7 @@ public class PipelineAiTabController extends Controller {
         }
     }
 
-    // Opens the document the chosen element learns under, and asks its editor to show something
+    // Opens the Learning Flow the chosen element learns under, then passes its editor to `then`
     private void openDocument(final Consumer<LearningFlowEditor> then) {
         final DocRef document = NullSafe.get(chosen, PipelineAiElement::getDocument);
         if (document == null) {

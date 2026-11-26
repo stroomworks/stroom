@@ -28,7 +28,8 @@ import jakarta.inject.Singleton;
 
 import java.util.Optional;
 
-/// The Learning Flow documents of A28 in a node: the document store, read by uuid, as it stands now.
+/// The node's implementation of [Documents], which the background worker uses to read the Learning Flow
+/// document an attempt names. It reads the document's current version from the document store by UUID.
 @Singleton
 public class StoreDocuments implements Documents {
 
@@ -46,7 +47,7 @@ public class StoreDocuments implements Documents {
         try {
             return Optional.ofNullable(store.readDocument(LearningFlowDoc.buildDocRef().uuid(uuid).build()));
         } catch (final RuntimeException e) {
-            // Deleted, or this node may not read it: either way the attempt cannot be carried on.
+            // The document was deleted or this node cannot read it; either way the attempt cannot continue.
             LOGGER.warn(() -> LogUtil.message("Learning Flow document {} could not be read: {}",
                     uuid, e.getMessage()), e);
             return Optional.empty();

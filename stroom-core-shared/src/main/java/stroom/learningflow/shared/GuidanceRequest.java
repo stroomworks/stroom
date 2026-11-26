@@ -20,15 +20,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * Something a supervisor wants a learner to know (A46), given without asking for
- * anything to be run: the feed's own explanation of a field, a correction to what the model assumed, a
- * fact the sample does not show.
- * <p>
- * Separate from {@link ImproveRequest}, which says the same thing and then asks for an attempt. A person
- * who has just learned something about a feed should be able to write it down at once, and have it
- * carried into whatever is asked next — which may be months away.
- */
+/// A note a person leaves for a learner without asking for anything to be run, such as the feed's own
+/// explanation of a field, a correction to something the model assumed, or a fact the sample does not show.
+///
+/// It is separate from [ImproveRequest], which carries the same kind of message and also starts a session. A
+/// person who has just learned something about a feed can write it down at once, and it is carried into
+/// whatever the model is asked next about that learner, however much later that is.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class GuidanceRequest {
 
@@ -44,7 +41,7 @@ public class GuidanceRequest {
         this.message = message;
     }
 
-    /// The learner it is for (A128), as the row the person acted on named it.
+    /// @return The learner the note is for, as the row the person acted on identified it.
     public LearnerRef getLearner() {
         return learner;
     }

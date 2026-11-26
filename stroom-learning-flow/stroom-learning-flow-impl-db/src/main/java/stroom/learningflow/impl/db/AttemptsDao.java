@@ -57,41 +57,44 @@ import java.util.stream.Collectors;
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowAttempt.LEARNING_FLOW_ATTEMPT;
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowTurn.LEARNING_FLOW_TURN;
 
-/// The attempts of A28 as rows: one per attempt, one per turn, so that what was asked and answered
-/// outlives the node that asked it and a person can read it back. A turn is inserted as it is answered
-/// rather than at the end, so an attempt still running — or one whose node died — shows what it had got
-/// to.
+/// The database implementation of [Attempts], which stores learning sessions (attempts) and their turns.
+///
+/// There is one row per attempt and one row per turn, so that what the model was asked and how it answered
+/// outlives the node that asked it, a session can be resumed by another node, and a person can read it back
+/// in the Supervisor. Each turn is written as it happens rather than at the end, so an attempt that is still
+/// running, or whose node died, shows how far it had got.
 @Singleton
 public class AttemptsDao implements Attempts {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(AttemptsDao.class);
 
-    /// The states in which an attempt is still learning, and so still holds its learner's claim (A45). A
-    /// draft awaiting review is not one of them: it has written its binding, and the binding is what the
-    /// learner's state answers with until a person decides.
+    /// The statuses in which an attempt is still learning, and so still holds its learner's claim. An
+    /// attempt awaiting review is not one of them: it has already written its draft binding, and the
+    /// learner's state reports that draft until a person decides.
     private static final List<String> OPEN = List.of(AttemptStatus.IN_PROGRESS.name(),
             AttemptStatus.AWAITING_MODEL.name(), AttemptStatus.PARKED.name());
 
-    /// What an open attempt's claim column holds. A closed one holds null, which the unique key on the
-    /// learner and its claim does not count, so a learner has any number of closed attempts and one open.
+    /// The value of the claim column on an open attempt. A closed attempt holds null there, and the unique
+    /// key on the learner and its claim ignores nulls, so a learner can have any number of closed attempts
+    /// but only one open one.
     private static final Byte CLAIMED = 1;
 
-    /// The states an attempt is never pruned in, however old: it is still learning, still waiting for
-    /// the model, or waiting for a person to decide, and none of those is over.
+    /// The statuses in which an attempt is never pruned, however old, because it has not finished: it is
+    /// still learning, waiting for the model, or waiting for a person to decide.
     private static final List<String> KEPT = List.of(AttemptStatus.IN_PROGRESS.name(),
             AttemptStatus.AWAITING_MODEL.name(), AttemptStatus.PARKED.name(), AttemptStatus.AWAITING_REVIEW.name());
 
-    /// The most attempts one page may ask for, whatever it asks for: a view that asked for everything
-    /// would read every attempt every document has ever made.
+    /// The largest page of attempts that [#found] returns, whatever page size is requested, so that a
+    /// request for everything cannot read every attempt ever made.
     private static final int PAGE_LIMIT = 1000;
 
-    /// The states in which an attempt's binding is one that was, or was about to be, serving: the ones a
-    /// retraction is about.
+    /// The statuses in which an attempt's binding is, or was about to be, serving. These are the attempts
+    /// that [#settled] updates when that binding is retracted.
     private static final List<String> BOUND = List.of(AttemptStatus.PROMOTED.name(),
             AttemptStatus.AWAITING_REVIEW.name());
 
-    /// How many attempts one pass removes: a delete of every old row at once would hold locks across the
-    /// table, and the job runs again.
+    /// The most attempts one call to [#prune] removes. Deleting every old row at once would hold locks
+    /// across the table; the job that prunes runs again, so the rest are removed later.
     private static final int PRUNE_BATCH = 1000;
 
     private final LearningFlowDbConnProvider connProvider;
@@ -101,19 +104,19 @@ public class AttemptsDao implements Attempts {
         this.connProvider = connProvider;
     }
 
-    /// One open attempt per learner (A45), which the unique key on the learner and its claim admits: two
-    /// nodes meeting a learner's streams at once do not both take it. An attempt whose expiry has passed
-    /// has lapsed, and the next worker resumes it.
+    /// Inserts a new open attempt, unless the learner already has one. The unique key on the learner and
+    /// its claim allows only one open attempt per learner, so if two nodes try to open one at the same
+    /// time, only one succeeds.
     @Override
     public Optional<Long> opened(final Attempt attempt, final long nowMs) {
         final long now = System.currentTimeMillis();
-        // An attempt whose lease has lapsed still holds its claim: the node behind it has stopped, and the
-        // session is resumed by the next worker to find it (design 04 §4), not abandoned here for a new one
-        // that would ask the model everything again.
+        // An open attempt whose lease has expired still holds its claim. Its node has stopped, and the
+        // next worker to find it resumes it. It is not replaced here by a new attempt, which would have
+        // to ask the model everything again.
         return JooqUtil.transactionResult(connProvider, context -> {
             try {
-                // The unique key on the learner and its claim is what admits one open attempt per learner:
-                // two nodes meeting it at once are decided by the database, not by what each read.
+                // The database's unique key decides between two nodes opening an attempt at once, rather
+                // than what each node read beforehand.
                 return Optional.of(insert(context, attempt, now));
             } catch (final IntegrityConstraintViolationException e) {
                 return Optional.empty();
@@ -131,8 +134,9 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_ATTEMPT.VERSION, LEARNING_FLOW_ATTEMPT.VERSION.plus(1))
                 .set(LEARNING_FLOW_ATTEMPT.UPDATE_TIME_MS, System.currentTimeMillis())
                 .where(LEARNING_FLOW_ATTEMPT.ID.eq(attemptId))
-                // A parked attempt is nobody's to carry, since no thread is behind it; a running one is
-                // its own node's until it lapses.
+                // An attempt awaiting the model has no thread running it, so any node may claim it. One
+                // in progress belongs to its own node until its lease expires. A parked attempt is waiting
+                // for a person, so it is not claimed here.
                 .and(LEARNING_FLOW_ATTEMPT.STATUS.eq(AttemptStatus.AWAITING_MODEL.name())
                         .or(LEARNING_FLOW_ATTEMPT.STATUS.eq(AttemptStatus.IN_PROGRESS.name())
                                 .and(LEARNING_FLOW_ATTEMPT.NODE_NAME.eq(node)
@@ -140,8 +144,8 @@ public class AttemptsDao implements Attempts {
                 .execute()) > 0;
     }
 
-    /// Oldest first: an attempt that has waited longest is advanced first, so a busy document cannot
-    /// starve one behind it.
+    /// Returns the attempts awaiting the model, oldest first, so that the attempt that has waited longest
+    /// is advanced first and a busy document cannot starve the others.
     @Override
     public List<Recorded> awaiting(final int limit) {
         return JooqUtil.contextResult(connProvider, context -> context
@@ -175,8 +179,8 @@ public class AttemptsDao implements Attempts {
     public void amended(final long attemptId, final int turnNumber, final String answer,
                         final String answeredBy) {
         JooqUtil.transaction(connProvider, context -> {
-            // What came after this turn is a consequence of the answer that has changed, and the walk will
-            // derive it again.
+            // The turns after this one followed from the answer that has now changed, so they are deleted
+            // and the walk through the flow produces them again.
             context.deleteFrom(LEARNING_FLOW_TURN)
                     .where(LEARNING_FLOW_TURN.FK_ATTEMPT_ID.eq(attemptId))
                     .and(LEARNING_FLOW_TURN.TURN_NUMBER.gt(turnNumber))
@@ -197,9 +201,9 @@ public class AttemptsDao implements Attempts {
         });
     }
 
-    /// One open attempt per learner (A45), whether it is opened for the first time or opened again: the
-    /// claim is taken back under the same unique key, and the database refuses it where another attempt
-    /// of the learner holds it.
+    /// Reopens an attempt so that the worker carries it on, for example after a person has answered it.
+    /// The claim is taken back under the same unique key that [#opened] relies on, so the database refuses
+    /// it if another attempt of the same learner is open.
     @Override
     public boolean reopened(final long attemptId, final long nowMs, final long expiryMs) {
         final long now = System.currentTimeMillis();
@@ -214,17 +218,18 @@ public class AttemptsDao implements Attempts {
                 return false;
             }
             final Long expiry = row.get(LEARNING_FLOW_ATTEMPT.EXPIRY_MS);
-            // A node is walking it at this moment: its answers are that walk's to give.
+            // A node is running this attempt now, so it is left to that node.
             if (AttemptStatus.IN_PROGRESS.name().equals(row.get(LEARNING_FLOW_ATTEMPT.STATUS))
                 && expiry != null
                 && expiry > nowMs) {
                 return false;
             }
-            // Whatever else holds the claim keeps it, lapsed or not: a lapsed session is resumed, not
-            // swept aside for an answer to an older one, and the unique key below says so.
+            // If another attempt of the learner holds the claim, it keeps it, even if its lease has
+            // expired: an expired session is resumed, not displaced by an answer to an older one. The
+            // unique key enforces this.
             try {
-                // Its claim taken back, and pushed out: an attempt a person has just answered must not be
-                // swept away by the learner's next stream before the worker reaches it.
+                // The claim is taken back with a fresh expiry, so that an attempt a person has just
+                // answered is not displaced by the learner's next stream before the worker reaches it.
                 return context.update(LEARNING_FLOW_ATTEMPT)
                         .set(LEARNING_FLOW_ATTEMPT.STATUS, AttemptStatus.AWAITING_MODEL.name())
                         .set(LEARNING_FLOW_ATTEMPT.CLAIMED, CLAIMED)
@@ -238,7 +243,8 @@ public class AttemptsDao implements Attempts {
                         .where(LEARNING_FLOW_ATTEMPT.ID.eq(attemptId))
                         .execute() > 0;
             } catch (final IntegrityConstraintViolationException e) {
-                // Another attempt holds the claim: a person is told rather than two learning it at once.
+                // Another attempt holds the claim. The caller tells the person, rather than letting two
+                // attempts learn for the learner at once.
                 return false;
             }
         });
@@ -269,8 +275,8 @@ public class AttemptsDao implements Attempts {
                 .map(record -> recorded(record, turns(record.get(LEARNING_FLOW_ATTEMPT.ID))));
     }
 
-    /// A parked attempt keeps its claim: it is still learning, and its expiry is pushed out by the same
-    /// heartbeat that would have extended it (A45).
+    /// Sets an open attempt's status, typically to wait for the model, keeping its claim with the given
+    /// expiry. A parked attempt is still learning, so it keeps its learner's claim.
     @Override
     public void parked(final long attemptId,
                        final AttemptStatus status,
@@ -284,7 +290,7 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_ATTEMPT.VERSION, LEARNING_FLOW_ATTEMPT.VERSION.plus(1))
                 .set(LEARNING_FLOW_ATTEMPT.UPDATE_TIME_MS, System.currentTimeMillis())
                 .where(LEARNING_FLOW_ATTEMPT.ID.eq(attemptId))
-                // A finished attempt is not parked back into life: it holds no claim and asks nothing.
+                // A finished attempt is not brought back to life: it holds no claim and has nothing to ask.
                 .and(LEARNING_FLOW_ATTEMPT.STATUS.in(OPEN))
                 .execute());
     }
@@ -306,25 +312,27 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_ATTEMPT.PROMOTION_MODE, attempt.promotionMode().name())
                 .set(LEARNING_FLOW_ATTEMPT.STATUS, AttemptStatus.IN_PROGRESS.name())
                 .set(LEARNING_FLOW_ATTEMPT.EXPIRY_MS, attempt.expiryMs())
-                // The words it is asked with (N9), so that a parked run resumes in the words it began
-                // in and a prompt can be rebuilt as it was sent.
+                // The prompt templates and instructions the attempt is asked with, so that a parked
+                // attempt resumes with the same wording it began with, and a prompt can be rebuilt exactly
+                // as it was sent.
                 .set(LEARNING_FLOW_ATTEMPT.TEMPLATES, templates(attempt.askedWith()))
                 .set(LEARNING_FLOW_ATTEMPT.BUILT_IN_VERSION, attempt.askedWith().known()
                         ? attempt.askedWith().builtInVersion()
                         : null)
                 .set(LEARNING_FLOW_ATTEMPT.INSTRUCTIONS, attempt.askedWith().instructions())
                 .set(LEARNING_FLOW_ATTEMPT.BUILD_VERSION, attempt.askedWith().build())
-                // The binding a person asked to be improved (A46), where that is what this run is.
+                // The binding a person asked to be improved, if this attempt is an Improve run.
                 .set(LEARNING_FLOW_ATTEMPT.IMPROVING_BINDING_UUID, attempt.improving())
                 .returning(LEARNING_FLOW_ATTEMPT.ID)
                 .fetchOne(LEARNING_FLOW_ATTEMPT.ID);
     }
 
-    /// By number: a turn written as it is asked and again when it is judged is one row, so an attempt
-    /// still running shows what it had got to.
+    /// Inserts or updates a turn, keyed by its number. A turn is written when it is asked and again when
+    /// it is judged, and both writes go to the same row, so an attempt that is still running shows how far
+    /// it has got.
     @Override
     public void turn(final long attemptId, final Turn turn) {
-        // The score of the check that decided it (design 06 A144), where one did.
+        // The score of the check that decided the turn's outcome, if a check did.
         final String check = NullSafe.get(turn.score(), TurnScore::getCheck, Check::name);
         final Double score = NullSafe.get(turn.score(), TurnScore::getScore);
         final Double threshold = NullSafe.get(turn.score(), TurnScore::getThreshold);
@@ -345,8 +353,8 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_TURN.SCORER, check)
                 .set(LEARNING_FLOW_TURN.SCORE, score)
                 .set(LEARNING_FLOW_TURN.SCORE_THRESHOLD, threshold)
-                // Which guidance this question carried (A46), so that a re-walk replays what was used
-                // rather than what has since been added.
+                // The ids of the guidance this question carried, so that walking the attempt again
+                // replays the guidance that was used, not guidance added since.
                 .set(LEARNING_FLOW_TURN.CARRIED_GUIDANCE, carried(turn.carried()))
                 .onDuplicateKeyUpdate()
                 .set(LEARNING_FLOW_TURN.ANSWER, turn.answer())
@@ -357,9 +365,9 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_TURN.SCORER, check)
                 .set(LEARNING_FLOW_TURN.SCORE, score)
                 .set(LEARNING_FLOW_TURN.SCORE_THRESHOLD, threshold)
-                // On the update as well as the insert: a question the attempt parked at is written
-                // before it is asked, with nothing carried, and answered on the pass that resumes it.
-                // Left off here the column would stay empty for exactly the turn that carried something.
+                // This is set on the update as well as the insert. A question that the attempt parked at
+                // is written before it is asked, with no guidance, and answered when the attempt resumes.
+                // Without this, the column would stay empty for the very turn that carried guidance.
                 .set(LEARNING_FLOW_TURN.CARRIED_GUIDANCE, carried(turn.carried()))
                 .execute());
     }
@@ -371,7 +379,8 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_ATTEMPT.STATUS, AttemptStatus.PARKED.name())
                 .set(LEARNING_FLOW_ATTEMPT.DECISION, reason)
                 .set(LEARNING_FLOW_ATTEMPT.REPORT, json(report))
-                // A lease that does not lapse: nothing takes the claim from a parked attempt but a person.
+                // A lease that never expires, so that only a person can take the claim from a parked
+                // attempt.
                 .set(LEARNING_FLOW_ATTEMPT.EXPIRY_MS, Long.MAX_VALUE)
                 .set(LEARNING_FLOW_ATTEMPT.TOKENS_SPENT, LEARNING_FLOW_ATTEMPT.TOKENS_SPENT.plus(tokensSpent))
                 .set(LEARNING_FLOW_ATTEMPT.VERSION, LEARNING_FLOW_ATTEMPT.VERSION.plus(1))
@@ -397,11 +406,11 @@ public class AttemptsDao implements Attempts {
                 .set(LEARNING_FLOW_ATTEMPT.BINDING_UUID, bindingUuid)
                 .set(LEARNING_FLOW_ATTEMPT.SCORE, score)
                 .set(LEARNING_FLOW_ATTEMPT.TOKENS_SPENT, LEARNING_FLOW_ATTEMPT.TOKENS_SPENT.plus(tokensSpent))
-                // A sending to the exhaustion step stands until the attempt closes (A65).
+                // A request to go to the exhaustion step lasts only until the attempt closes.
                 .set(LEARNING_FLOW_ATTEMPT.EXHAUST_NEXT, (byte) 0)
                 .set(LEARNING_FLOW_ATTEMPT.VERSION, LEARNING_FLOW_ATTEMPT.VERSION.plus(1))
                 .set(LEARNING_FLOW_ATTEMPT.UPDATE_TIME_MS, System.currentTimeMillis())
-                // A claim that has ended holds nothing (A45), and frees the learner for the next attempt.
+                // Clearing the claim frees the learner for its next attempt.
                 .setNull(LEARNING_FLOW_ATTEMPT.EXPIRY_MS)
                 .setNull(LEARNING_FLOW_ATTEMPT.CLAIMED)
                 .where(LEARNING_FLOW_ATTEMPT.ID.eq(attemptId))
@@ -439,9 +448,9 @@ public class AttemptsDao implements Attempts {
                 .execute());
     }
 
-    /// The attempts that bound this binding, whatever state they ended in — promoted, or
-    /// awaiting a review that will now never happen. Not [#decided]'s filter, which is A25's decision
-    /// about a draft *awaiting review*: these are about a binding that was serving.
+    /// Updates the attempts that produced this binding, whether they were promoted or are still awaiting a
+    /// review that will now never happen. This differs from [#decided], which only updates a draft
+    /// awaiting review; this method is for a binding that was serving, such as one being retracted.
     @Override
     public void settled(final String docUuid, final String bindingUuid, final AttemptStatus status,
                         final String decision) {
@@ -457,9 +466,10 @@ public class AttemptsDao implements Attempts {
                 .execute());
     }
 
-    /// Their turns first, then the attempts: the turn rows point at the attempt rows, and a delete in the
-    /// other order is a delete the foreign key refuses. In one transaction, so a pruned attempt never
-    /// reads as an attempt with no turns.
+    /// Deletes up to [#PRUNE_BATCH] finished attempts last updated before the given time. Their turns are
+    /// deleted first, because the turn rows reference the attempt rows and the foreign key would refuse
+    /// the other order. Both deletes are in one transaction, so a reader never sees an attempt with its
+    /// turns removed.
     @Override
     public int prune(final long finishedBeforeMs) {
         return JooqUtil.transactionResult(connProvider, context -> {
@@ -503,7 +513,8 @@ public class AttemptsDao implements Attempts {
                     .limit(limit)
                     .fetch();
             final List<Long> ids = rows.stream().map(row -> row.get(LEARNING_FLOW_ATTEMPT.ID)).toList();
-            // One query for every attempt's turns, not one each: the Supervisor view pages these.
+            // The turns of all these attempts are read in one query, rather than one query per attempt,
+            // because the Supervisor reads these in pages.
             final Map<Long, List<Turn>> byAttempt = ids.isEmpty()
                     ? Map.of()
                     : context.select()
@@ -520,12 +531,14 @@ public class AttemptsDao implements Attempts {
         });
     }
 
-    /// Across every document, newest first (A28): what the Supervisor view lists. Without their turns —
-    /// a page of transcripts is a page nobody reads — which the detail reads for one attempt.
+    /// Returns a page of attempts matching the criteria, across the given documents, newest first. This is
+    /// what the Supervisor lists. The turns are not read, as a list does not show them; the Supervisor
+    /// reads them for one attempt with [#byId].
     @Override
     public Page found(final AttemptCriteria criteria, final Collection<String> docUuids) {
         if (docUuids.isEmpty()) {
-            // Nothing this person may see: not every attempt, and not a count of them either.
+            // The person may see no documents, so they get no attempts and no count, rather than an
+            // unfiltered query.
             return new Page(List.of(), 0L);
         }
         final List<Condition> conditions = new ArrayList<>();
@@ -544,12 +557,12 @@ public class AttemptsDao implements Attempts {
                     .map(AttemptStatus::name)
                     .toList()));
         }
-        // One learner's sessions, the list beneath its row (design 06 A143).
+        // One learner's sessions, as listed beneath that learner's row in the Supervisor.
         if (criteria.getLearner() != null) {
             conditions.add(LEARNING_FLOW_ATTEMPT.PIPELINE_UUID.eq(criteria.getLearner().getPipelineUuid()));
             conditions.add(LEARNING_FLOW_ATTEMPT.ELEMENT_ID.eq(criteria.getLearner().getElementId()));
         }
-        // A deleted pipeline's attempts are kept to be read, and shown only when asked for (A137).
+        // The attempts of a deleted pipeline are kept, but only shown when asked for.
         if (!criteria.isShowDeletedPipelines()) {
             conditions.add(DSL.notExists(DSL
                     .selectOne()
@@ -557,7 +570,7 @@ public class AttemptsDao implements Attempts {
                     .where(LearningFlowDeletedPipeline.LEARNING_FLOW_DELETED_PIPELINE.PIPELINE_UUID
                             .eq(LEARNING_FLOW_ATTEMPT.PIPELINE_UUID))));
         }
-        // A request that says nothing about paging carries nulls, which are the caller's to survive.
+        // A request without paging carries nulls, which the JooqUtil methods turn into defaults.
         final int offset = JooqUtil.getOffset(criteria.getPageRequest());
         final int length = Math.min(JooqUtil.getLimit(criteria.getPageRequest(), false, PAGE_LIMIT),
                 PAGE_LIMIT);
@@ -627,24 +640,24 @@ public class AttemptsDao implements Attempts {
                         record.get(LEARNING_FLOW_ATTEMPT.REVIEWED_TIME_MS)));
     }
 
-    // The evidence read back from its column; empty for none
+    // Reads the review evidence back from its JSON column; empty if there is none.
     private static List<CheckResult> evidence(final String json) {
         return NullSafe.isBlankString(json)
                 ? List.of()
                 : List.of(JsonUtil.readValue(json, CheckResult[].class));
     }
 
-    /// The template set as its column holds it, JSON keyed by template name; null where the run's words
-    /// were not recorded.
+    /// Serialises the attempt's templates for their column, as JSON keyed by template name, or null if the
+    /// templates are not known.
     private static String templates(final AskedWith askedWith) {
         return askedWith.known()
                 ? JsonUtil.writeValueAsString(askedWith.templates(), false)
                 : null;
     }
 
-    /// The words a run was asked with, read back from its columns (N9). A row written before they were
-    /// kept answers [AskedWith#UNKNOWN], which says so rather than offering today's words as though they
-    /// were the ones used.
+    /// Reads back the templates and instructions an attempt was asked with. A row written before these
+    /// were recorded returns [AskedWith#UNKNOWN], rather than today's templates, which might not be the
+    /// ones that were used.
     private static AskedWith askedWith(final Record record) {
         final String json = record.get(LEARNING_FLOW_ATTEMPT.TEMPLATES);
         if (NullSafe.isBlankString(json)) {
@@ -654,8 +667,8 @@ public class AttemptsDao implements Attempts {
         final Map<?, ?> read = JsonUtil.readValue(json, Map.class);
         for (final Map.Entry<?, ?> entry : read.entrySet()) {
             final String name = String.valueOf(entry.getKey());
-            // A template this build no longer has is dropped rather than failing the read: an attempt is
-            // history, and history may name something since removed.
+            // A template that this build does not have is dropped rather than failing the read, because an
+            // old attempt may name a template that has since been removed.
             try {
                 templates.put(Template.valueOf(name), String.valueOf(entry.getValue()));
             } catch (final IllegalArgumentException e) {
@@ -672,14 +685,14 @@ public class AttemptsDao implements Attempts {
                 record.get(LEARNING_FLOW_ATTEMPT.BUILD_VERSION));
     }
 
-    // A stop report as its column holds it, JSON; null for none
+    // Serialises a stop report as JSON for its column; null if there is none.
     private static String json(final StopReport report) {
         return report == null
                 ? null
                 : JsonUtil.writeValueAsString(report, false);
     }
 
-    // A stop report read back from its column; null for none
+    // Reads a stop report back from its JSON column; null if there is none.
     private static StopReport report(final String json) {
         return NullSafe.isBlankString(json)
                 ? null
@@ -709,8 +722,8 @@ public class AttemptsDao implements Attempts {
                 .execute());
     }
 
-    /// The guidance a turn carried, as a list of ids: small, fixed-width and never queried on, so a
-    /// column of its own would be a table of its own for nothing.
+    /// Serialises the ids of the guidance a turn carried as a comma-separated list. The list is small and
+    /// never queried, so it is kept in one column rather than in a table of its own.
     private static String carried(final List<Long> carried) {
         return NullSafe.isEmptyCollection(carried)
                 ? null
@@ -745,11 +758,10 @@ public class AttemptsDao implements Attempts {
                 carried(record.get(LEARNING_FLOW_TURN.CARRIED_GUIDANCE)));
     }
 
-    /// The score of the check that decided a turn, where one did (design 06 A144).
+    /// Reads the score of the check that decided a turn's outcome, or null if no check did.
     private static TurnScore score(final Record record) {
-        // The column is still called 'scorer'; what it holds is a Check's name since the one model of
-        // checks. Renaming the column needs a jOOQ regeneration, so it goes with the rest of the table
-        // changes rather than here.
+        // The column is called 'scorer', but it holds the name of a Check. Renaming the column needs
+        // the jOOQ code to be regenerated, so it is left for the next set of table changes.
         final String check = record.get(LEARNING_FLOW_TURN.SCORER);
         return check == null
                 ? null

@@ -23,9 +23,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// What a person grants a parked session beyond the document's budgets (A77): tokens, milliseconds, or
-/// both, recorded against the attempt alone. Tokens add to what the session may spend over its life;
-/// milliseconds to how long each run of it may take (design 06 A145).
+/// Extra budget a person gives a parked session beyond the document's budgets: tokens, milliseconds, or both.
+/// The grant applies to that session alone, not to the document. Tokens add to what the session may spend over
+/// its whole life; milliseconds add to how long each run of it may take.
 @JsonInclude(Include.NON_NULL)
 public class GrantRequest {
 
@@ -48,7 +48,7 @@ public class GrantRequest {
         return ms;
     }
 
-    /// A grant as the dialog asks for it, in minutes.
+    /// Creates a grant from the values the grant dialog asks for, which gives time in minutes.
     ///
     /// @param tokens  More tokens over the session's life.
     /// @param minutes More minutes for each run.
@@ -57,8 +57,8 @@ public class GrantRequest {
         return new GrantRequest(tokens, minutes * 60_000L);
     }
 
-    /// @return Why this grant would be refused, or null where it is one: a grant adds something and takes
-    /// nothing away, as the stage holds it to.
+    /// @return Why this grant would be refused, or null where it is valid. A valid grant adds something and
+    /// takes nothing away; the server enforces the same rule.
     public String problem() {
         if (tokens < 0 || ms < 0) {
             return "A grant adds to what the session may spend; it cannot take anything away";

@@ -24,18 +24,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/// The Supervisor's learning pipelines list (design 06 A115, A142): every learner of the documents a
-/// person may read that has learned or is learning, where it stands, what serves it and what waits on it,
-/// narrowed and paged where the rows are, since an installation with a pipeline per feed has as many
-/// learners as it has feeds. Read-only, and off the hot path.
+/// Reads the Supervisor's list of learning pipelines: every learner under the documents a user may view
+/// that has learned or is learning, with its state, what serves it and what waits on it.
+///
+/// Filtering and paging are done by the database, because an installation with a pipeline per feed has
+/// as many learners as it has feeds. This is read-only, and not used by stream processing.
 public interface LearningPipelines {
 
-    /// A page of learners, most waiting streams first, then the most recent session, of every pipeline.
+    /// Gets a page of learners of every pipeline, ordered by most waiting streams, then by most recent
+    /// session.
     ///
-    /// @param docUuids    The documents the person may read. Empty answers empty.
-    /// @param learningOff Those of them with learning turned off, whose learners are said to be so.
-    /// @param states      The states asked for; empty for every state.
-    /// @param showDeleted Whether the learning of pipelines since deleted is shown too (A137).
+    /// @param docUuids    The UUIDs of the documents the user may view. If empty, the result is empty.
+    /// @param learningOff Those of them with learning disabled, whose learners are shown as such.
+    /// @param states      The states to include; empty for every state.
+    /// @param showDeleted Whether to include the learning of pipelines that have been deleted.
     /// @param offset      The first row of the page.
     /// @param limit       How many rows.
     /// @return The page, as [#learners(Collection, Set, Collection, boolean, String, long, int)] answers.
@@ -48,18 +50,20 @@ public interface LearningPipelines {
         return learners(docUuids, learningOff, states, showDeleted, null, offset, limit);
     }
 
-    /// A page of learners, most waiting streams first, then the most recent session.
+    /// Gets a page of learners, ordered by most waiting streams, then by most recent session.
     ///
-    /// @param docUuids     The documents the learners may be listed under. Empty answers empty.
-    /// @param learningOff  Those of them with learning turned off, whose learners are said to be so.
-    /// @param states       The states asked for; empty for every state.
-    /// @param showDeleted  Whether the learning of pipelines since deleted is shown too (A137).
-    /// @param pipelineUuid The one pipeline whose learners are asked for, e.g. from its own editor; null for
+    /// @param docUuids     The UUIDs of the documents the learners may be listed under. If empty, the result
+    ///                     is empty.
+    /// @param learningOff  Those of them with learning disabled, whose learners are shown as such.
+    /// @param states       The states to include; empty for every state.
+    /// @param showDeleted  Whether to include the learning of pipelines that have been deleted.
+    /// @param pipelineUuid The one pipeline whose learners are wanted, e.g. from its own editor; null for
     ///                     every pipeline.
     /// @param offset       The first row of the page.
-    /// @param limit        How many rows.
-    /// @return The page, its rows naming their pipeline and document by uuid alone, and none raised: the
-    /// resource names them and judges their waits against each document's maximum age.
+    /// @param limit        The maximum number of rows.
+    /// @return The page. Its rows name their pipeline and document by UUID only, and none is flagged as
+    ///         raised: the caller adds the names and compares the waits with each document's maximum
+    ///         deferral age.
     Page learners(Collection<String> docUuids,
                   Set<String> learningOff,
                   Collection<LearnerState> states,
@@ -68,22 +72,22 @@ public interface LearningPipelines {
                   long offset,
                   int limit);
 
-    /// The document a learner is listed under, worked out as the list works it out. For a learner whose
-    /// pipeline has been deleted, and so names no document of its own, this is the document its learning
-    /// is read from (A137).
+    /// Gets the document a learner is listed under, worked out in the same way as the list. For a learner
+    /// whose pipeline has been deleted, and so names no document, this is the document its learning is
+    /// viewed under.
     ///
     /// @param learner The learner.
-    /// @return Its document, or empty where no table knows the learner.
+    /// @return The document's UUID, or empty if no table knows the learner.
     Optional<String> documentOf(Learner learner);
 
 
     // --------------------------------------------------------------------------------
 
 
-    /// One page of learners, and how many there are in all.
+    /// One page of learners, and how many there are in total.
     ///
     /// @param learners The page's rows.
-    /// @param total    How many match, across every page.
+    /// @param total    How many learners match, across every page.
     record Page(List<SupervisorLearner> learners, long total) {
 
     }

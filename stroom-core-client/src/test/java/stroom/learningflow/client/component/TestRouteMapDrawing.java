@@ -36,15 +36,16 @@ class TestRouteMapDrawing {
     private static final Pattern BUTTON = Pattern.compile(
             "<g class=\"([^\"]*)\" data-stop=\"([^\"]*)\" role=\"button\" tabindex=\"(-?\\d)\" "
             + "aria-label=\"([^\"]*)\"( aria-current=\"location\")?>");
-    // Learning off, no model and no checks: problems under AI model and Quality checks
+    // A document built with no settings: learning off, no model and no steps, so there are problems under
+    // AI model and instructions and under Learning steps
     private static final SetupSummary NEW = SetupSummary.of(LearningFlowDoc.builder().uuid("new").name("New")
             .build(), FlowExampleFixtures.all());
-    // The setup most of these walk: the chain, the two configures, and the exhaustion step
+    // The flow most of these tests use: the Chain step, the two Configure steps, and the fallback step
     private static final List<FlowStep> DIRECT = FlowExampleFixtures.steps(FlowExample.DIRECT);
 
     @Test
     void theStopsAreTheSectionsInOrderWithTheStepsUnderLearningSteps() {
-        // Straight to it: three steps, then the fallback
+        // "Straight to it" (Direct) has three steps, then the fallback
         assertThat(DIRECT).hasSize(4);
         final List<Button> buttons = buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                 SetupStop.of(SetupSection.LEARNING), false));
@@ -93,7 +94,7 @@ class TestRouteMapDrawing {
 
     @Test
     void everyStopHasTheSameRoomAboutItsWordsAndItsMark() {
-        // Stops with no lines under their names, with one, and with problems more than a line long
+        // Includes stops with no lines under their names, with one line, and with problems longer than a line
         final String svg = RouteMapDrawing.draw(FlowExampleFixtures.steps(FlowExample.ESCALATING), NEW,
                 Map.of(1, "This step is wrong in a way that takes more than one line of the map to say"),
                 SetupStop.of(SetupSection.QUALITY), false);
@@ -109,7 +110,7 @@ class TestRouteMapDrawing {
         final List<Integer> tops = new ArrayList<>();
         final List<Integer> bottoms = new ArrayList<>();
         for (final String drawn : svg.split("<g class=\"route-map__station")) {
-            // A station's own markup, up to the end of its group
+            // The station's own markup, up to the end of its group
             final String station = drawn.substring(0, Math.max(0, drawn.indexOf("</g>")));
             final Matcher area = rect.matcher(station);
             if (!area.find()) {
@@ -126,7 +127,7 @@ class TestRouteMapDrawing {
             assertThat(stop.find()).isTrue();
             final int middle = stop.group(1) != null
                     ? Integer.parseInt(stop.group(1))
-                    // A square's top, a section's mark being 16 high
+                    // A section's mark is a square 16 high, so its middle is 8 below its top
                     : Integer.parseInt(stop.group(2)) + 8;
             above.add(lines.getFirst() - top);
             below.add(bottom - lines.getLast());
@@ -139,7 +140,8 @@ class TestRouteMapDrawing {
         assertThat(above).as("from a stop's top to its name").containsOnly(above.getFirst());
         assertThat(below).as("from a stop's last line to its bottom").containsOnly(below.getFirst());
         assertThat(markMiddles).as("from a stop's top to its mark").containsOnly(markMiddles.getFirst());
-        // The stops one after another on the map, Translation learned not being one, are the same way apart
+        // Consecutive stops are the same distance apart. (Translation learned is not a stop, and the larger
+        // gaps around it are filtered out.)
         final List<Integer> gaps = new ArrayList<>();
         for (int i = 1; i < tops.size(); i++) {
             gaps.add(tops.get(i) - bottoms.get(i - 1));
@@ -149,7 +151,7 @@ class TestRouteMapDrawing {
 
     @Test
     void addStepIsAButtonUnderTheStepChosenThatTheArrowKeysPassBy() {
-        // Straight to it, its second step chosen: a step added after it goes third
+        // With the Direct flow's second step chosen, a step added after it would be third
         final String svg = RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(1),
                 true);
 
@@ -157,11 +159,11 @@ class TestRouteMapDrawing {
         assertThat(svg).contains(RouteMapDrawing.DATA_ADD + "=\"2\" role=\"button\" tabindex=\"0\" "
                                  + "aria-haspopup=\"menu\" aria-label=\"Add a step after step 2\"");
         assertThat(svg).contains(">+ Add step</text>");
-        // Not a stop: the stops, which the arrow keys move between, are as without it
+        // The button is not a stop: the stops, which the arrow keys move between, are the same as without it
         assertThat(buttons(svg)).extracting(button -> button.key)
                 .isEqualTo(buttons(RouteMapDrawing.draw(DIRECT, NEW, Map.of(),
                         SetupStop.step(1), false)).stream().map(button -> button.key).toList());
-        // Drawn between the step chosen and the next, which moves down to make room for it
+        // It is drawn between the chosen step and the next, which moves down to make room for it
         final int add = svg.indexOf(RouteMapDrawing.DATA_ADD + "=");
         assertThat(add).isGreaterThan(svg.indexOf("data-stop=\"step:1\""));
         final String without = RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(1),
@@ -176,20 +178,20 @@ class TestRouteMapDrawing {
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
         assertThat(RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.of(SetupSection.APPROACH), true))
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
-        // Nor where the document can't have one added
+        // Nor when the document can't have a step added
         assertThat(RouteMapDrawing.draw(DIRECT, NEW, Map.of(), SetupStop.step(0), false))
                 .doesNotContain(RouteMapDrawing.DATA_ADD + "=");
     }
 
     @Test
     void everyLineOfWordsHasALinesHeightToItself() {
-        // Problems under two sections and a step, each more than one line long
+        // Problems under two sections and a step, each longer than one line
         final String svg = RouteMapDrawing.draw(DIRECT, NEW,
                 Map.of(1, "This step is wrong in a way that takes more than one line of the map to say"),
                 SetupStop.of(SetupSection.LEARNING), false);
 
         final Matcher matcher = Pattern.compile("<text class=\"[^\"]*\" x=\"\\d+\" y=\"(\\d+)\"").matcher(svg);
-        // The lines under a stop's name are 15 apart: none may be nearer the one above it
+        // The lines under a stop's name are 15 apart, so no line may be closer than that to the one above it
         int last = Integer.MIN_VALUE / 2;
         int lines = 0;
         while (matcher.find()) {
@@ -271,7 +273,7 @@ class TestRouteMapDrawing {
         return buttons.stream().filter(button -> button.key.equals(key)).findFirst().orElseThrow().label;
     }
 
-    // The top of a stop's box
+    // Gets the y position of the top of a stop's box
     private static int boxTop(final String svg, final String key) {
         final Matcher matcher = Pattern.compile("data-stop=\"" + Pattern.quote(key)
                                                 + "\"[^>]*><rect class=\"route-map__area\" x=\"\\d+\" y=\"(\\d+)\"")
@@ -288,7 +290,7 @@ class TestRouteMapDrawing {
     // --------------------------------------------------------------------------------
 
 
-    // A stop's button as drawn
+    // A stop's button, as parsed from the drawn SVG
     private record Button(String classes, String key, String tabIndex, String label, boolean current) {
 
     }

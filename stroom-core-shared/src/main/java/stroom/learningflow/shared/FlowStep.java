@@ -29,14 +29,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/// One step of a learning flow (A33, A37; design 01 §10.2): a question kind with what governs its asking —
-/// an id for a transition to name, a role for `CONFIGURE`, a guard, its limits and where it goes on each
-/// outcome. What judges a step is not its own: every check that can measure a step judges it, and whether a
-/// check is Off, Advice or Gate is set once on the Learning Flow (the one model of checks).
+/// One step of a learning flow: the kind of question it asks, and what governs the asking. That is an id for
+/// a transition to name, a role for a `CONFIGURE` step, a guard on the kind of input, its limits, and where it
+/// goes on each outcome. A step does not choose its own checks: every check that can measure a step judges it,
+/// and whether each check is Off, Advice or Gate is set once on the Learning Flow document.
 ///
-/// A step is read and written as JSON, with Stroom's usual Jackson conversion, and built in code with
-/// [#builder(QuestionKind)]. The one-line flow language it used to be written in is gone (Track 2 step 1c):
-/// where a person reads a step or a rule, the words come from [FlowWords].
+/// A step is read and written as JSON with Stroom's usual Jackson conversion, and built in code with
+/// [#builder(QuestionKind)]. Where a person reads a step or a rule, the words come from [FlowWords].
 @JsonPropertyOrder({"id", "kind", "role", "when", "candidates", "kinds", "elements", "transitions"})
 @JsonInclude(Include.NON_NULL)
 public class FlowStep {
@@ -44,15 +43,16 @@ public class FlowStep {
     public static final int DEFAULT_KINDS = 3;
     /// A step id: a letter, then letters, digits, hyphens or underscores; matched without regard to case.
     public static final String ID = "[A-Za-z][A-Za-z0-9_-]*";
-    /// The element types the AI can learn, one for each of the stage's runners and in their order (a test in
-    /// `stroom-learning-flow`, `TestStageFactory`, holds the two together). The chain question chooses from
-    /// these where the Chain step names none (A10), and the Setup tab offers them as tick boxes. There is no
-    /// `XMLParser`: a stream that is already XML needs no parser, so its chain begins with the transform and
-    /// the pipeline puts an `XMLParser` in front of it.
+    /// The element types the model can configure, one for each of the server's step runners and in the same
+    /// order (`TestStageFactory` in `stroom-learning-flow` checks that the two agree). The chain question
+    /// chooses from these where the Chain step names none, and the Setup tab offers them as tick boxes. There
+    /// is no `XMLParser`: a stream that is already XML needs no configured parser, so its chain begins with the
+    /// transform and the pipeline puts an `XMLParser` in front of it.
     public static final List<String> LEARNABLE_ELEMENTS = List.of(
             "DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
 
-    /// The step's name for `goto`; null where the step goes by its default name, [#effectiveId()].
+    /// The name a transition uses to go to this step; null where the step uses its default name,
+    /// [#effectiveId()].
     @JsonProperty
     private final String id;
     @JsonProperty
@@ -68,8 +68,8 @@ public class FlowStep {
     private final Integer kinds;
     @JsonProperty
     private final List<Transition> transitions;
-    /// The element types the chain question chooses from (A21, A95): the Chain step's alone, and empty
-    /// where it chooses from [#LEARNABLE_ELEMENTS]. With exactly one the question is not asked.
+    /// The element types the chain question chooses from. Only a Chain step names any; empty means it chooses
+    /// from [#LEARNABLE_ELEMENTS]. With exactly one, the question is not asked.
     @JsonProperty
     private final List<String> elements;
 
@@ -133,14 +133,18 @@ public class FlowStep {
         this.elements = Collections.unmodifiableList(named);
     }
 
-    /// A step that is only enough to be one: what a serialisation test builds, since a step with no
-    /// kind is not a step and the real constructor says so.
+    // The minimal valid step, for serialisation tests: the real constructors refuse a step with no kind.
     @SerialisationTestConstructor
     private FlowStep() {
         this(null, QuestionKind.CHAIN, null, null, null, null, null, null);
     }
 
-    /// A step with no id, role or transitions: the form the A34 list had.
+    /// Creates a step with no id, role or transitions.
+    ///
+    /// @param kind       The question the step asks.
+    /// @param when       The kind of input the step is asked for.
+    /// @param candidates The candidates the step may spend, or null for the document's maximum.
+    /// @param kinds      How many kinds of record a target step asks about, or null for [#DEFAULT_KINDS].
     public FlowStep(final QuestionKind kind,
                     final StepGuard when,
                     final Integer candidates,
@@ -148,17 +152,20 @@ public class FlowStep {
         this(null, kind, null, when, candidates, kinds, null, null);
     }
 
-    /// A step of a kind alone, asked always, with the document's limits.
+    /// @param kind The question the step asks.
+    /// @return A step of that kind, asked whatever the input, with the document's limits.
     public static FlowStep of(final QuestionKind kind) {
         return new FlowStep(kind, StepGuard.ALWAYS, null, null);
     }
 
-    /// A step of a kind under a guard, with the document's limits.
+    /// @param kind The question the step asks.
+    /// @param when The kind of input the step is asked for.
+    /// @return A step of that kind under that guard, with the document's limits.
     public static FlowStep of(final QuestionKind kind, final StepGuard when) {
         return new FlowStep(kind, when, null, null);
     }
 
-    /// A step built field by field: how code writes a step now that the flow language is gone.
+    /// Starts building a step field by field.
     ///
     /// @param kind The question the step asks.
     /// @return A builder for a step of that kind.
@@ -181,7 +188,7 @@ public class FlowStep {
         return role;
     }
 
-    /// @return When the step is asked: always, for raw text, or for input that is already records.
+    /// @return The kind of input the step is asked for: any, raw text, XML or JSON.
     public StepGuard getWhen() {
         return when;
     }
@@ -201,25 +208,26 @@ public class FlowStep {
         return transitions;
     }
 
-    /// The element types a Chain step names, or empty where it chooses from every learnable one.
+    /// @return The element types a Chain step names, or empty where it chooses from every learnable one.
     public List<String> getElements() {
         return elements;
     }
 
-    /// The element types the chain question chooses from: the ones named, else every learnable one.
+    /// @return The element types the chain question chooses from: the ones named, else every learnable one.
     public List<String> effectiveElements() {
         return elements.isEmpty()
                 ? LEARNABLE_ELEMENTS
                 : elements;
     }
 
-    /// This step with other elements named; only a Chain step takes any.
+    /// @param elements The element types to name; only a Chain step may name any.
+    /// @return A copy of this step naming those elements.
     public FlowStep withElements(final List<String> elements) {
         return new FlowStep(id, kind, role, when, candidates, kinds, transitions, elements);
     }
 
-    /// The name `goto` reaches this step by: its id, or the role's word for a `CONFIGURE` with a role, or the
-    /// kind's name in lower case.
+    /// @return The name a transition uses to go to this step: its id, or else the role's word for a `CONFIGURE`
+    /// step with a role, or else the kind's name in lower case.
     public String effectiveId() {
         if (id != null) {
             return id;
@@ -229,7 +237,8 @@ public class FlowStep {
                 : kind.name().toLowerCase();
     }
 
-    /// The transition that fires at once on an outcome, if the step declares one.
+    /// @param outcome An outcome.
+    /// @return The transition that fires at once on that outcome, or null if the step declares none.
     public Transition transitionOn(final StepOutcome outcome) {
         for (final Transition transition : transitions) {
             if (transition.getOn() == outcome) {
@@ -239,7 +248,7 @@ public class FlowStep {
         return null;
     }
 
-    /// The transition that fires when the candidates are spent, if the step declares one.
+    /// @return The transition that fires when the candidates are spent, or null if the step declares none.
     public Transition transitionOnSpent() {
         for (final Transition transition : transitions) {
             if (transition.onSpent()) {
@@ -367,8 +376,8 @@ public class FlowStep {
             return this;
         }
 
-        /// Leave the flow, by the step's own exit, once the step's candidates are spent. This is what a
-        /// step does anyway; it is said out loud where a flow means to say it.
+        /// Leave the flow, by the step's own exit, once the step's candidates are spent. A step does this
+        /// anyway without a transition; this makes it explicit.
         ///
         /// @return This builder.
         public Builder abandonWhenSpent() {

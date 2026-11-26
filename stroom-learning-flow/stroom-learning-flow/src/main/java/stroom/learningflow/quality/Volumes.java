@@ -21,14 +21,15 @@ import stroom.learningflow.shared.VolumeDay;
 import java.util.Collection;
 import java.util.List;
 
-/// How much a learner's translations produced, day by day (UTC), as a Smart Pipeline's Quality Assurance tab
-/// shows its volume: read from what each binding recorded of each stream it translated.
+/// Reads how much a learner's bindings translated on each day (UTC), for the volume chart on a Smart
+/// Pipeline's Quality Assurance tab. The figures come from the outputs each binding recorded for each stream
+/// it translated.
 public interface Volumes {
 
-    /// The days on which any of the bindings translated anything, since a time, oldest first. Days on which
-    /// they translated nothing are not returned.
+    /// Gets the days since a given time on which any of the bindings translated anything, oldest first.
+    /// Days on which they translated nothing are not returned.
     ///
-    /// @param bindingUuids The learner's bindings.
+    /// @param bindingUuids The UUIDs of the learner's bindings.
     /// @param sinceMs      The start of the window, in milliseconds since the epoch.
     /// @return A row per day that had any streams.
     List<VolumeDay> perDay(Collection<String> bindingUuids, long sinceMs);

@@ -38,46 +38,48 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-/// The attempts of A28 in memory, for a harness with no database. One node's record is not the cluster's,
-/// and it does not outlive the node, which is why the tables exist.
+/// An in-memory [Attempts], for tests that run without a database. It behaves like `AttemptsDao`, except
+/// that its records are not shared with other nodes and do not survive a restart.
 public final class InMemoryAttempts implements Attempts {
 
-    /// The states in which an attempt's binding is one that was, or was about to be, serving: the ones a
-    /// retraction is about.
+    /// The statuses in which an attempt's binding is, or was about to be, serving. These are the attempts
+    /// that [#settled] updates when that binding is retracted.
     private static final Set<AttemptStatus> BOUND = Set.of(AttemptStatus.PROMOTED,
             AttemptStatus.AWAITING_REVIEW);
 
-    /// The states in which an attempt is still learning, and so still holds its learner's claim (A45). A
-    /// draft awaiting review is not one of them: it has written its binding, and the binding is what the
-    /// learner's state answers with until a person decides.
+    /// The statuses in which an attempt is still learning, and so still holds its learner's claim. An
+    /// attempt awaiting review is not one of them: it has already written its draft binding, and the
+    /// learner's state reports that draft until a person decides.
     private static final Set<AttemptStatus> OPEN = Set.of(AttemptStatus.IN_PROGRESS,
             AttemptStatus.AWAITING_MODEL, AttemptStatus.PARKED);
 
     private final Map<Long, Recorded> attempts = new LinkedHashMap<>();
     private final Map<Long, List<Turn>> turns = new LinkedHashMap<>();
     private final Map<Long, Grant> grants = new LinkedHashMap<>();
-    /// Why each attempt stopped, in parts, where it stopped with a report.
+    /// Why each attempt stopped, in parts, for attempts that stopped with a report.
     private final Map<Long, StopReport> reports = new LinkedHashMap<>();
     private final Set<Long> exhaustNext = new HashSet<>();
-    /// What each attempt's draft was judged on, and who decided about it (Track 2 step 4).
+    /// The evidence each attempt's draft was judged on, and who decided about it and when.
     private final Map<Long, Review> reviews = new LinkedHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
-    /// Which pipelines are deleted, whose attempts a person sees only when they ask (A137).
+    /// Which pipelines are deleted. A person sees their attempts only when they ask for them.
     private final DeletedPipelines deletedPipelines;
 
-    /// Attempts in a scenario where no pipeline is deleted.
+    /// Creates attempts for a scenario in which no pipeline is deleted.
     public InMemoryAttempts() {
         this(new InMemoryDeletedPipelines());
     }
 
-    /// @param deletedPipelines Which pipelines are deleted.
+    /// Creates attempts that consult the given record of deleted pipelines.
+    ///
+    /// @param deletedPipelines Which pipelines are deleted, so that [#found] can hide their attempts.
     @Inject
     public InMemoryAttempts(final DeletedPipelines deletedPipelines) {
         this.deletedPipelines = deletedPipelines;
     }
 
-    /// One open attempt per learner (A45); an attempt whose expiry has passed has lapsed, and the next
-    /// node resumes it.
+    /// Opens a new attempt, unless the learner already has an open one. An open attempt whose lease has
+    /// expired still counts, because the next worker resumes it.
     @Override
     public synchronized Optional<Long> opened(final Attempt attempt, final long nowMs) {
         final long now = System.currentTimeMillis();
@@ -91,8 +93,8 @@ public final class InMemoryAttempts implements Attempts {
         return Optional.of(id);
     }
 
-    /// The newest, as the rows are read: an attempt superseded by a later one for the same learner is not
-    /// what a node picks up.
+    /// Returns the learner's newest open attempt, as the database query does, so that an older attempt
+    /// is never picked up in place of a later one.
     @Override
     public synchronized Optional<Recorded> open(final Learner learner, final long nowMs) {
         return attempts.values().stream()
@@ -108,7 +110,7 @@ public final class InMemoryAttempts implements Attempts {
                                     final long expiryMs,
                                     final long tokensSpent) {
         final Recorded was = attempts.get(attemptId);
-        // A finished attempt is not parked back into life: it holds no claim and asks nothing.
+        // A finished attempt is not brought back to life: it holds no claim and has nothing to ask.
         if (was != null && OPEN.contains(was.status())) {
             attempts.put(attemptId, new Recorded(was.id(), claim(was, expiryMs), status, was.decision(),
                     was.bindingUuid(), was.score(), was.tokensSpent() + tokensSpent, was.createTimeMs(),
@@ -123,7 +125,8 @@ public final class InMemoryAttempts implements Attempts {
         if (was == null || !OPEN.contains(was.status())) {
             return false;
         }
-        // A parked attempt is nobody's to carry; a running one is its own node's until it lapses.
+        // An attempt in progress belongs to its own node until its lease expires. Any other open attempt
+        // may be claimed by any node.
         if (was.status() == AttemptStatus.IN_PROGRESS
             && !node.equals(was.attempt().node())
             && was.attempt().expiryMs() > nowMs) {
@@ -150,7 +153,8 @@ public final class InMemoryAttempts implements Attempts {
         }
     }
 
-    /// By number: a turn written as it is asked and again when it is judged is one turn.
+    /// Adds or replaces a turn, keyed by its number. A turn is written when it is asked and again when it
+    /// is judged, and both writes are the same turn.
     @Override
     public synchronized void turn(final long attemptId, final Turn turn) {
         final List<Turn> written = turns.computeIfAbsent(attemptId, key -> new ArrayList<>());
@@ -188,12 +192,12 @@ public final class InMemoryAttempts implements Attempts {
         final Recorded was = attempts.get(attemptId);
         if (was != null) {
             report(attemptId, report);
-            // A claim that has ended holds nothing (A45), and frees the learner for the next attempt; what it
-            // spent is added to what it had spent before it was parked.
+            // Ending the claim frees the learner for its next attempt. What this run spent is added to what
+            // the attempt had spent before it was parked.
             attempts.put(attemptId, new Recorded(was.id(), claim(was, 0L), status, decision, bindingUuid, score,
                     was.tokensSpent() + tokensSpent, was.createTimeMs(), System.currentTimeMillis(),
                     List.of()));
-            // A sending to the exhaustion step stands until the attempt closes (A65).
+            // A request to go to the exhaustion step lasts only until the attempt closes.
             exhaustNext.remove(attemptId);
         }
     }
@@ -223,8 +227,8 @@ public final class InMemoryAttempts implements Attempts {
         reviews.put(attemptId, new Review(evidence, was.reviewedBy(), was.reviewedTimeMs()));
     }
 
-    /// The attempts that bound this binding, whatever state they ended in — promoted, or
-    /// awaiting a review that will now never happen.
+    /// Updates the attempts that produced this binding, whether they were promoted or are still awaiting a
+    /// review that will now never happen.
     @Override
     public synchronized void settled(final String docUuid, final String bindingUuid,
                                      final AttemptStatus status, final String decision) {
@@ -241,19 +245,19 @@ public final class InMemoryAttempts implements Attempts {
     public synchronized void amended(final long attemptId, final int turnNumber, final String answer,
                                      final String answeredBy) {
         final List<Turn> written = turns.computeIfAbsent(attemptId, key -> new ArrayList<>());
-        // Found before anything is destroyed: a turn number that names nothing must leave the transcript
-        // as it was, as it does in the table, where the two writes are one transaction.
+        // The turn is found before anything is changed, so that a turn number that does not exist leaves
+        // the transcript as it was, as the database does, where the two writes are one transaction.
         final int at = indexOf(written, turnNumber);
         if (at < 0) {
             throw new IllegalArgumentException("Attempt " + attemptId + " has no turn " + turnNumber);
         }
         final Turn was = written.get(at);
-        // The guidance it was asked with is kept: answering instead replaces the answer, not the
-        // question or what the question carried (A46). The table keeps it for the same reason.
+        // The guidance the question carried is kept: a person answering instead replaces the answer, not
+        // the question or what it carried. The database keeps it too.
         written.set(at, new Turn(was.number(), was.stepId(), was.candidate(), was.kind(), was.question(),
                 answer, answeredBy, null, was.carried()));
-        // What came after this turn is a consequence of the answer that has changed, and the walk will
-        // derive it again.
+        // The turns after this one followed from the answer that has now changed, so they are removed and
+        // the walk through the flow produces them again.
         written.removeIf(turn -> turn.number() > turnNumber);
     }
 
@@ -266,19 +270,20 @@ public final class InMemoryAttempts implements Attempts {
         return -1;
     }
 
-    /// One open attempt per learner (A45), whether it is opened for the first time or opened again.
+    /// Reopens an attempt so that the worker carries it on, for example after a person has answered it.
+    /// It is refused if another attempt of the same learner is open, as for [#opened].
     @Override
     public synchronized boolean reopened(final long attemptId, final long nowMs, final long expiryMs) {
         final Recorded was = attempts.get(attemptId);
         if (was == null) {
             return false;
         }
-        // A node is walking it at this moment: its answers are that walk's to give.
+        // A node is running this attempt now, so it is left to that node.
         if (was.status() == AttemptStatus.IN_PROGRESS && was.attempt().expiryMs() > nowMs) {
             return false;
         }
-        // Whatever else holds the claim keeps it, lapsed or not: a lapsed session is resumed, not swept
-        // aside for an answer to an older one.
+        // If another attempt of the learner holds the claim, it keeps it, even if its lease has expired:
+        // an expired session is resumed, not displaced by an answer to an older one.
         if (open(was.attempt().learner(), nowMs)
                 .filter(other -> other.id() != attemptId)
                 .isPresent()) {
@@ -336,8 +341,8 @@ public final class InMemoryAttempts implements Attempts {
                                    || !deletedPipelines.isDeleted(attempt.attempt().learner().pipelineUuid()))
                 .sorted((a, b) -> Long.compare(b.id(), a.id()))
                 .toList();
-        // Null offsets and lengths are what a request that says nothing about paging carries, and are
-        // the caller's to survive rather than to be unboxed into.
+        // A request without paging carries a null offset and length, which must be handled here rather
+        // than unboxed.
         final PageRequest paging = criteria.getPageRequest();
         final long offset = paging == null || paging.getOffset() == null
                 ? 0L
@@ -345,8 +350,8 @@ public final class InMemoryAttempts implements Attempts {
         final int length = paging == null || paging.getLength() == null
                 ? matching.size()
                 : paging.getLength();
-        // Without their turns, as the rows answer: a page of transcripts is a page nobody reads, and a
-        // twin that hands them over hides the difference from every scenario.
+        // The attempts are returned without their turns, as the database implementation returns them.
+        // Returning the turns here would hide that difference from every scenario.
         return new Page(matching.stream()
                 .skip(offset)
                 .limit(length)
@@ -364,7 +369,9 @@ public final class InMemoryAttempts implements Attempts {
                        && criteria.getLearner().getElementId().equals(was.learner().elementId())));
     }
 
-    /// @return Every attempt, for the learning pipelines list.
+    /// Returns every attempt, for the in-memory learning pipelines list.
+    ///
+    /// @return Every attempt.
     public synchronized List<Recorded> all() {
         return List.copyOf(attempts.values());
     }
@@ -384,8 +391,8 @@ public final class InMemoryAttempts implements Attempts {
                 .toList();
     }
 
-    /// The same attempt with its claim expiring at a given time: the record is immutable, so a claim
-    /// taken, extended or ended is a new one.
+    /// Returns a copy of the attempt with its claim expiring at the given time. The record is immutable,
+    /// so taking, extending or ending a claim makes a new one.
     private static Attempt claim(final Recorded was, final long expiryMs) {
         final Attempt attempt = was.attempt();
         return new Attempt(attempt.learner(), attempt.docUuid(), attempt.feed(), attempt.type(),

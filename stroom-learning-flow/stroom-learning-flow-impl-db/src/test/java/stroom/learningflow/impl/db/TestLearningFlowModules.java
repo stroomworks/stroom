@@ -37,12 +37,12 @@ import org.mockito.Mockito;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
-/// Which of the two modules holds what, which is not a matter of taste. [LearningFlowDbModule] is
-/// installed in the injector that runs the Flyway migrations before the application exists, and that
-/// injector holds only data sources and configuration: a binding there that asks for a cache manager or
-/// the entity event bus stops the node on startup rather than at the first stream.
+/// Tests that each of the two Guice modules binds only what it should. [LearningFlowDbModule] is installed
+/// in the injector that runs the Flyway migrations before the application exists, and that injector holds
+/// only data sources and configuration. A binding there that needed a cache manager or the entity event
+/// bus would stop the node on startup.
 ///
-/// Neither test reaches the database — no data source is created, because nothing here asks for one.
+/// None of these tests reaches the database: no data source is created, because nothing here asks for one.
 class TestLearningFlowModules {
 
     @Test
@@ -72,8 +72,9 @@ class TestLearningFlowModules {
         assertThat(injector.getInstance(LearnerStates.class)).isInstanceOf(CachedLearnerStates.class);
     }
 
-    /// What the bootstrap injector brings: the module's configuration, and the factory it would make a
-    /// pool from. Nothing else, which is the point of the first two tests.
+    /// Stands in for what the bootstrap injector provides: the module's configuration and the factory it
+    /// would create a connection pool from. It provides nothing else, which is the point of the first two
+    /// tests.
     private static AbstractModule bootstrap() {
         return new AbstractModule() {
             @Override
@@ -84,8 +85,8 @@ class TestLearningFlowModules {
         };
     }
 
-    /// What the application brings the DAO module, standing in for a node: a real cache manager, a bus
-    /// with no other node listening on it, and a connection nothing in these tests uses.
+    /// Stands in for what the application provides to the DAO module: a real cache manager, an event bus
+    /// with no other node listening, and a connection provider that these tests never use.
     private static AbstractModule application() {
         return new AbstractModule() {
             @Override

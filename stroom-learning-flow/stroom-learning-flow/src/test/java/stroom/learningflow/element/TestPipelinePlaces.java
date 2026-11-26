@@ -38,9 +38,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A113: where a learner's content goes in a node. What the element says, read from its pipeline
-/// as merged — a value a person set on the pipeline — and beside the pipeline under its name
-/// where the element says nothing.
+/// Tests where in the explorer tree a learner's learned content is written.
+///
+/// The folder and name come from the Smart Pipeline element's properties, read from the merged pipeline so that
+/// a value set on the pipeline itself counts. Where the element sets neither, the content goes in the pipeline's
+/// own folder, named after the pipeline.
 class TestPipelinePlaces {
 
     private static final Learner LEARNER = new Learner("pipeline-1", "learningFlow");
@@ -56,7 +58,7 @@ class TestPipelinePlaces {
     @BeforeEach
     void setUp() {
         Mockito.when(explorer.getRoot()).thenReturn(ExplorerConstants.SYSTEM_NODE);
-        // The pipeline sits in Feeds/DOOR-ACCESS, under the root the explorer's path starts from.
+        // The pipeline is in Feeds/DOOR-ACCESS. The explorer's path starts with the root node.
         Mockito.when(explorer.getPath(PIPELINE.asDocRef())).thenReturn(List.of(
                 ExplorerConstants.SYSTEM_NODE, folder("Feeds"), folder("DOOR-ACCESS")));
     }
@@ -83,7 +85,8 @@ class TestPipelinePlaces {
 
     @Test
     void aBlankValueIsAnUnsetOne() {
-        // A factory whose pattern substitutes to nothing writes a blank; a blank is not a folder or a name.
+        // A Pipeline Factory whose name pattern substitutes to nothing writes a blank value, which must be
+        // treated as unset rather than as a folder or a name.
         element(Map.of(
                 PipelinePlaces.FOLDER_PROPERTY, new PipelinePropertyValue("  "),
                 PipelinePlaces.NAME_PROPERTY, new PipelinePropertyValue("")));
@@ -94,7 +97,8 @@ class TestPipelinePlaces {
 
     @Test
     void aFolderIsTakenAsMeantNotAsTyped() {
-        // A leading slash, space around one, or an empty part where a pattern substituted to nothing.
+        // A leading slash, spaces around a slash, or an empty part where a pattern substituted to nothing are
+        // all tidied away.
         element(Map.of(PipelinePlaces.FOLDER_PROPERTY, new PipelinePropertyValue(" /Learned // DOOR-ACCESS/ ")));
 
         assertThat(places.of(LEARNER).folder()).isEqualTo(DocPath.fromParts("Learned", "DOOR-ACCESS"));
@@ -108,8 +112,8 @@ class TestPipelinePlaces {
 
     @Test
     void aPipelineAtTheTopOfTheTreePutsItAtTheTop() {
-        // A pipeline in no folder, or one made through its store and so in none the explorer knows: the
-        // path is the root's, or nothing, and either is the top of the tree.
+        // A pipeline in no folder has only the root as its path. A pipeline created through its store, and so
+        // unknown to the explorer, has an empty path. Both mean the top of the tree.
         Mockito.when(explorer.getPath(PIPELINE.asDocRef())).thenReturn(List.of(ExplorerConstants.SYSTEM_NODE));
         element(Map.of());
 
@@ -122,8 +126,8 @@ class TestPipelinePlaces {
 
     @Test
     void aPipelineThatCannotBeReadStillHasSomewhereToPutWhatWasLearned() {
-        // Deleted while a session it opened was still being carried on: what the session learns is kept
-        // where a person can find it, under the pipeline's uuid.
+        // The pipeline was deleted while one of its sessions was still running. What the session learns is
+        // still written somewhere a person can find it: a "Learning Flow" folder, named by the pipeline's UUID.
         Mockito.when(documents.elementOf(LEARNER)).thenReturn(Optional.empty());
 
         assertThat(places.of(LEARNER)).isEqualTo(new Place(DocPath.fromParts("Learning Flow"), "pipeline-1"));

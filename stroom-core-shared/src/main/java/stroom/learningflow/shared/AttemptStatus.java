@@ -21,30 +21,30 @@ import stroom.docref.HasDisplayValue;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
-/// Where an attempt stands (A28): the states the Supervisor view filters by. An attempt is in one of them
-/// at a time, and the ones that end it — everything but [#IN_PROGRESS], [#AWAITING_MODEL], [#PARKED] and
-/// [#AWAITING_REVIEW] — are final.
+/// Where a learning session (attempt) stands, as recorded on its row and shown in the Supervisor. A session is
+/// in one status at a time. Every status except [#IN_PROGRESS], [#AWAITING_MODEL], [#PARKED] and
+/// [#AWAITING_REVIEW] ends the session and is final.
 public enum AttemptStatus implements HasDisplayValue {
 
     /// A node is working on it now.
     IN_PROGRESS("In progress"),
-    /// Parked until the deferred worker puts its next question to the model (A5).
+    /// Waiting for the background learning worker to put its next question to the model.
     AWAITING_MODEL("Awaiting model"),
-    /// Learned, and waiting for a person to approve or reject what it wrote (A25).
+    /// Learned, and waiting for a person to approve or reject the draft it wrote.
     AWAITING_REVIEW("Awaiting review"),
-    /// Out of budget, or out of candidates, before its stream cleared the bar: parked for a person (A65),
-    /// holding its learner with a lease that does not lapse, and left alone by the worker until somebody
-    /// answers it, gives it more to spend, or sends it to the exhaustion step.
+    /// Out of budget, or out of candidates, before its stream cleared the bar, so stopped for a person. It
+    /// keeps its claim on its learner with a lease that does not expire, and the worker leaves it alone until
+    /// somebody answers it, gives it more to spend, or sends it to the fallback step.
     PARKED("Parked"),
-    /// Bound, and judged on enough records to mean it.
+    /// Its candidate passed the promotion gate and became the learner's binding.
     PROMOTED("Promoted"),
-    /// A person refused what it wrote (A25).
+    /// A person rejected the draft it wrote.
     REJECTED("Rejected"),
-    /// What it bound has been taken back, by a person or by the gate (design 01 §6, §11.6). The learner
-    /// knows nothing again rather than giving up: the binding was wrong, not the feed, so the learner's
-    /// next stream is learned afresh.
+    /// A person took back the binding it promoted. The learner is reset rather than given up, because the
+    /// binding was wrong, not the feed, so the learner's next stream is learned afresh.
     RETRACTED("Retracted"),
-    /// It ran out of candidates, budget or sense, and wrote nothing.
+    /// It ended without writing a binding: its flow gave the learner up, or it was no longer wanted when the
+    /// worker came to resume it (for example, learning had been turned off or the learner given up).
     ABANDONED("Abandoned"),
     /// Something outside the conversation failed: the model, the node, the database.
     ERROR("Error");

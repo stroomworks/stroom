@@ -36,11 +36,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/// A learning run's conversation on the Feeds tab (A116): a row per question, its number, its step, who
-/// answered and how the answer was judged; each opens (a disclosure button) to its score against what it
-/// needed, what was asked and the whole answer, with a button to answer it instead, or change the answer
-/// and run again from there (A28). Replaces the Supervisor's grid of turns and its transcript, which showed
-/// the same turns twice. Which rows are open is kept while the run is read again.
+/// Shows the conversation between a learning run and the AI, on a pipeline's Learning Status tab. Each
+/// question the run asked is a row showing its number, the step that asked it, who answered it and how the
+/// answer was judged. A row
+/// expands to show the answer's score against what was needed, what was asked and the whole answer, with a
+/// button to answer the question yourself, or to change the answer and run again from that point.
+///
+/// The rows that are expanded stay expanded when the same run is shown again after a refresh.
 public class ConversationList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -58,7 +60,7 @@ public class ConversationList extends Component {
     private Consumer<Integer> onShowPrompt = number -> {
     };
 
-    /// Makes an empty conversation.
+    /// Creates an empty conversation.
     public ConversationList() {
         initWidget(BINDER.createAndBindUi(this));
         setRows(List.of(), true, false);
@@ -66,10 +68,11 @@ public class ConversationList extends Component {
 
     /// Shows a run's questions.
     ///
-    /// @param rows       The questions, in order.
-    /// @param fresh      Whether they are another run's, when the last question is opened and no other;
-    ///                   else the rows open stay open.
-    /// @param answerable Whether a question may be answered here: not a deleted pipeline's.
+    /// @param rows       The questions, in the order they were asked.
+    /// @param fresh      Whether they belong to a different run from the one shown. If so, only the last
+    ///                   question is expanded; if not, the rows already expanded stay expanded.
+    /// @param answerable Whether questions may be answered here. They can't be when the pipeline has been
+    ///                   deleted.
     public void setRows(final List<Row> rows, final boolean fresh, final boolean answerable) {
         this.answerable = answerable;
         if (fresh) {
@@ -85,18 +88,19 @@ public class ConversationList extends Component {
         }
     }
 
-    /// @param onShowPrompt Told the number of the question whose prompt, as it was sent, the user asks for
-    ///                     (decision N9).
+    /// @param onShowPrompt Called with the number of a question when the user asks to see the prompt exactly
+    ///                     as it was sent to the AI.
     public void setOnShowPrompt(final Consumer<Integer> onShowPrompt) {
         this.onShowPrompt = onShowPrompt;
     }
 
-    /// @param onAnswer Told the number of the question the user answers, or whose answer they change.
+    /// @param onAnswer Called with the number of the question the user wants to answer, or whose answer they
+    ///                 want to change.
     public void setOnAnswer(final Consumer<Integer> onAnswer) {
         this.onAnswer = onAnswer;
     }
 
-    // One question: its disclosure button, and what it opens to
+    // Builds one question's row: the button that expands it, and the details it expands to
     private Widget turn(final Row row) {
         final FlowPanel turn = new FlowPanel();
         turn.addStyleName("conversation-list__turn");
@@ -119,8 +123,9 @@ public class ConversationList extends Component {
         }
         body.add(text("Asked", "conversation-list__term"));
         body.add(text(row.question, "conversation-list__question"));
-        // The question above is what the turn recorded; what the model was actually sent is rebuilt when
-        // asked for, for someone who may view data (N9)
+        // The question above is the summary the turn recorded. The full prompt sent to the AI contains the
+        // feed's data, so it is not held here; the server rebuilds it on request, and only for a user who
+        // is allowed to view data
         final LinkButton prompt = new LinkButton("Show the prompt as it was sent");
         prompt.addStyleName("conversation-list__prompt-link");
         prompt.setOpensDialog(true);
@@ -195,7 +200,8 @@ public class ConversationList extends Component {
 
     interface Templates extends SafeHtmlTemplates {
 
-        // A question's button: its number, step and who answered, and how it was judged (escaped)
+        // The content of a question's expand button: its number, its step, who answered and how the answer
+        // was judged. All the values are escaped
         @Template("<span class=\"conversation-list__number\">{0}</span>"
                   + "<span class=\"conversation-list__step\">{1}</span>"
                   + "<span class=\"conversation-list__who\">{2}</span>"
@@ -207,7 +213,7 @@ public class ConversationList extends Component {
     // --------------------------------------------------------------------------------
 
 
-    /// One question of the conversation, as its row shows it.
+    /// The values shown for one question of the conversation.
     public static final class Row {
 
         private final int number;
@@ -219,11 +225,11 @@ public class ConversationList extends Component {
         private final String question;
         private final String answer;
 
-        /// @param number   Its place in the run.
+        /// @param number   The question's position in the run, from 1.
         /// @param step     The step that asked it.
-        /// @param who      Who answered, e.g. "AI" or a person's name; "Nobody yet".
+        /// @param who      Who answered, e.g. "AI" or a person's name, or "Nobody yet".
         /// @param result   How the answer was judged.
-        /// @param tone     The tone of the judgement.
+        /// @param tone     Whether the judgement is good, a warning or neutral, which sets its colour.
         /// @param score    The score that decided it, as a sentence, or null for none.
         /// @param question What was asked.
         /// @param answer   The answer, or null where none has been given.

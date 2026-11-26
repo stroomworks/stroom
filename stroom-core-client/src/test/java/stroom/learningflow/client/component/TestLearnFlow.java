@@ -73,9 +73,9 @@ class TestLearnFlow {
     void suitableBuiltInsPutTheSlotFirst() {
         final List<Template> fits = LearnFlow.suitable(Template.CONFIGURATION);
         assertThat(fits.get(0)).isEqualTo(Template.CONFIGURATION);
-        // Rules passages have no variables, so fit any text
+        // Rules passages have no variables, so they suit any text
         assertThat(fits).contains(Template.SPLIT_RULES);
-        // The admission question uses variables the configuration question lacks
+        // The admission question uses variables the configuration question doesn't have
         assertThat(fits).doesNotContain(Template.ADMISSION);
     }
 
@@ -111,7 +111,8 @@ class TestLearnFlow {
                 new FlowProblem(1, "w", Severity.WARNING), new FlowProblem(1, "x", Severity.WARNING),
                 new FlowProblem(0, "y", Severity.WARNING));
 
-        // A card paints its problems and its warnings differently, so each is asked for on its own
+        // A step card shows problems and warnings in different styles, so each severity can be asked for
+        // separately
         assertThat(LearnFlow.problemsOf(problems, 1)).isEqualTo("a");
         assertThat(LearnFlow.problemsOf(problems, 1, Severity.PROBLEM)).isEqualTo("a");
         assertThat(LearnFlow.problemsOf(problems, 1, Severity.WARNING)).isEqualTo("w; x");

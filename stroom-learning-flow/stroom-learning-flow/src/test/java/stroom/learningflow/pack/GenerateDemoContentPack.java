@@ -19,31 +19,31 @@ package stroom.learningflow.pack;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/// Writes the demo content pack.
+/// Writes the Smart Pipelines demo content pack and its demo data.
 ///
-/// The pack is a deliverable, not a test, so it is written by running this rather than as a side effect
-/// of a test run. What proves it is `TestScenario51AnyFormatFromAnyFeedInAPipeline`, which runs the same
-/// document, and a pipeline and filter per feed, over four formats in real pipelines, and
-/// [TestDemoContentPack], which reads every file back.
+/// The pack is a deliverable, not a test, so it is written by running this class rather than as a side effect
+/// of a test run. `TestScenario51AnyFormatFromAnyFeedInAPipeline` runs the same document, with a pipeline and
+/// filter per feed, over four formats in real pipelines, and [TestDemoContentPack] reads every file back.
 ///
-/// Run it with no arguments to write `build/content/smart-pipelines-demo-v1.0.zip`, or give it a path to
-/// write it somewhere else — the root of the repository, where the pack is committed, or the
-/// `content_pack_import` directory of an instance. The demo data goes beside it, one zip per feed, in a
+/// Run it with no arguments to write `build/content/smart-pipelines-demo-v1.0.zip`, or give it a path to write
+/// it somewhere else, such as the root of the repository, where the pack is committed, or the
+/// `content_pack_import` directory of an instance. The demo data is written beside it, one zip per feed, in a
 /// `demo-data` directory.
 ///
-/// Writing it twice writes the same bytes, so regenerating a pack nothing has changed leaves nothing to
-/// commit; `TestDemoContentPack` checks the committed pack and the committed data against what this
-/// would write.
+/// The output is deterministic, so regenerating an unchanged pack leaves nothing to commit.
+/// `TestDemoContentPack` checks the committed pack and data against what this would write.
 public final class GenerateDemoContentPack {
 
     private static final Path DEFAULT = Paths.get("build", "content", "smart-pipelines-demo-v1.0.zip");
-    /// Where the data zips go, beside wherever the pack is written.
+    /// The directory, beside the pack, that the data zips are written to.
     private static final String DATA = "demo-data";
 
     private GenerateDemoContentPack() {
     }
 
-    /// @param args Where to write the pack, or nothing for the default.
+    /// Writes the pack and the demo data.
+    ///
+    /// @param args The path to write the pack to, or no arguments for the default path.
     public static void main(final String[] args) {
         final Path zip = args.length > 0
                 ? Paths.get(args[0])

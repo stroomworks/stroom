@@ -38,21 +38,22 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// Edits one check of a Learning Flow in a dialog ([CheckEditor]): whether it is Off, Advice or a
-/// Gate, its threshold where it has one, and the panel of settings that belongs to the check (the one
-/// model of checks). Every check has a setting, so the check itself isn't chosen; it names the dialog. A
-/// business rules check's assertions are a list of their own ([XPathAssertionListController]).
+/// Shows the dialog ([CheckEditor]) that edits one of a Learning Flow's quality checks: whether it is Off,
+/// Advice or a Gate, its threshold if it has one, and the settings specific to that check. Every check always
+/// has a setting, so the dialog edits a given check rather than choosing one, and the check's name is its
+/// caption. A business rules check's assertions are edited in a list with its own controller
+/// ([XPathAssertionListController]).
 public class CheckEditorController extends Controller {
 
     private final CheckEditor view;
     private final XPathAssertionListController assertionList;
     private Check check;
 
-    /// Made by GIN, with its content.
+    /// Created by GIN.
     ///
     /// @param eventBus              The application's event bus.
     /// @param view                  The dialog's content.
-    /// @param assertionListProvider Makes the controller of a business rules check's assertions.
+    /// @param assertionListProvider Creates the controller for a business rules check's assertions.
     @Inject
     public CheckEditorController(final EventBus eventBus,
                                          final CheckEditor view,
@@ -64,12 +65,12 @@ public class CheckEditorController extends Controller {
         watch(Contexts.READ_ONLY, view::setReadOnly);
     }
 
-    /// Shows the editor as a dialog, owned by `opener` until it is closed. OK refuses while a number
-    /// typed can't be kept (the field says why); otherwise it gives the setting to `onOk`.
+    /// Shows the editor as a dialog, owned by `opener` until it is closed. If a field holds an invalid value,
+    /// OK shows an error and leaves the dialog open; otherwise it passes the edited setting to `onOk`.
     ///
-    /// @param opener  What shows it.
-    /// @param setting The check's setting.
-    /// @param onOk    What to do with the setting when OK is pressed.
+    /// @param opener  The screen that opens the dialog.
+    /// @param setting The check's current setting.
+    /// @param onOk    Called with the edited setting when OK is pressed.
     public void edit(final HasControllerNode opener,
                      final CheckSetting setting,
                      final Consumer<CheckSetting> onOk) {
@@ -130,8 +131,8 @@ public class CheckEditorController extends Controller {
         };
     }
 
-    // Why the dialog can't be accepted as it stands, or null if it can. The numbers' own checks have
-    // refused already (their fields say why), so these hold only if one slipped past
+    // Returns why the dialog can't be accepted as it stands, or null if it can. The number fields' own
+    // validation normally catches these first; this is a backstop in case one gets past it
     private String validate() {
         if (view.getState() == null) {
             return "Choose whether the check is off, advice or a gate.";

@@ -18,18 +18,20 @@ package stroom.learningflow.client.component;
 
 import stroom.docref.HasDisplayValue;
 
-/// The sections of a Learning Flow document's Setup tab ([SetupTab]), in the order a translation meets
-/// them: how it is learned, what a good one looks like, when it is put to use, and how it is watched in use.
+/// The sections of a Learning Flow document's Setup tab ([SetupTab]).
+///
+/// They are listed in the order a translation passes through them: how it is learned, what a good one looks
+/// like, when it is put to use, and how it is monitored once in use.
 public enum SetupSection implements HasDisplayValue {
-    /// Whether the document learns, with what model, and what the AI is told.
+    /// Whether the document learns at all, which AI model it uses, and the instructions the model is given.
     LEARNING("AI model and instructions"),
-    /// The steps it takes, the parsers and filters it may choose from, and what a run may spend.
+    /// The steps a session takes, the parsers and filters it may choose from, and what a run may spend.
     APPROACH("Learning steps"),
-    /// The checks a translation is scored against, while it is learned and once it is in use.
+    /// The checks a translation is scored against, both while it is learned and once it is in use.
     QUALITY("Quality checks"),
-    /// When a new translation is put to use, and what a feed gets when learning can't finish.
+    /// When a new translation is put to use, and what happens to a feed when learning cannot finish.
     GOING_LIVE("Approving new translations"),
-    /// How a translation in use is watched.
+    /// How a translation is monitored once it is in use.
     IN_SERVICE("Monitoring translations in use");
 
     private final String displayValue;

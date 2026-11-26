@@ -23,17 +23,16 @@ import jakarta.inject.Singleton;
 
 import java.util.Optional;
 
-/// The `timeZone` property of a learner's Smart Pipeline element (decision N6), read from the pipeline
-/// rather than from the element.
+/// Reads the `timeZone` property of a learner's Smart Pipeline element from its pipeline, rather than
+/// from the element, and resolves the time zone for a stream.
 ///
-/// It is read here, as the learned folder and name are ([PipelinePlaces]), because the worker that
-/// carries an attempt on runs no pipeline and so has no element to be told the property by — and the
-/// zone is needed while learning as much as while serving, or a date judged in one zone would be served
-/// in another.
+/// Like the learned folder and name ([PipelinePlaces]), it is read from the pipeline because the
+/// background worker runs no pipeline and so has no element to receive the property. The zone is needed
+/// while learning as much as while serving, otherwise a date judged in one zone would be served in another.
 @Singleton
 public class PipelineZones {
 
-    /// The element property, as the pipeline holds it.
+    /// The name of the element property, as the pipeline holds it.
     static final String PROPERTY = "timeZone";
 
     private final LearnerDocuments learnerDocuments;
@@ -47,20 +46,20 @@ public class PipelineZones {
     ///
     /// @param learner The learner.
     /// @param header  The stream's `TimeZone` header, or null where it carries none.
-    /// @return The zone, where it came from, and what was wrong with what was asked for.
+    /// @return The zone, where it came from, and any problem with the zones that were given.
     public ResolvedZone of(final Learner learner, final String header) {
         return ResolvedZone.of(header, property(learner).orElse(null));
     }
 
     /// @param learner The learner.
-    /// @return The pipeline's `timeZone` property, where it sets one; a blank value is an unset one.
+    /// @return The element's `timeZone` property, where it is set; a blank value counts as unset.
     private Optional<String> property(final Learner learner) {
         try {
             return learnerDocuments.elementOf(learner)
                     .flatMap(element -> element.text(PROPERTY));
         } catch (final RuntimeException e) {
             // A pipeline that cannot be read is not a reason to stop translating: the header, or UTC,
-            // still gives a zone, and what is wrong with the pipeline is reported where it is found
+            // still gives a zone, and the problem with the pipeline is reported elsewhere.
             return Optional.empty();
         }
     }

@@ -16,33 +16,34 @@
 
 package stroom.learningflow.stage;
 
-/// What a document has spent on the model, counted across the cluster (A44): a budget divided by node
-/// count is not a budget, and a feed burning spend on one node is invisible to the others. One row per
-/// document, a token bucket over a window, updated atomically by whichever node made the call.
+/// Counts what each document has spent on the model, across the whole cluster. The count must be
+/// cluster-wide because a budget divided by the number of nodes is not a real budget, and spend on one node
+/// would be invisible to the others. There is one row per document, counting over a time window, updated
+/// atomically by whichever node made the call.
 ///
-/// The counter is here; the policy that reads it — the per-document rate limit and the spend breaker that
-/// opens error mode — is A24's, and is built with it in phase E.
+/// This only counts; [SpendBreaker] reads the counts and decides whether new sessions may open.
 public interface Spend {
 
-    /// Count what an attempt cost, against the document's current window. Where the window has run out the
-    /// count starts again from this call.
+    /// Adds what a session cost to the document's count for the current window. If the window has ended,
+    /// the count starts again from this call.
     ///
-    /// @param tokens What the model charged, where it says; zero where it does not.
-    /// @param calls  How many questions were put to it.
-    /// @param windowMs How long a window lasts, so that a count is of what was spent lately.
+    /// @param docUuid  The UUID of the document to charge.
+    /// @param tokens   The tokens the model charged, if it reports them; zero if it does not.
+    /// @param calls    How many questions were put to the model.
+    /// @param windowMs How long a window lasts, so that the count reflects recent spending.
     /// @return What the document has spent in the window this call belongs to, including this call.
     Spent record(String docUuid, long tokens, int calls, long windowMs);
 
-    /// What the document has spent in the window it is in, without adding to it.
+    /// Gets what the document has spent in its current window, without adding to it.
     Spent spent(String docUuid, long windowMs);
 
-    /// What **every** document has spent lately, added together: what a system-wide ceiling is read
-    /// against (A24). A per-document ceiling cannot bound a cluster — a hundred documents each inside
-    /// their own ceiling are a hundred times it — so the breaker needs both.
+    /// Gets what **every** document has spent recently, added together, for comparison with the
+    /// cluster-wide ceiling. A per-document ceiling cannot limit a cluster (a hundred documents, each within
+    /// its own ceiling, can spend a hundred times it), so the breaker needs both.
     ///
     /// Windows are per document and do not line up, so this is the sum of each document's own current
-    /// window rather than a single window across the cluster. That over-counts a little at a window's
-    /// edge, which is the right direction for a safety limit to be wrong in.
+    /// window rather than a single window across the cluster. That over-counts slightly at a window's
+    /// edge, which is the safe direction for a safety limit to err in.
     ///
     /// @param windowMs How long a window lasts.
     /// @return The totals; `windowStartMs` is the earliest window still counting, or now where nothing
@@ -53,9 +54,11 @@ public interface Spend {
     // --------------------------------------------------------------------------------
 
 
-    /// @param windowStartMs When the window this counts began.
-    /// @param tokens        Tokens charged in it.
-    /// @param calls         Questions put to the model in it.
+    /// An amount spent within a window.
+    ///
+    /// @param windowStartMs When the window began.
+    /// @param tokens        Tokens charged in the window.
+    /// @param calls         Questions put to the model in the window.
     record Spent(long windowStartMs, long tokens, int calls) {
 
     }

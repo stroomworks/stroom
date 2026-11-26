@@ -34,9 +34,11 @@ import javax.xml.transform.stream.StreamResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What a declared skip does to a stream being served: it is counted, it is not judged, and it is gone
-/// before the downstream — and so before the writer — could see it
-/// (`docs/learning-flow-declared-skips-design.md`).
+/// Tests how the record gate treats a declared skip in a stream being served.
+///
+/// A translation may write a `Skipped` marker in place of an event for a record it deliberately did not
+/// translate. The gate counts the marker, does not judge it against the bar, and removes it before anything
+/// downstream, including the writer, can see it.
 class TestRecordGateSkips {
 
     private static final Verdict CLEARS = new Verdict(List.of(), 1.0);
@@ -61,8 +63,8 @@ class TestRecordGateSkips {
 
     @Test
     void theDownstreamNeverSeesAMarker() throws Exception {
-        // The writer drops it by never being given it: a skip is the module's own bookkeeping and no part
-        // of what the feed's events are
+        // The marker is never passed to the writer, because a skip is Learning Flow's own bookkeeping and not
+        // one of the feed's events
         final String written = serve(SERVED).written;
 
         assertThat(written).doesNotContain("Skipped");
@@ -73,8 +75,8 @@ class TestRecordGateSkips {
 
     @Test
     void aStreamOfNothingButSkipsHandsOnNothing() throws Exception {
-        // It still opens no document downstream, as a run whose every record fell short does: there are
-        // no events to write
+        // Nothing is passed downstream, just as for a run whose every record fell short, because there are no
+        // events to write
         final Run run = serve("""
                 <Events xmlns="event-logging:3">
                   <Skipped xmlns="learningflow:skips" reason="cannot read"/>
@@ -85,10 +87,10 @@ class TestRecordGateSkips {
         assertThat(run.written).isEmpty();
     }
 
-    /// Runs the gate over an output, as a serving run does.
+    /// Runs the record gate over a chain's output, as a serving run does.
     ///
     /// @param output What the chain produced.
-    /// @return What the gate made of it, and what the downstream was given.
+    /// @return What the gate counted and judged, and what it passed downstream.
     private static Run serve(final String output) throws Exception {
         final TransformerHandler downstream = XMLUtil.createTransformerHandler(false);
         final StringWriter writer = new StringWriter();
@@ -111,7 +113,7 @@ class TestRecordGateSkips {
     // --------------------------------------------------------------------------------
 
 
-    /// One serving run.
+    /// The result of one serving run through the record gate.
     ///
     /// @param records How many events were judged.
     /// @param skips   How many records the translation declared it skipped.

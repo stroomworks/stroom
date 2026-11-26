@@ -27,7 +27,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The Setup tab's checks while they are edited: one setting for every check, edited in place.
+/// Tests [CheckSet], which holds the Setup tab's checks while they are edited: one setting for every check,
+/// edited in place.
 class TestCheckSet {
 
     @Test

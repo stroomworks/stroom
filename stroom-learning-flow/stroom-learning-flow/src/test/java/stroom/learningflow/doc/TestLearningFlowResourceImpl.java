@@ -34,12 +34,15 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// What the Setup tab is told about a target schema (task 7): whether it is event-logging, for the
-/// fallback (W1-3), and what its root may hold, every child of which is read as a record (W1-5).
+/// Tests the summary of a target schema that the resource gives the Learning Flow editor's Setup tab.
+///
+/// The summary says whether the schema is event-logging, because the step that learns marked `Unknown` events
+/// only works for event-logging. It also lists what the root element may hold, because each child of the root
+/// is read as one record.
 class TestLearningFlowResourceImpl {
 
     private static final DocRef BATCHES = new DocRef(XmlSchemaDoc.TYPE, "schema-3", "batches v1");
-    // A root holding a header beside its records
+    // A root holding a header element beside its records
     private static final String BATCHES_XSD = """
             <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:batches:1"
                        xmlns="urn:batches:1" elementFormDefault="qualified" version="1">

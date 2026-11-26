@@ -21,7 +21,7 @@ package stroom.learningflow.shared;
 public enum StopCause {
     /// A step ran out of tries: every answer to it fell short.
     STEP_SPENT,
-    /// A step's rule said to leave the flow on how an answer did.
+    /// A step's transition for the answer's outcome said to leave the flow.
     STEP_RULE,
     /// A step's element failed on its input, with nothing to ask the model.
     STEP_FAILED,

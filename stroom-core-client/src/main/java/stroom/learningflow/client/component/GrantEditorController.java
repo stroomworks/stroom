@@ -31,21 +31,22 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// Gives a parked session more to spend (A65, A77), in a dialog ([GrantEditor]): more tokens over its
-/// life, more minutes for each run of it, or both (design 06 A145). Granted to the one session, never to
-/// its document; what it has spent and been granted so far, and what the document allows, are set out
-/// above the two fields ([GrantText#soFar]) so that a person grants knowing how far over the session
-/// already is.
+/// Shows the dialog ([GrantEditor]) that gives a parked session more to spend: more tokens over its life,
+/// more minutes for each of its runs, or both. A session parks for a person when it runs out of budget. The
+/// grant applies to that session only, never to its document. What the session has spent and been granted
+/// so far, and what the document allows, are shown above the two fields ([GrantText#soFar]), so that a
+/// person knows how far over budget the session already is.
 ///
-/// Modal: it acts on the session selected behind it, which must not change under it.
+/// The dialog is modal because it acts on the session selected behind it, which must not change while it is
+/// open.
 public class GrantEditorController extends Controller {
 
     private final GrantEditor view;
 
-    /// Made by GIN, with its editor.
+    /// Created by GIN.
     ///
     /// @param eventBus The application's event bus.
-    /// @param view     Its component.
+    /// @param view     The dialog's content.
     @Inject
     public GrantEditorController(final EventBus eventBus, final GrantEditor view) {
         super(eventBus);
@@ -53,13 +54,13 @@ public class GrantEditorController extends Controller {
         initWidget(view);
     }
 
-    /// Asks what to grant, and hands it on when OK is pressed with something granted. A grant of nothing
-    /// is refused here, with the dialog left open, rather than sent to be refused by the server.
+    /// Asks what to grant, and passes the grant on when OK is pressed. An invalid grant, such as one of
+    /// nothing, is reported here with the dialog left open, rather than sent to the server to be refused.
     ///
-    /// @param opener  What shows it, which owns it until it is closed.
+    /// @param opener  The screen that opens the dialog and owns it until it is closed.
     /// @param attempt The parked session.
-    /// @param doc     Its document, for its budgets, or null where it has not been read.
-    /// @param onGrant Who is handed the grant.
+    /// @param doc     The session's Learning Flow document, for its budgets, or null if it has not been fetched.
+    /// @param onGrant Called with the grant when OK is pressed.
     public void grant(final HasControllerNode opener,
                       final SupervisorAttempt attempt,
                       final LearningFlowDoc doc,

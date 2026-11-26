@@ -25,9 +25,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// One stream of the Supervisor's backlog (design 04 §6): a stream that is waiting on a session, with what
-/// it was run through and fell short of, since when, how often it has been tried, and whether it has
-/// waited past the document's maximum deferral age (A57, A78, A79) — raised, and still waiting.
+/// One stream in the Supervisor's backlog: a stream waiting for its learner to learn a translation for it.
+/// It records what the stream was run through and fell short of, since when it has waited, how often it has
+/// been tried, and whether it has been raised, i.e. has waited past the document's maximum deferral age. A
+/// raised stream is flagged for attention but goes on waiting.
 @JsonInclude(Include.NON_NULL)
 public class BacklogStream {
 
@@ -91,7 +92,8 @@ public class BacklogStream {
         return type;
     }
 
-    /// The snapshot the stream was run through and fell short of; null where nothing bound its learner.
+    /// @return The snapshot the stream was run through and fell short of; null where its learner had no
+    /// binding.
     public String getFailedAgainst() {
         return failedAgainst;
     }
@@ -108,12 +110,12 @@ public class BacklogStream {
         return firstDeferredMs;
     }
 
-    /// How many times a task has decided the stream and deferred it.
+    /// @return How many times a processing task has tried the stream and deferred it.
     public int getTries() {
         return tries;
     }
 
-    /// Whether the stream has waited past the document's maximum deferral age (A57).
+    /// @return Whether the stream has waited past the document's maximum deferral age.
     public boolean isRaised() {
         return raised;
     }

@@ -35,31 +35,32 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/// The learning flow as the Setup tab's approach ([ApproachSection]) edits it: a list of step cards, each
-/// read as sentences, every choice made from a menu. These are the operations behind the cards, on the
-/// flow's steps alone, so that they can be tested without a browser. Each returns new steps and leaves the
-/// ones given alone.
+/// The operations behind the step cards that edit a learning flow in the Learning steps section of the Setup
+/// tab ([ApproachSection]), where each card reads as sentences and every choice is made from a menu. They work
+/// on the flow's steps alone, so that they can be tested without a browser. Each returns a new list of steps
+/// and leaves the list it was given unchanged.
 ///
-/// The structure rules of `LearningFlow.check` (A88) become limits on what is offered: Choose the
-/// elements is pinned first and takes no rules; Find records and Agree targets can be added once each;
-/// the fallback (`ADMIT`) is a switch rather than a step one adds, and is reached only by a rule on
-/// running out of tries; rules point only at steps that exist; and a step added beside another of its
-/// name is given an id of its own, so that a rule can say which it means. Ids are otherwise never shown.
+/// The structural rules that `LearningFlow.check` enforces are applied here as limits on what is offered, so
+/// that a person can't build a flow the server would refuse. Choose the elements is fixed as the first step
+/// and takes no rules. Find what one record is, and Agree the target events, can each be added only once. The
+/// fallback (`ADMIT`) is switched on or off rather than added as a step, and is reached only by a rule for
+/// running out of tries. Rules go only to steps that exist. A step added with the same name as another is
+/// given an id of its own, so that a rule can say which one it means; ids are otherwise never shown.
 public final class ApproachFlow {
 
     private ApproachFlow() {
         // Static utility
     }
 
-    /// Which default setup a flow's steps are exactly.
+    /// Finds the default setup whose steps exactly match a flow's steps.
     ///
-    /// The setups are fetched from the server (Track 2 step 1c), so they are passed in rather than read
-    /// from [FlowExample]: before they are in hand the list is empty and a document reads as having its
-    /// own approach, which is why a screen that shows the setup's name fetches before it draws.
+    /// The default setups are defined on the server and fetched, so they are passed in rather than read from
+    /// [FlowExample]. Until they have been fetched the list is empty and every document appears to have its
+    /// own setup, which is why a screen that shows the setup's name fetches them before it draws.
     ///
-    /// @param examples The built-in setups, as fetched.
+    /// @param examples The default setups, as fetched.
     /// @param steps    A flow's steps.
-    /// @return The setup they are exactly, or null where they are the document's own.
+    /// @return The matching setup, or null if the steps match none.
     public static FlowExample example(final List<BuiltInFlow> examples, final List<FlowStep> steps) {
         for (final BuiltInFlow example : examples) {
             if (example.getSteps().equals(steps)) {
@@ -71,9 +72,9 @@ public final class ApproachFlow {
 
     /// The steps of one default setup.
     ///
-    /// @param examples The built-in setups, as fetched.
+    /// @param examples The default setups, as fetched.
     /// @param example  The setup wanted.
-    /// @return Its steps, or empty where the setups are not in hand.
+    /// @return Its steps, or empty if the setups have not been fetched.
     public static List<FlowStep> steps(final List<BuiltInFlow> examples, final FlowExample example) {
         for (final BuiltInFlow flow : examples) {
             if (flow.getExample() == example) {
@@ -86,7 +87,7 @@ public final class ApproachFlow {
     /// @param steps A flow's steps.
     /// @param index A step's index.
     /// @param by    Plus one for down, minus one for up.
-    /// @return Whether the step can be moved by one place that way: Choose the elements stays first.
+    /// @return Whether the step can be moved one place that way. Choose the elements must stay first.
     public static boolean canMove(final List<FlowStep> steps, final int index, final int by) {
         final int to = index + by;
         return index >= 0 && index < steps.size()
@@ -96,36 +97,39 @@ public final class ApproachFlow {
     }
 
     /// @param step A step.
-    /// @return Whether it can be copied: only a step that writes a configuration may appear twice.
+    /// @return Whether it can be copied. Only a step that writes a configuration may appear more than once.
     public static boolean canCopy(final FlowStep step) {
         return step.getKind() == QuestionKind.CONFIGURE;
     }
 
     /// @param step A step.
-    /// @return Whether it can be deleted: every flow chooses its elements, and the fallback has a switch.
+    /// @return Whether it can be deleted. Every flow must have Choose the elements, and the fallback is
+    ///         switched off rather than deleted.
     public static boolean canDelete(final FlowStep step) {
         return step.getKind() != QuestionKind.CHAIN && step.getKind() != QuestionKind.ADMIT;
     }
 
     /// @param step A step.
-    /// @return Whether it takes rules: the chain takes none (it is re-asked until it runs), nor the fallback.
+    /// @return Whether it can have rules. Choose the elements has none, as it is asked again until its answer
+    ///         runs, and neither does the fallback.
     public static boolean takesRules(final FlowStep step) {
         return step.getKind() != QuestionKind.CHAIN && step.getKind() != QuestionKind.ADMIT;
     }
 
     /// @param steps A flow's steps.
-    /// @return Whether the flow has the fallback, the exhaustion step.
+    /// @return Whether the flow has the fallback step, which writes marked Unknown events for records that
+    ///         still can't be translated.
     public static boolean hasFallback(final List<FlowStep> steps) {
         return steps.stream().anyMatch(step -> step.getKind() == QuestionKind.ADMIT);
     }
 
-    /// Switches the fallback on or off. On, it is added at the end, and the last step that writes the
-    /// transform goes to it when it runs out of tries, unless it already says where to go then. Off, it
-    /// goes, and so does every rule that went to it.
+    /// Switches the fallback step on or off. Switching it on adds it at the end, and gives the last step that
+    /// writes the transform a rule to go to it on running out of tries, unless that step already has a rule
+    /// for running out of tries. Switching it off removes it and every rule that went to it.
     ///
     /// @param steps A flow's steps.
-    /// @param on    Whether to have it.
-    /// @return The steps.
+    /// @param on    Whether the flow should have the fallback step.
+    /// @return The new steps.
     public static List<FlowStep> withFallback(final List<FlowStep> steps, final boolean on) {
         if (on == hasFallback(steps)) {
             return new ArrayList<>(steps);
@@ -159,10 +163,10 @@ public final class ApproachFlow {
         return changed;
     }
 
-    /// What can be added, and why what can't be isn't.
+    /// Lists the kinds of step a person may add, and why any of them can't be added now.
     ///
     /// @param steps A flow's steps.
-    /// @return Each kind of step that may be added, with the reason it can't be where it can't.
+    /// @return Every kind of step, each with the reason it can't be added, or no reason if it can.
     public static List<Addable> addable(final List<FlowStep> steps) {
         final List<Addable> addable = new ArrayList<>();
         for (final AddOption option : AddOption.values()) {
@@ -179,12 +183,12 @@ public final class ApproachFlow {
         return addable;
     }
 
-    /// Adds a step. One that would share its name with another is given an id of its own.
+    /// Adds a step. If it would have the same id as another step, it is given an id of its own.
     ///
     /// @param steps  A flow's steps.
-    /// @param at     Where to add it; never before Choose the elements.
-    /// @param option What to add.
-    /// @return The steps.
+    /// @param at     The index to add it at. It is never added before Choose the elements.
+    /// @param option The kind of step to add.
+    /// @return The new steps.
     public static List<FlowStep> insert(final List<FlowStep> steps, final int at, final AddOption option) {
         final List<FlowStep> changed = new ArrayList<>(steps);
         final int where = Math.max(firstMovable(steps), Math.min(at, steps.size()));
@@ -193,11 +197,11 @@ public final class ApproachFlow {
         return changed;
     }
 
-    /// Copies a step after itself, under a name of its own.
+    /// Copies a step, adding the copy immediately after it with an id of its own.
     ///
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @return The steps.
+    /// @return The new steps.
     public static List<FlowStep> copy(final List<FlowStep> steps, final int index) {
         final FlowStep original = steps.get(index);
         final FlowStep copy = new FlowStep(null, original.getKind(), original.getRole(), original.getWhen(),
@@ -208,11 +212,12 @@ public final class ApproachFlow {
         return changed;
     }
 
-    /// Deletes a step, and every rule that went to it, which goes back to the step's usual behaviour.
+    /// Deletes a step and every rule that went to it. The steps that had those rules go back to their usual
+    /// behaviour.
     ///
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @return The steps.
+    /// @return The new steps.
     public static List<FlowStep> delete(final List<FlowStep> steps, final int index) {
         final List<FlowStep> changed = new ArrayList<>(steps);
         final FlowStep gone = changed.remove(index);
@@ -222,7 +227,7 @@ public final class ApproachFlow {
     /// @param steps A flow's steps.
     /// @param index A step's index.
     /// @param by    Plus one for down, minus one for up.
-    /// @return The steps, the step moved where it can be.
+    /// @return The new steps, with the step moved if it can be.
     public static List<FlowStep> move(final List<FlowStep> steps, final int index, final int by) {
         final List<FlowStep> changed = new ArrayList<>(steps);
         if (canMove(steps, index, by)) {
@@ -232,12 +237,12 @@ public final class ApproachFlow {
         return changed;
     }
 
-    /// The conditions a rule on a step may fire on: what the step's checks can raise, in the order the
-    /// menu offers them, then running out of tries; and any its rules already name, so that nothing a
-    /// flow says disappears from its menu.
+    /// The conditions a rule on a step may fire on: the outcomes the step's checks can produce, plus any its
+    /// rules already use (so that a condition a flow uses never disappears from its menu), in the order the
+    /// menu offers them, followed by running out of tries.
     ///
     /// @param step The step.
-    /// @return The conditions, null standing for running out of tries.
+    /// @return The conditions, with null standing for running out of tries.
     public static List<StepOutcome> conditions(final FlowStep step) {
         final Set<StepOutcome> raised = new LinkedHashSet<>();
         raised.add(StepOutcome.PASSED);
@@ -262,9 +267,9 @@ public final class ApproachFlow {
         return conditions;
     }
 
-    /// The checks that judge a step: those its kind can measure (the one model of checks). A check applies
-    /// to every step it can measure, so a step no longer names checks of its own; whether a check is Off,
-    /// Advice or Gate is the Learning Flow's, not the step's.
+    /// The checks that judge a step, which are those its kind of step can measure. A check applies to every
+    /// step it can measure; steps do not choose their own checks. Whether a check is Off, Advice or Gate is set
+    /// for the whole Learning Flow, not per step.
     ///
     /// @param step The step.
     /// @return The checks, in the order a menu offers them; empty for a step no check measures.
@@ -296,15 +301,16 @@ public final class ApproachFlow {
         return judges;
     }
 
-    /// Where a rule on a step may go: the other steps (the fallback only on running out of tries, which is
-    /// the only way it may be reached), finishing, pausing for a person, stopping, or the step's usual exit;
-    /// and a step the rule names that isn't there, so that it is seen to be wrong rather than lost.
+    /// Where a rule on a step may go: the other steps, finishing, pausing for a person, stopping learning, or
+    /// the step's usual exit. The fallback is offered only for running out of tries, which is the only way it
+    /// may be reached. If the rule currently goes to a step that doesn't exist, that is offered too, marked as
+    /// not a step, so that the mistake is visible rather than silently lost.
     ///
     /// @param steps     A flow's steps.
     /// @param index     The step's index.
-    /// @param condition What the rule fires on, null for running out of tries.
-    /// @param current   Where the rule goes now, null for its usual exit.
-    /// @return The places, in the order the menu offers them.
+    /// @param condition What the rule fires on, or null for running out of tries.
+    /// @param current   Where the rule goes now, or null for the step's usual exit.
+    /// @return The destinations, in the order the menu offers them.
     public static List<Destination> destinations(final List<FlowStep> steps,
                                                  final int index,
                                                  final StepOutcome condition,
@@ -344,11 +350,11 @@ public final class ApproachFlow {
         return destinations;
     }
 
-    /// What a step does where its rules say nothing, as the grey lines of its card.
+    /// Describes what a step does in the cases its rules don't cover, for the grey lines on its card.
     ///
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @return The sentences, each a line.
+    /// @return The sentences, one per line.
     public static List<String> usual(final List<FlowStep> steps, final int index) {
         final FlowStep step = steps.get(index);
         final List<String> lines = new ArrayList<>();
@@ -371,7 +377,8 @@ public final class ApproachFlow {
         return lines;
     }
 
-    // The fallback is entered only by a rule, never by falling through to it
+    // Whether every step after this one is the fallback. The fallback is entered only by a rule, never by
+    // passing on to it, so a step followed only by the fallback finishes the run when it passes
     private static boolean nextIsFallbackOnly(final List<FlowStep> steps, final int index) {
         for (int i = index + 1; i < steps.size(); i++) {
             if (steps.get(i).getKind() != QuestionKind.ADMIT) {
@@ -381,19 +388,21 @@ public final class ApproachFlow {
         return true;
     }
 
-    /// Adds a rule to a step: the first condition its rules don't use, going back to the step before it, or
-    /// pausing for a person where there is none to go back to.
+    /// Adds a rule to a step, as a starting point for the person to edit. It fires on the first shortfall the
+    /// step's rules don't already use (or the first unused condition if there is no such shortfall), and goes
+    /// back to the step before. If the step before is Choose the elements, or there is none, it pauses for a
+    /// person instead.
     ///
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @return The steps, or the same steps where every condition is in use.
+    /// @return The new steps, or a copy of the same steps if every condition is already in use.
     public static List<FlowStep> addRule(final List<FlowStep> steps, final int index) {
         final FlowStep step = steps.get(index);
         final List<StepOutcome> free = unusedConditions(step, null);
         if (free.isEmpty()) {
             return new ArrayList<>(steps);
         }
-        // A shortfall first, as the rules a flow most wants are about what fell short
+        // Prefer a shortfall, as the rules a flow most often needs are about what fell short
         StepOutcome chosen = free.get(0);
         for (final StepOutcome outcome : free) {
             if (outcome != null && outcome.getDisplayValue().endsWith("-short")) {
@@ -410,8 +419,9 @@ public final class ApproachFlow {
     }
 
     /// @param step     A step.
-    /// @param allowing A condition to offer even though a rule uses it (the rule being edited's own).
-    /// @return The conditions none of its other rules use.
+    /// @param allowing A rule whose own condition is offered even though it uses it (the rule being edited),
+    ///                 or null.
+    /// @return The conditions that none of the step's other rules use.
     public static List<StepOutcome> unusedConditions(final FlowStep step, final Transition allowing) {
         final List<StepOutcome> free = new ArrayList<>();
         for (final StepOutcome condition : conditions(step)) {
@@ -426,9 +436,9 @@ public final class ApproachFlow {
 
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @param rule  The rule's index among the step's.
-    /// @param to    What it becomes.
-    /// @return The steps.
+    /// @param rule  The rule's index among the step's rules.
+    /// @param to    The rule's new value.
+    /// @return The new steps.
     public static List<FlowStep> setRule(final List<FlowStep> steps,
                                          final int index,
                                          final int rule,
@@ -441,8 +451,8 @@ public final class ApproachFlow {
 
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @param rule  The rule's index among the step's.
-    /// @return The steps, the rule gone.
+    /// @param rule  The rule's index among the step's rules.
+    /// @return The new steps, without the rule.
     public static List<FlowStep> removeRule(final List<FlowStep> steps, final int index, final int rule) {
         final FlowStep step = steps.get(index);
         final List<Transition> rules = new ArrayList<>(step.getTransitions());
@@ -451,44 +461,45 @@ public final class ApproachFlow {
     }
 
     /// @param step A step.
-    /// @param when When it is asked.
-    /// @return The step asked then.
+    /// @param when The guard that decides which input the step is asked for.
+    /// @return A copy of the step with that guard.
     public static FlowStep withWhen(final FlowStep step, final StepGuard when) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), when, step.getCandidates(),
                 step.getKinds(), step.getTransitions(), step.getElements());
     }
 
     /// @param step  A step.
-    /// @param tries Its tries, or null for the document's default.
-    /// @return The step with those tries.
+    /// @param tries The number of tries, or null for the document's default.
+    /// @return A copy of the step with that number of tries.
     public static FlowStep withTries(final FlowStep step, final Integer tries) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), tries,
                 step.getKinds(), step.getTransitions(), step.getElements());
     }
 
     /// @param step  A Target step.
-    /// @param kinds How many kinds of record, or null for the default.
-    /// @return The step asking about that many.
+    /// @param kinds How many kinds of record to ask about, or null for the default.
+    /// @return A copy of the step with that number of kinds.
     public static FlowStep withKinds(final FlowStep step, final Integer kinds) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), step.getCandidates(),
                 kinds, step.getTransitions(), step.getElements());
     }
 
-    /// @param step The step.
-    /// @param rules Its rules.
-    /// @return The step with them.
+    /// @param step  The step.
+    /// @param rules The rules it should have.
+    /// @return A copy of the step with those rules.
     public static FlowStep withRules(final FlowStep step, final List<Transition> rules) {
         return new FlowStep(step.getId(), step.getKind(), step.getRole(), step.getWhen(), step.getCandidates(),
                 step.getKinds(), rules, step.getElements());
     }
 
-    /// What a step has of its own that its card's "Fine-tune this step" holds, as short tags its heading
-    /// shows, so that nothing set there is out of sight: when it is asked, its tries, its kinds of record and
-    /// the element types it chooses from, each only where the step says other than the usual.
+    /// Lists, as short tags for the card's heading, the settings a step has under its card's "Fine-tune this
+    /// step" section, so that none of them is hidden while the section is collapsed: its guard, its tries, its
+    /// kinds of record and the element types it chooses from. Each is included only if the step sets it to
+    /// something other than the default.
     ///
     /// @param step A step.
-    /// @return Its tags, e.g. "only for XML input", "5 tries", "chooses from DSParser and XSLTFilter"; empty
-    ///         where it has none.
+    /// @return The tags, e.g. "only for XML input", "5 tries", "chooses from DSParser and XSLTFilter"; empty
+    ///         if there are none.
     public static List<String> tuning(final FlowStep step) {
         final List<String> tags = new ArrayList<>();
         if (step.getWhen() != null && step.getWhen() != StepGuard.ALWAYS) {
@@ -510,9 +521,9 @@ public final class ApproachFlow {
         return tags;
     }
 
-    /// The element types ticked on a Choose the elements step: those it names that the AI can learn, or every
-    /// one it can learn where it names none. A run passes over any it can't, so what is ticked is what a run
-    /// offers the AI.
+    /// The element types to show ticked on a Choose the elements step: those it names that the AI can learn,
+    /// or every one the AI can learn if it names none. A run ignores any element type the AI can't learn, so
+    /// the ticked types are exactly those a run offers the AI.
     ///
     /// @param step A Choose the elements step.
     /// @return The element types ticked, in the order of [FlowStep#LEARNABLE_ELEMENTS].
@@ -520,10 +531,10 @@ public final class ApproachFlow {
         return learnableOf(step.effectiveElements());
     }
 
-    /// The element types a Choose the elements step names that the AI can't learn: a run passes them over.
+    /// The element types a Choose the elements step names that the AI can't learn, which a run ignores.
     ///
     /// @param step A Choose the elements step.
-    /// @return The element types, in the order the step names them; empty where there are none.
+    /// @return The element types, in the order the step names them; empty if there are none.
     public static List<String> unlearnableElements(final FlowStep step) {
         final List<String> unlearnable = new ArrayList<>();
         for (final String element : step.getElements()) {
@@ -534,8 +545,8 @@ public final class ApproachFlow {
         return unlearnable;
     }
 
-    /// The element types a Choose the elements step names, from the boxes ticked: none, which is every one
-    /// the AI can learn, where all are ticked.
+    /// The element types a Choose the elements step should name, given the boxes ticked. If every box is
+    /// ticked it names none, which means every element type the AI can learn.
     ///
     /// @param ticked The element types ticked.
     /// @return The element types to name, in the order of [FlowStep#LEARNABLE_ELEMENTS]; empty for all.
@@ -546,7 +557,8 @@ public final class ApproachFlow {
                 : named;
     }
 
-    // The element types of `chosen` that the AI can learn, in the order of FlowStep.LEARNABLE_ELEMENTS
+    // Returns the element types in `chosen` that the AI can learn, in the order of
+    // FlowStep.LEARNABLE_ELEMENTS
     private static List<String> learnableOf(final List<String> chosen) {
         final List<String> elements = new ArrayList<>();
         for (final String element : FlowStep.LEARNABLE_ELEMENTS) {
@@ -559,8 +571,8 @@ public final class ApproachFlow {
 
     /// @param steps A flow's steps.
     /// @param index The step's index.
-    /// @param step  What it becomes.
-    /// @return The steps.
+    /// @param step  The step that replaces it.
+    /// @return The new steps.
     public static List<FlowStep> replace(final List<FlowStep> steps, final int index, final FlowStep step) {
         final List<FlowStep> changed = new ArrayList<>(steps);
         changed.set(index, step);
@@ -589,7 +601,8 @@ public final class ApproachFlow {
         return changed;
     }
 
-    // A step whose name another already has is given an id of its own: its name, numbered
+    // Returns the step, or, if another step already has its id, a copy with an id of its own: the id with a
+    // number appended
     private static FlowStep uniquelyNamed(final List<FlowStep> steps, final FlowStep step) {
         final Set<String> taken = new HashSet<>();
         for (final FlowStep other : steps) {
@@ -610,7 +623,7 @@ public final class ApproachFlow {
     // --------------------------------------------------------------------------------
 
 
-    /// A kind of step a person may add.
+    /// A kind of step a person may add, with its name in the Add step menu.
     public enum AddOption implements HasDisplayValue {
         PARSER("Write the parser", QuestionKind.CONFIGURE, ConfigureRole.PARSER),
         TRANSFORM("Write the transform", QuestionKind.CONFIGURE, ConfigureRole.TRANSFORM),
@@ -638,7 +651,7 @@ public final class ApproachFlow {
     // --------------------------------------------------------------------------------
 
 
-    /// A kind of step, and why it can't be added where it can't.
+    /// A kind of step, and the reason it can't be added now, if it can't.
     public static final class Addable {
 
         private final AddOption option;
@@ -654,7 +667,7 @@ public final class ApproachFlow {
             return option;
         }
 
-        /// @return Why it can't be added, or null where it can.
+        /// @return Why it can't be added, or null if it can.
         public String getReason() {
             return reason;
         }
@@ -664,7 +677,7 @@ public final class ApproachFlow {
     // --------------------------------------------------------------------------------
 
 
-    /// What a rule fires on, as its menu offers it: an outcome, or running out of tries.
+    /// What a rule fires on, as its menu offers it: a step outcome, or running out of tries.
     public static final class Condition implements HasDisplayValue {
 
         private final StepOutcome outcome;
@@ -711,7 +724,8 @@ public final class ApproachFlow {
 
 
     /// Where a rule goes, as its menu offers it: a step's id, `end`, `park`, `give-up`, or null for the
-    /// step's usual exit. Equal by where it goes; the words depend on which step the rule is on.
+    /// step's usual exit. Two destinations are equal if they go to the same place; the displayed words differ
+    /// depending on which step the rule is on.
     public static final class Destination implements HasDisplayValue {
 
         private final String goTo;
@@ -722,7 +736,7 @@ public final class ApproachFlow {
             this.displayValue = displayValue;
         }
 
-        /// @return Where it goes, or null for the step's usual exit.
+        /// @return Where the rule goes, or null for the step's usual exit.
         public String getGoTo() {
             return goTo;
         }

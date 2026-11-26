@@ -47,9 +47,9 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The prompt contract of design 01 §10, as text: each question carries what the section says it must.
- */
+/// Tests the text of each question put to the model, checking that each carries what the model needs to
+/// answer it: the sample, the allowed elements, the reply format, earlier shortfalls, and what the document's
+/// checks require.
 class TestQuestionText {
 
     private static final Sample SAMPLE = new Sample("a,b,c\n", Map.of("Feed", "DOOR-ACCESS", "Format", "CSV"));
@@ -90,9 +90,9 @@ class TestQuestionText {
 
     @Test
     void aTransformShownOneRecordIsToldThatIsAllItWillEverGet() {
-        // §12 item 25: the fragment gives this element one record at a time, so it is asked for a
-        // configuration that handles one — and told so, because a stylesheet written for the whole
-        // stream is written for something that will never arrive.
+        // The fragment gives this element one record at a time, so the question asks for a configuration that
+        // handles one record and says so, because a stylesheet written for the whole stream would be written
+        // for input it will never receive.
         final String text = WORDS.render(new Configuration("XSLTFilter", "XSLT", SAMPLE,
                 "<records xmlns=\"records:2\"><record/></records>", null,
                 Boundary.ofArray("events", 3), List.of(), true, new Question.Records(12, 2), List.of(), false,
@@ -111,8 +111,8 @@ class TestQuestionText {
 
     @Test
     void theOtherKindsOfRecordAreShownOneOfEach() {
-        // A47: the configuration is run over every record, so a question that shows only the first kind
-        // invites a configuration that handles only the first kind.
+        // The configuration is run over every record, so a question that showed only the first kind of record
+        // would invite a configuration that handles only that kind.
         final String text = WORDS.render(new Configuration("XSLTFilter", "XSLT", SAMPLE,
                 "<records xmlns=\"records:2\"><record kind=\"login\"/></records>", null,
                 Boundary.ofArray("events", 3), List.of(), true, new Question.Records(12, 2),
@@ -129,9 +129,9 @@ class TestQuestionText {
 
     @Test
     void whereTheKindsShownAreCappedTheQuestionSaysSoRatherThanClaimingOneOfEach() {
-        // The representatives are capped, and a model told it has seen every shape when it has seen
-        // three of five writes a configuration that drops the other two — the failure A47 exists to
-        // prevent, with an assurance attached.
+        // The number of example records shown is capped. A model told it has seen every shape when it has
+        // only seen some would write a configuration that drops the others, which is the very failure that
+        // showing one record of each kind is meant to prevent.
         final String text = WORDS.render(new Configuration("XSLTFilter", "XSLT", SAMPLE,
                 "<records xmlns=\"records:2\"><record kind=\"login\"/></records>", null,
                 Boundary.ofArray("events", 3), List.of(), true, new Question.Records(40, 5),
@@ -146,10 +146,10 @@ class TestQuestionText {
 
     @Test
     void markupThatIsNotRecordsTwoIsSaidToBeTheStreamsOwn() {
-        // The transformation rules describe the usual case and state records:2, but a chain with no
-        // parser hands the transform the feed's XML as it arrived. A stylesheet that sets
-        // xpath-default-namespace="records:2" over it matches nothing and writes no elements, failing
-        // without Saxon raising anything — which the live run of 2026-09-22 spent seven attempts on.
+        // The transformation rules describe the usual case, where the input is records:2, but a chain with no
+        // parser gives the transform the feed's XML as it arrived. A stylesheet that sets
+        // xpath-default-namespace="records:2" over that matches nothing and writes no elements, without Saxon
+        // raising any error. A live run with a real model wasted several attempts on exactly this.
         final String text = WORDS.render(new Configuration("XSLTFilter", "XSLT", SAMPLE,
                 "<auditLog application=\"DocVault\"><entry id=\"a1\"/></auditLog>", null,
                 Boundary.ofElement("entry", 1), List.of(), true, new Question.Records(8, 2), List.of(), false,
@@ -195,8 +195,9 @@ class TestQuestionText {
 
     @Test
     void theSystemTextForADocumentSaysWhatItsScorersDemand() {
-        // Both live runs put the reader's location under Device/Location, never told that Device/Name was
-        // required until the score had already been taken.
+        // Without this, a model is not told which fields the checks require until after it has been scored.
+        // In live runs the model put the reader's location under Device/Location, not knowing that
+        // Device/Name was required.
         final LearningFlowDoc doc = LearningFlowDoc.builder()
                 .uuid("doc-1")
                 .name("door-access")
@@ -230,7 +231,7 @@ class TestQuestionText {
 
     @Test
     void aTemplateOverrideIsRenderedWithItsBlocksAndTheRestFollowsTheBuiltIn() {
-        // Scenario 40: the chain question in the document's own words; every other question as built in.
+        // The chain question uses the document's own template, and every other question uses the built-in one.
         final LearningFlow flow = FlowExamples.flow(FlowExample.TARGET_FIRST)
                 .withTemplates(Map.of(Template.CHAIN, "Pick from:\n${elements}\nGiven:\n${sample}${feedback}"));
         final QuestionText words = QuestionText.of(flow);
@@ -265,9 +266,10 @@ class TestQuestionText {
 
     @Test
     void theWorkedExamplesInTheExtractionRulesRunAndTheHeaderOneNamesFieldsFromTheHeader() {
-        // The rules are the words the live runs taught; a worked example that does not run teaches the
-        // model to fail. The second reads the header into a variable and names every record's data from
-        // it, Stroom's idiom, so that the names travel with the record and the header is not one.
+        // The extraction rules contain worked examples, and an example that does not run would teach the model
+        // to fail. The second example reads the header into a variable and names every record's data from it,
+        // which is the usual Stroom approach, so the field names come from the header and the header itself
+        // is not a record.
         final String rules = Templates.builtIn(Template.EXTRACTION_RULES);
         final List<String> examples = new ArrayList<>();
         final Matcher fenced = Pattern.compile("```xml\\n(.*?)```", Pattern.DOTALL).matcher(rules);
@@ -288,7 +290,7 @@ class TestQuestionText {
         assertThat(withHeader.output())
                 .contains("<data name=\"user\" value=\"alice\"/>")
                 .contains("<data name=\"action\" value=\"logoff\"/>");
-        // The same example over the columns reordered still names each field rightly.
+        // The same example over reordered columns still names each field correctly.
         final StepResult reordered = splitter.run(examples.get(1),
                 "user,time,action,place\nalice,2026-09-22T09:00:00Z,logon,lobby\n");
         assertThat(reordered.output()).contains("<data name=\"user\" value=\"alice\"/>")

@@ -28,13 +28,15 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/// Whether a Learning Flow document will learn anything, worked out from the document alone (the
-/// "document checks" of design 07): learning is switched on, a model is chosen, there is at least one
-/// quality check (a document with none passes every answer, ISSUES item 22), and the approach has no
-/// problems. Each check that fails names the fix the Feeds tab offers for it.
+/// Works out whether a Learning Flow document is set up well enough to learn anything, from the document
+/// alone. It is shown on the Pipelines tab (`FeedsTab`) and summarised on the Setup tab.
 ///
-/// Whether pipelines use the document is not asked here: it needs other documents, and a pipeline built by
-/// hand is as good as one a factory made.
+/// It checks that learning is switched on, that a model is chosen, that at least one quality check other than
+/// Compile and Permitted is a gate (without one, any answer that runs would pass), and that the learning flow
+/// has no problems. Each failed check names the fix the Pipelines tab offers for it.
+///
+/// It does not check whether any pipeline uses the document. That would need other documents to be read, and
+/// a pipeline may legitimately be built by hand rather than by a Pipeline Factory.
 public final class Readiness {
 
     private final List<Item> items;
@@ -45,10 +47,11 @@ public final class Readiness {
 
     /// Checks a document.
     ///
-    /// @param doc      The document, as its tabs have it now.
-    /// @param examples The built-in setups, as fetched (Track 2 step 1c): what the approach is named
-    ///                 against. Empty where they are not in hand, which reads as the document's own.
-    /// @return What is right and what is wrong with it, in the order the Feeds tab lists them.
+    /// @param doc      The document, including any unsaved changes made on its tabs.
+    /// @param examples The built-in learning flows, as fetched from the server, used to name the document's
+    ///                 approach if it matches one. If empty (e.g. not fetched yet), the approach is described
+    ///                 as the document's own.
+    /// @return Every check, passed or failed, in the order the Pipelines tab lists them.
     public static Readiness of(final LearningFlowDoc doc, final List<BuiltInFlow> examples) {
         final List<Item> items = new ArrayList<>();
         if (doc.getLearningMode() == LearningMode.DISABLED) {
@@ -62,8 +65,8 @@ public final class Readiness {
             items.add(new Item(true, "Model: " + Objects.requireNonNullElse(doc.getModel().getName(),
                     doc.getModel().getUuid()), null));
         }
-        // Compile and permitted are always gates, and neither says anything about the quality of what
-        // was learned: compile only says the answer runs, and permitted only that it uses what it may
+        // Compile and Permitted are always gates, but neither says anything about the quality of the
+        // output. Compile only says the answer runs, and Permitted only that it uses allowed functions.
         final long gates = doc.getChecks().stream()
                 .filter(setting -> setting.isGate()
                                    && setting.getCheck() != Check.COMPILE
@@ -88,12 +91,12 @@ public final class Readiness {
         return new Readiness(items);
     }
 
-    /// @return Every check, right or wrong.
+    /// @return Every check, passed or failed.
     public List<Item> getItems() {
         return items;
     }
 
-    /// @return Whether every check is right.
+    /// @return Whether every check passed.
     public boolean isReady() {
         return items.stream().allMatch(Item::isOk);
     }
@@ -102,15 +105,15 @@ public final class Readiness {
     // --------------------------------------------------------------------------------
 
 
-    /// What the Feeds tab offers to put a check right, and the Setup tab's section it is made in.
+    /// A fix the Pipelines tab offers for a failed check, and the Setup tab section where the fix is made.
     public enum Fix {
         /// Switches learning on.
         SWITCH_ON("Switch on", SetupSection.LEARNING),
-        /// Shows where the model is chosen.
+        /// Shows the setting where the model is chosen.
         CHOOSE_MODEL("Choose a model", SetupSection.LEARNING),
-        /// Puts the Standard quality checks in place.
+        /// Replaces the document's quality checks with the Standard preset.
         USE_STANDARD_CHECKS("Use the Standard checks", SetupSection.QUALITY),
-        /// Shows the approach, where the problem is.
+        /// Shows the learning flow (approach), where the problem is.
         OPEN_APPROACH("Show the approach", SetupSection.APPROACH);
 
         private final String label;
@@ -121,12 +124,12 @@ public final class Readiness {
             this.section = section;
         }
 
-        /// @return What its button says.
+        /// @return The text of the fix's button.
         public String getLabel() {
             return label;
         }
 
-        /// @return The Setup tab's section the fix is made in.
+        /// @return The Setup tab section where the fix is made.
         public SetupSection getSection() {
             return section;
         }
@@ -136,7 +139,7 @@ public final class Readiness {
     // --------------------------------------------------------------------------------
 
 
-    /// One check.
+    /// The result of one readiness check.
     public static final class Item {
 
         private final boolean ok;
@@ -149,17 +152,17 @@ public final class Readiness {
             this.fix = fix;
         }
 
-        /// @return Whether it is right.
+        /// @return Whether the check passed.
         public boolean isOk() {
             return ok;
         }
 
-        /// @return What it says.
+        /// @return The text describing the result, for the user.
         public String getText() {
             return text;
         }
 
-        /// @return What puts it right, or null where it is right.
+        /// @return The fix for a failed check, or null if the check passed.
         public Fix getFix() {
             return fix;
         }

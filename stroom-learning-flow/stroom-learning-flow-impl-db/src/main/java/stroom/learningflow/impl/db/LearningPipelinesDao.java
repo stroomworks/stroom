@@ -48,13 +48,15 @@ import static stroom.learningflow.impl.db.jooq.tables.LearningFlowBinding.LEARNI
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowGuidance.LEARNING_FLOW_GUIDANCE;
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowLearnerState.LEARNING_FLOW_LEARNER_STATE;
 
-/// The learning pipelines list (design 06 A115, A142) as one statement over the tables a learner keeps rows
-/// in. A learner is any pipeline and element with a state, a binding, a session or a waiting stream; its
-/// document is the one its state, then its bindings, then its waiting streams record, which are brought
-/// to the document it runs under now, and failing all of those its latest session's. Its state is worked
-/// out in the query, so that a page filtered by state is a page of the right rows and its total counts
-/// them, and the ordering and the paging are here for the same reason the serving view's are: a feed per
-/// pipeline is a learner per feed.
+/// The database implementation of [LearningPipelines], which produces the Supervisor's list of learning
+/// pipelines with one query over the tables that hold learners' rows.
+///
+/// A learner is any pipeline and element that has a state, a binding, a session or a waiting stream. Its
+/// document is taken from its state row, failing that from its bindings, then from its waiting streams (all
+/// of which are kept up to date with the document it runs under), and failing all of those from its latest
+/// session. Its [LearnerState] is worked out in the query, so that a page filtered by state contains the
+/// right rows and its total counts them. Ordering and paging are done in the database because there is one
+/// pipeline, and so one learner, per feed, which can be a great many.
 @Singleton
 public class LearningPipelinesDao implements LearningPipelines {
 
@@ -84,7 +86,7 @@ public class LearningPipelinesDao implements LearningPipelines {
         if (NullSafe.isEmptyCollection(docUuids)) {
             return new Page(List.of(), 0L);
         }
-        // Every learner any table knows.
+        // Every learner that any of the tables has a row for.
         final Table<?> keys = DSL.select(LEARNING_FLOW_LEARNER_STATE.PIPELINE_UUID.as("p"),
                         LEARNING_FLOW_LEARNER_STATE.ELEMENT_ID.as("e"))
                 .from(LEARNING_FLOW_LEARNER_STATE)
@@ -128,7 +130,7 @@ public class LearningPipelinesDao implements LearningPipelines {
                 .from(LEARNING_FLOW_GUIDANCE)
                 .groupBy(LEARNING_FLOW_GUIDANCE.PIPELINE_UUID, LEARNING_FLOW_GUIDANCE.ELEMENT_ID)
                 .asTable("said");
-        // The latest session's document, for a learner nothing else records one for.
+        // The latest session's document, for a learner that has no other row recording one.
         final Field<String> latestDoc = DSL.select(LEARNING_FLOW_ATTEMPT.DOC_UUID)
                 .from(LEARNING_FLOW_ATTEMPT)
                 .where(LEARNING_FLOW_ATTEMPT.PIPELINE_UUID.eq(pipeline))
@@ -210,8 +212,8 @@ public class LearningPipelinesDao implements LearningPipelines {
                     .select()
                     .from(view)
                     .where(where)
-                    // Most waiting first, then the latest session — a learner that has never had one last —
-                    // and the learner itself, so that a page turned twice reads the same twice.
+                    // Most waiting streams first, then the most recent session (learners with none come
+                    // last), then the learner's key, so that the order is stable from page to page.
                     .orderBy(view.field("waiting").desc(),
                             view.field("last").desc(),
                             view.field("p").asc(),
@@ -223,8 +225,9 @@ public class LearningPipelinesDao implements LearningPipelines {
         });
     }
 
-    /// The list's document for one learner: the same order of tables as the list's, asked of that learner
-    /// alone, rather than the list's statement narrowed, which would group every table to answer it.
+    /// Returns the document a learner is listed under, looking in the tables in the same order as
+    /// [#learners]. It uses its own query for the one learner, because narrowing the list's query would
+    /// still group every table.
     @Override
     public Optional<String> documentOf(final Learner learner) {
         final String pipelineUuid = learner.pipelineUuid();
@@ -271,7 +274,8 @@ public class LearningPipelinesDao implements LearningPipelines {
                         : new DocRef(row.get("fragment_type", String.class), fragmentUuid,
                                 row.get("fragment_name", String.class)),
                 row.get("promoted_score", Double.class),
-                // No rolling score until it has served something: shown as nothing rather than as zero.
+                // A learner that has not served anything has no rolling score; it is shown as blank rather
+                // than as zero.
                 records == 0
                         ? null
                         : row.get("rolling_score", Double.class),

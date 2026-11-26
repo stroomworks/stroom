@@ -36,24 +36,25 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/// The prune job of design 01 §12 item 8: the record of attempts that finished longer ago than the
-/// document's node is told to keep them, and their turns with them. One row per attempt and one per turn
-/// is the fastest-growing thing this feature writes, and a transcript nobody will ever read is a cost
-/// with no reader.
+/// The scheduled retention job for Learning Flow. It removes the record of attempts (sessions), with their
+/// turns, and the output records, once they are older than the node's configured attempt retention period.
+/// One row per attempt and one per turn is the fastest-growing data this feature writes, and old
+/// transcripts are rarely read, so they are pruned.
 ///
-/// An attempt still learning, still waiting for the model, or waiting for a person to decide is never
-/// pruned however old it is: age is not what says an attempt is over.
+/// An attempt that is still learning, waiting for the model, or waiting for a person to decide is never
+/// pruned however old it is, because its age does not mean it is finished.
 ///
-/// It is also where a deleted pipeline's learning ends (design 06 A134, A136): a pipeline whose learning
-/// is kept but which no longer exists is marked deleted, for a delete no node heard, and the learning of
-/// a pipeline deleted for longer than attempts are kept is forgotten.
+/// The job also cleans up after deleted pipelines. A pipeline that still has learning recorded but no
+/// longer exists is marked deleted, which catches deletions that no node received an event for. The
+/// learning of a pipeline that has been marked deleted for longer than the retention period is removed.
 @Singleton
 public class AttemptRetention {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(AttemptRetention.class);
 
-    /// The most batches one run will take, so that a night's pruning cannot run into the day's work. A
-    /// batch is a thousand attempts, so a run clears a million and the next run takes what is left.
+    /// The maximum number of batches one run will prune, so that a night's pruning cannot run on into the
+    /// day's work. A batch is a thousand rows, so a run removes up to a million and the next run takes
+    /// what is left.
     private static final int MAX_BATCHES = 1000;
 
     private final Attempts attempts;
@@ -83,17 +84,17 @@ public class AttemptRetention {
 
     public void exec() {
         securityContext.asProcessingUser(() -> {
-            // Whatever the retention: a deleted pipeline's learning is marked so whether or not it will
-            // ever be forgotten, and one that is back is not.
+            // Done whatever the retention period, even if nothing is ever pruned, so that the Supervisor
+            // shows a deleted pipeline's learning as deleted, and a restored pipeline's learning is unmarked.
             checkPipelines();
             final long keepFor = configProvider.get().getAttemptRetention().toMillis();
             if (keepFor <= 0) {
                 LOGGER.debug("Attempts are kept for ever: nothing is pruned");
                 return;
             }
-            // Until there is nothing left to forget, not once: a batch is bounded so that no single
-            // delete holds locks across the table, and one batch a night would never catch a cluster
-            // that makes more attempts than that in a day.
+            // Prune repeatedly rather than once. Each batch is bounded so that no single delete holds
+            // locks across the table, but one batch a night would never keep up with a cluster that makes
+            // more attempts than that in a day.
             final long before = System.currentTimeMillis() - keepFor;
             final int attemptsPruned = untilDone(() -> attempts.prune(before));
             final int outputsPruned = untilDone(() -> outputs.prune(before));
@@ -102,20 +103,21 @@ public class AttemptRetention {
                         "Pruned {} finished attempt(s) with their turns, and {} output record(s)",
                         attemptsPruned, outputsPruned));
             }
-            // After the pruning, so that what a deleted pipeline's learners made long ago has gone in the
-            // bounded batches above, and forgetting one deletes what is left of it.
+            // Done after the pruning, so that most of a deleted pipeline's old rows have already gone in the
+            // bounded batches above, and forgetting the pipeline only has to delete what is left.
             forgetDeleted(before);
         });
     }
 
-    /// Mark the learning of every pipeline that no longer exists, for a delete no node heard (A134), and
-    /// clear the mark of every one that is there again, for a return no node heard.
+    /// Marks as deleted the learning of every pipeline that no longer exists, and clears the mark from every
+    /// marked pipeline that exists again. This catches deletions and restorations (e.g. by import) that no
+    /// node received an entity event for.
     ///
-    /// The pipelines there are, read once, as the processing user, who is shown every one. A marked
-    /// pipeline the list shows is back. One the list does not show is marked only once it has been read
-    /// on its own and found to be nothing: marking is the first step to forgetting, and a list that came
-    /// back short — a store that failed part-way — must not be what makes a live pipeline's learning
-    /// forgotten. A pipeline whose read fails is left as it is, until the next run can tell.
+    /// The pipelines are listed once, as the processing user, who can see all of them. A marked pipeline
+    /// that is in the list has been restored. A pipeline missing from the list is only marked once a read
+    /// of that pipeline on its own confirms it is not found. Marking is the first step towards forgetting
+    /// the learning, so an incomplete list (e.g. from a store that failed part-way) must not cause a live
+    /// pipeline's learning to be forgotten. A pipeline whose read fails is left as it is until the next run.
     private void checkPipelines() {
         try {
             final PipelineStore pipelineStore = pipelineStoreProvider.get();
@@ -131,20 +133,21 @@ public class AttemptRetention {
                         pipelineDeletions.restored(pipelineUuid);
                     }
                 } else if (gone(pipelineStore, pipelineUuid)) {
-                    // Marked where it was not, and for one that was, whatever waits on it let go: a task
-                    // deciding a stream as the pipeline went can write its row after the mark.
+                    // Called even if it is already marked, because a task that was deciding a stream as
+                    // the pipeline was deleted may have written a waiting-stream row after the mark, and
+                    // that row needs releasing too.
                     pipelineDeletions.deleted(pipelineUuid);
                 }
             }
         } catch (final RuntimeException e) {
-            // Tried again at the next run; the pruning goes on.
+            // The check is tried again at the next run; pruning carries on regardless.
             LOGGER.error(() -> LogUtil.message("Deleted pipelines could not be looked for: {}", e.getMessage()), e);
         }
     }
 
-    /// Whether the pipeline is gone, as a read of it on its own says: not found, which a store backed by
-    /// the database says by throwing and another may say with nothing. A read that fails any other way
-    /// says nothing either way.
+    /// Whether a read of the pipeline on its own says it does not exist. A database-backed store reports
+    /// that by throwing [DocumentNotFoundException], and another store may return `null`. A read that fails
+    /// in any other way is treated as not gone, since it proves nothing.
     private static boolean gone(final PipelineStore pipelineStore, final String pipelineUuid) {
         try {
             return pipelineStore.readDocument(new DocRef(PipelineDoc.TYPE, pipelineUuid)) == null;
@@ -157,9 +160,9 @@ public class AttemptRetention {
         }
     }
 
-    /// Forget the learning of every pipeline deleted before the time (A136), one pipeline at a time, so
-    /// that one that fails is tried again at the next run and the rest are not held up by it. A pipeline
-    /// that is back has had its mark cleared above, so it is not among them.
+    /// Forgets the learning of every pipeline marked deleted before the given time. Pipelines are done one
+    /// at a time, so that one that fails is tried again at the next run without holding up the rest. A
+    /// restored pipeline has already had its mark cleared by [#checkPipelines], so it is not included.
     private void forgetDeleted(final long before) {
         int forgotten = 0;
         for (final String pipelineUuid : keptLearning.deletedBefore(before)) {
@@ -177,8 +180,8 @@ public class AttemptRetention {
         }
     }
 
-    /// One batch after another until a batch comes back short, or until enough batches have been taken
-    /// that the rest can wait for the next run.
+    /// Runs one batch after another until a batch prunes nothing, or until [#MAX_BATCHES] have been run and
+    /// the rest can wait for the next run.
     private static int untilDone(final java.util.function.IntSupplier batch) {
         int total = 0;
         for (int taken = 0; taken < MAX_BATCHES; taken++) {

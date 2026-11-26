@@ -44,20 +44,19 @@ import java.util.function.Function;
 /// stylesheet the same way a node would.
 ///
 /// The harness drives Saxon directly, without Stroom's function library, so without these a stylesheet
-/// calling `stroom:format-date` would fail here and succeed on a node — the harness refusing what the
+/// calling `stroom:format-date` would fail here and succeed on a node: the harness would refuse what the
 /// [allow-list][AiXsltAllowList] permits. These close that gap for the functions they cover.
 ///
-/// **The gap they do not close yet.** [#STOOD_IN] is smaller than the allow-list's `stroom:` set: the
+/// **Not every function has a stand-in.** [#STOOD_IN] is smaller than the allow-list's `stroom:` set: the
 /// hash, IP, URL and entropy functions have no stand-in, so a stylesheet using one passes the static check
-/// and fails in the harness. [#missing(AiXsltAllowList)] names them, and a test holds that list to what is
-/// expected rather than letting it drift unseen.
+/// and then fails in the harness. [#missing(AiXsltAllowList)] names them, and a test checks that list
+/// against what is expected, so that it does not change unnoticed.
 ///
-/// **These are stand-ins, not the real functions.** `format-date` here reproduces the shape of Stroom's —
-/// the three argument forms, the reference time for a partial date, the standard output format, which it
-/// takes from the real [DateUtil] — but not its leniency or its week-based parsing. Track 1 task 3 adds
-/// the `stroom-app` test that holds the two together over real inputs; it cannot be written until that
-/// task makes the worker set the stream's metadata when judging, because until then the real function
-/// takes a missing year from the clock (assumption AS6) and there is nothing stable to compare against.
+/// **These are stand-ins, not the real functions.** `format-date` here reproduces the behaviour of
+/// Stroom's version (the three argument forms, the reference time for a partial date, and the standard
+/// output format, which it takes from the real [DateUtil]) but not its leniency or its week-based parsing.
+/// `TestJudgingTakesTheYearFromTheStream` in `stroom-app` checks that this stand-in and the real function
+/// fill in a missing year the same way.
 public final class StroomStandIns {
 
     /// The `stroom:` functions these stand-ins cover.
@@ -70,11 +69,11 @@ public final class StroomStandIns {
     private StroomStandIns() {
     }
 
-    /// The functions on the allow-list that have no stand-in, so a stylesheet using one passes the static
-    /// check and then fails in the harness.
+    /// Returns the `stroom:` functions on the allow-list that have no stand-in, so that a stylesheet using
+    /// one passes the static check and then fails in the harness.
     ///
-    /// @param allowList The list.
-    /// @return Their names, sorted; empty when the harness covers the list.
+    /// @param allowList The allow-list to compare against.
+    /// @return Their names, sorted; empty if the harness covers the whole list.
     public static List<String> missing(final AiXsltAllowList allowList) {
         final List<String> missing = new ArrayList<>();
         for (final String name : HardCodedXsltAllowList.stroomFunctions()) {
@@ -86,9 +85,9 @@ public final class StroomStandIns {
         return missing;
     }
 
-    /// The stand-ins, for Saxon to register.
+    /// Returns the stand-ins, for Saxon to register.
     ///
-    /// @param facts The stream being translated, which is all they may read.
+    /// @param facts The stream being translated, which is the only thing they may read.
     /// @return One definition per function of [#STOOD_IN].
     public static List<ExtensionFunctionDefinition> definitions(final StreamFacts facts) {
         return List.of(
@@ -104,7 +103,7 @@ public final class StroomStandIns {
 
     /// Stroom's `format-date`, in its three forms: milliseconds alone; a value and the pattern that reads
     /// it, with an optional zone; and the same with a pattern and zone to write it in. A field the pattern
-    /// does not read — most often the year — is taken from when the stream was received, never from the
+    /// does not read (most often the year) is taken from when the stream was received, never from the
     /// clock.
     private static String formatDate(final StreamFacts facts, final String[] arguments) {
         final String value = arguments[0];
@@ -142,8 +141,8 @@ public final class StroomStandIns {
                 .parseLenient()
                 .parseCaseInsensitive()
                 .appendPattern(pattern);
-        // What the pattern does not say is taken from the stream, which is what makes a syslog date
-        // without a year mean the same thing when it is judged and when it is served
+        // Fields the pattern does not read are taken from the stream's received time, so that a syslog
+        // date without a year means the same thing when it is judged and when it is served.
         final DateTimeFormatter probe = builder.toFormatter(LOCALE);
         final ZonedDateTime reference = java.time.Instant.ofEpochMilli(facts.requireReceivedMs())
                 .atZone(zoneId);
@@ -196,8 +195,8 @@ public final class StroomStandIns {
     // --------------------------------------------------------------------------------
 
 
-    /// One stand-in, as Saxon registers a function: a name in the `stroom` namespace, how many strings it
-    /// takes, and what it answers.
+    /// One stand-in function, in the form Saxon registers: a name in the `stroom` namespace, how many
+    /// string arguments it takes, and what it returns.
     private static final class StandIn extends ExtensionFunctionDefinition {
 
         private final StructuredQName name;

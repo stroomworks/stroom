@@ -6,8 +6,9 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     version="2.0">
 
-  <!-- The degeneracy trap of design 01 §8.3: the mandatory skeleton, Unknown where a decision was due, and
-       every field dumped into untyped Data. It validates. It extracts nothing. -->
+  <!-- A degenerate translation, for testing the extraction quality check: only the mandatory elements,
+       Unknown where a specific event type was needed, and every field copied into untyped Data. It is
+       valid against the schema, but extracts nothing useful. -->
   <xsl:template match="records">
     <Events xsi:schemaLocation="event-logging:3 file://event-logging-v3.0.0.xsd" Version="3.0.0">
       <xsl:apply-templates/>

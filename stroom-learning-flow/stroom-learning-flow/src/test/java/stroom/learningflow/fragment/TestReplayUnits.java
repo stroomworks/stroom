@@ -35,11 +35,13 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Ruling A1 (design 01 §4): what a chain can be replayed over is decided by the chain, not declared.
- * A parser in it means the stream, because the bytes above a parser cannot be replayed from a record;
- * no parser means one record, which is what the elements below a parser are given anyway.
- */
+/// Tests how `ReplayUnits` works out what a chain can be replayed over, which is decided from the chain's
+/// elements rather than declared.
+///
+/// A chain with a parser is replayed over the whole stream, because the raw bytes a parser reads cannot be
+/// rebuilt from one record. A chain with no parser is replayed over one record, which is what elements after
+/// a parser are given anyway. The element's position check uses this to report a chain that does not fit where
+/// the Smart Pipeline element stands.
 class TestReplayUnits {
 
     private static final Map<String, StepRunner> RUNNERS = List.of(

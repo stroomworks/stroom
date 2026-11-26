@@ -43,11 +43,11 @@ import java.util.Optional;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.ParserConfigurationException;
 
-/// [TargetSchemas] over Stroom's `XMLSchema` documents: what a node uses.
+/// The node's implementation of [TargetSchemas], which reads the schema a Learning Flow document's
+/// translations must conform to from Stroom's `XMLSchema` documents.
 ///
-/// Everything a target is described by comes out of the XSD itself — its `version`, its namespace and
-/// the element a document of it starts with — rather than out of the document's name, so that a schema
-/// renamed or installed under another name still describes itself correctly.
+/// A target's version and root element are read from the XSD itself, rather than from the document's
+/// name, so that a schema that is renamed or installed under another name is still described correctly.
 @Singleton
 public class XmlSchemaTargetSchemas implements TargetSchemas {
 
@@ -66,12 +66,13 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
 
     /// Reads the schema a document names.
     ///
-    /// A schema that has been deleted, or that this node cannot read, gives empty rather than throwing:
-    /// what to do about it belongs to the caller — the readiness check says so in words, and a run
-    /// refuses before asking anything.
+    /// A schema that has been deleted, or that this node cannot read, gives empty rather than throwing,
+    /// because what to do about it is up to the caller: the readiness check reports it to the user, and a
+    /// session refuses to start before asking the model anything.
     ///
     /// @param docRef The `XMLSchema` document, or null.
-    /// @return It resolved, or empty where it is null, gone or unreadable.
+    /// @return The resolved schema, or empty where the reference is null or the schema is missing or
+    /// unreadable.
     @Override
     public Optional<TargetSchema> resolve(final DocRef docRef) {
         if (docRef == null) {
@@ -90,13 +91,13 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
         });
     }
 
-    /// The latest version of event-logging installed on this node, which a new document starts with
-    /// (decision D1): latest by the version its XSD declares, not by its name, and never a deprecated
-    /// one. It is saved on the document, so installing a newer version later does not change what a
-    /// document that already exists writes.
+    /// Finds the latest version of the event-logging schema installed on this node, which a new Learning
+    /// Flow document uses as its target. "Latest" is by the version its XSD declares, not by its name, and
+    /// a deprecated schema is never chosen. The choice is saved on the document, so installing a newer
+    /// version later does not change what an existing document's translations write.
     ///
-    /// @return It, or empty where no event-logging schema is installed — in which case a new document
-    ///         has no target until someone picks one, and says so.
+    /// @return The schema, or empty where no event-logging schema is installed, in which case a new
+    ///         document has no target until someone picks one, and reports that.
     @Override
     public Optional<TargetSchema> latestEventLogging() {
         final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
@@ -107,13 +108,13 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
                 .max(Comparator.comparing(TargetSchema::version, XmlSchemaTargetSchemas::compareVersions)));
     }
 
-    /// Compares two declared versions as a run of numbers, e.g. `4.1.0` after `3.4.2`. A version that is
-    /// absent or that is not numbers sorts first, so that a schema which does not say what it is never
-    /// wins the default.
+    /// Compares two declared versions as sequences of numbers, e.g. `4.1.0` after `3.4.2`. A version that
+    /// is absent or not made of numbers sorts first, so that a schema that does not declare its version
+    /// is never chosen as the default.
     ///
     /// @param left One version.
     /// @param right The other.
-    /// @return The usual comparison result.
+    /// @return A negative number, zero or a positive number, as for [Comparator#compare].
     static int compareVersions(final String left, final String right) {
         final List<Integer> leftParts = parts(left);
         final List<Integer> rightParts = parts(right);
@@ -139,8 +140,8 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
                 try {
                     parts.add(Integer.parseInt(word.trim()));
                 } catch (final NumberFormatException e) {
-                    // A version this cannot read is one this cannot order: it sorts first, with -1 for
-                    // the part that did not read, rather than failing the whole comparison.
+                    // A part that is not a number is given -1, so the version sorts first rather than
+                    // failing the whole comparison.
                     parts.add(-1);
                 }
             }
@@ -161,9 +162,9 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
                 doc.getData());
     }
 
-    /// The element a document of this schema starts with: the XSD's global element declaration. Where a
-    /// schema declares several, the first is taken — a schema with more than one way in has no single
-    /// answer, and the first is the one its author put at the top.
+    /// Finds the root element of documents of this schema: the XSD's global element declaration. Where a
+    /// schema declares several, the first is taken, since there is no single answer and the first is the
+    /// one its author put at the top.
     private static Optional<String> rootElement(final Element schema) {
         final NodeList children = schema.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
@@ -180,15 +181,15 @@ public class XmlSchemaTargetSchemas implements TargetSchemas {
         return Optional.empty();
     }
 
-    /// An XSD that does not parse describes itself as far as its document goes and no further: the
-    /// namespace and system id are the document's own, and the validator has its own opinion of the
-    /// schema's text.
+    /// Parses an XSD's text. An XSD that does not parse gives empty, so the target is described only by
+    /// what the `XMLSchema` document holds (its namespace and system id); the validator reports its own
+    /// errors about the schema's text.
     private static Optional<Element> parse(final String text) {
         if (text == null || text.isBlank()) {
             return Optional.empty();
         }
         try {
-            // Hardened as ContentModels hardens its own read of an XSD, with the same parser.
+            // Uses the same hardened parser as ContentModels uses to read an XSD.
             return Optional.of(ConfinedXml.document(text).getDocumentElement());
         } catch (final ParserConfigurationException | SAXException | IOException e) {
             LOGGER.debug(() -> LogUtil.message("A target schema cannot be parsed: {}", e.getMessage()), e);

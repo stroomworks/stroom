@@ -24,10 +24,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The content-model hint against the real event-logging 3.0.0 schema: the two cases the first live run
- * climbed one rung at a time (design 02 §6.2).
- */
+/// Tests the content-model hints, which describe an element's allowed content to the model, against the real
+/// event-logging 3.0.0 schema.
+///
+/// The cases are ones a live run with a real model had to work out one failed attempt at a time, for want of
+/// such a hint.
 class TestContentModels {
 
     private static final ContentModels MODELS = new ContentModels(List.of(NodeFixture.eventLoggingSchema()));
@@ -53,7 +54,8 @@ class TestContentModels {
 
     @Test
     void aRequiredEnumeratedChildCarriesItsValues() {
-        // The rung the live target question climbed: an Alert with Type "Alarm", which the schema does not know.
+        // A live run proposed an Alert with Type "Alarm", which the schema does not allow, so the hint lists the
+        // allowed values.
         assertThat(MODELS.describe("Alert").get(0)).contains("Type [Vulnerability | IDS | Malware | Network | Change "
                                                              + "| Error | Other]");
         assertThat(MODELS.namespace()).contains("event-logging:3");
@@ -61,8 +63,8 @@ class TestContentModels {
 
     @Test
     void aSequenceInsideAChoiceStaysARun() {
-        // EventSource's choice in 3.0.0: a Device with an optional Client and Server, or a Door — not four
-        // alternatives, which is what flattening the sequence would have said.
+        // EventSource's choice in 3.0.0 is a Device with an optional Client and Server, or a Door. It is not
+        // four alternatives, which is what flattening the sequence would wrongly suggest.
         assertThat(MODELS.describe("EventSource").get(0)).contains("((Device, Client?, Server?) | Door)");
     }
 

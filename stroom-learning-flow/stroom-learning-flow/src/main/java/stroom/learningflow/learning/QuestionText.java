@@ -42,38 +42,34 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-/**
- * The prompt contract of design 01 §10 as text: what a model is told before its first answer, and how
- * each typed question is put — in the words of the document's conversation (§10.2). Every question carries
- * the stage's objective and the document's instructions (the system text), the sample and the learning
- * key's values, the real input the element will receive, the previous configuration on a re-ask, and the
- * feedback that lost the marks. For extraction it carries the mandatory {@code xsi:schemaLocation} and
- * the {@code ignoreErrors} prohibition (§9.1); for transformation, the schema's named failure modes
- * (§8.2) and the degeneracy trap (§8.3). The reply grammar is stated on every question.
- * <p>
- * This class computes the blocks a template's variables stand for — {@code ${feedback}} is the whole
- * "what fell short" list or nothing — and {@link Templates} fills them in. Where a node's advisor over
- * {@code stroom-ai} (§12 item 6) and the live harness agree on what is said, so that the harness
- * measures the prompt the node will use.
- */
+/// Turns each [Question] into the prompt text sent to the model, using the document's templates.
+///
+/// The system text carries the objective and the document's instructions. Each question then carries, as
+/// it applies, the stream's feed and type, the sample, the real input the element will receive, the
+/// previous configuration on a re-ask, and the feedback on what fell short. For a Data Splitter it carries
+/// the mandatory `xsi:schemaLocation` and the ban on `ignoreErrors`; for a transform, the schema's common
+/// mistakes and the warning against output that validates but says nothing. Every question states the form
+/// the reply must take.
+///
+/// This class computes the blocks that a template's variables stand for (for example, `${feedback}` is the
+/// whole "what fell short" list, or nothing), and [Templates] fills them in. Both the node's advisor and
+/// the live test harness use it, so the harness measures the same prompt the node sends.
 public final class QuestionText {
 
-    /// The namespace a parser puts its records in, which the transformation rules describe.
+    /// The namespace a Data Splitter puts its records in, which the transformation rules describe.
     private static final String RECORDS = "records:2";
-    // Event-logging's own rule against its untyped Data and its Unknown branch, which another schema doesn't
-    // have (task 7, W1-4). It ends in a space, as the passage it goes into carries on after it
+    // Event-logging's own rule against its untyped Data elements and its Unknown branch, which other schemas
+    // don't have. It ends in a space, because the passage it goes into continues after it
     private static final String UNTYPED_RULE = "Do not put fields into Data elements or use the Unknown branch: "
                                                + "output that validates but says nothing scores as nothing. ";
 
-    /**
-     * What each allowed element does, in one line, so the chain question is answered from a vocabulary
-     * the model understands rather than a list of tokens.
-     */
+    /// What each allowed element does, in one line, so that the model answers the chain question from
+    /// descriptions it understands rather than a bare list of names.
     private static final Map<String, String> ELEMENTS = Map.of(
             DataSplitterStep.ELEMENT_TYPE,
             "parses raw text into records:2 XML with a Stroom Data Splitter 3.0 configuration",
-            // Not records:2 (audit finding W5-7): a stylesheet written for records:2 over this matches
-            // nothing, writes the input's text and no elements, and fails without Saxon raising anything
+            // Say plainly that this is not records:2: a stylesheet written for records:2 matches nothing in
+            // this output, writes the input's text and no elements, and fails without Saxon raising anything
             JsonStep.ELEMENT_TYPE,
             "parses JSON into the XML of the http://www.w3.org/2013/XSL/json vocabulary — "
             + "map, array, string, number and boolean elements, each with a key attribute — "
@@ -83,24 +79,22 @@ public final class QuestionText {
             XmlFragmentStep.ELEMENT_TYPE,
             "wraps a stream of XML fragments — one element per line, with no root — "
             + "in a root so that they become one document, with no configuration",
-            // The namespace is filled in from the document's target schema (task 7)
+            // The namespace is filled in from the document's target schema
             XsltStep.ELEMENT_TYPE,
             "transforms XML records into ${targetNamespace} events with an XSLT 2.0 stylesheet");
 
-    /// However many kinds share the budget, each is shown enough to be recognisable.
+    /// The minimum bytes each example record gets, however many share the budget, so that each is shown
+    /// enough to be recognisable.
     private static final int SHORTEST = 1000;
 
     private final Templates templates;
     private final String system;
-    /// The one schema this document's translations must write (task 7), or null where it names none, in
-    /// which case the prompt names event-logging 3.0.0 as it always did.
+    /// The schema this document's translations must produce, or null where it names none, in which case
+    /// the prompt names event-logging 3.0.0.
     private final TargetSchema target;
-    /// How much of the stream a question carries, in bytes: the Learning Flow's own sample size limit
-    /// (audit finding S4).
-    ///
-    /// It used to be a fixed 6,000 characters, below the default limit of 8,192, so the model never saw
-    /// the last quarter of its own sample while the parser's split was still judged on all of it — and
-    /// raising the limit to give a strong model more context did nothing at all.
+    /// How much of the stream a question carries, in bytes: the Learning Flow's sample size limit. It
+    /// matches the size of the sample the split is judged on, so the model sees all of what it is judged
+    /// against.
     private final int sampleSizeLimit;
 
     private QuestionText(final Templates templates,
@@ -113,51 +107,50 @@ public final class QuestionText {
         this.target = target;
     }
 
-    /**
-     * The words of a document's flow: its templates, and a system text carrying its instructions
-     * and what its scorers will demand of every event — the fields required and the rules asserted —
-     * said up front, so the model aims at them rather than learning them from a shortfall.
-     */
+    /// Returns the prompt text for a document's flow: its templates, and a system text with its instructions
+    /// and what its scorers will require of every event (the required fields and the business rules). These
+    /// are stated up front so the model aims at them rather than learning them from a shortfall.
+    ///
+    /// @param doc The document.
+    /// @return The question text.
     public static QuestionText of(final LearningFlowDoc doc) {
         return of(doc, AskedWith.UNKNOWN, null);
     }
 
-    /// The words of a document's flow, naming the schema its translations must write (task 7).
+    /// The same, naming the schema the document's translations must produce.
     ///
     /// @param doc    The document.
     /// @param target Its target schema, or null where it names none.
-    /// @return Its words.
+    /// @return The question text.
     public static QuestionText of(final LearningFlowDoc doc, final TargetSchema target) {
         return of(doc, AskedWith.UNKNOWN, target);
     }
 
-    /// The same, in the words a run was asked with (decision N9), for carrying a parked run on: its
-    /// templates and its *Instructions to the AI* as it had them, rather than as the Learning Flow has
-    /// them now. A run that resumes after an edit or an upgrade shows the model its own history in the
-    /// words it was first asked.
+    /// The same, using the wording a run was asked with, for resuming a parked run: its templates and its
+    /// *Instructions to the AI* as they were, rather than as the Learning Flow has them now. A run that
+    /// resumes after an edit or an upgrade then shows the model its own history in the wording it was first
+    /// asked in.
     ///
-    /// The demands — the fields and rules the checks will ask of every event — come from the document
-    /// as it stands, not from the recording: they are what the candidate will actually be judged
-    /// against when it returns, and asking in old words for a bar that has moved would set the model up
-    /// to fail.
+    /// The requirements (the fields and rules the checks will require of every event) come from the
+    /// document as it is now, not from the recording, because they are what the candidate will actually be
+    /// judged against. Asking for outdated requirements would set the model up to fail.
     ///
     /// @param doc       The document.
-    /// @param askedWith The words the run was asked with, or [AskedWith#UNKNOWN] for a run opening now.
-    /// @return Its words.
+    /// @param askedWith The wording the run was asked with, or [AskedWith#UNKNOWN] for a new run.
+    /// @return The question text.
     public static QuestionText of(final LearningFlowDoc doc, final AskedWith askedWith) {
         return of(doc, askedWith, null);
     }
 
-    /// The same, naming the schema the document's translations must write (task 7).
+    /// The same, naming the schema the document's translations must produce.
     ///
-    /// The target comes from the document as it stands, not from the recording, for the same reason the
-    /// demands do: it is what the candidate will actually be judged against when it returns, and asking
-    /// in old words for a schema that has moved would set the model up to fail.
+    /// The target comes from the document as it is now, not from the recording, for the same reason as the
+    /// requirements: it is what the candidate will actually be judged against.
     ///
     /// @param doc       The document.
-    /// @param askedWith The words the run was asked with, or [AskedWith#UNKNOWN] for a run opening now.
+    /// @param askedWith The wording the run was asked with, or [AskedWith#UNKNOWN] for a new run.
     /// @param target    Its target schema, or null where it names none.
-    /// @return Its words.
+    /// @return The question text.
     public static QuestionText of(final LearningFlowDoc doc,
                                   final AskedWith askedWith,
                                   final TargetSchema target) {
@@ -174,8 +167,8 @@ public final class QuestionText {
             }
             if (setting.getParameters() instanceof final ExtractionQualityParameters quality
                 && !quality.getRequiredFields().isEmpty()) {
-                // Scored as the share of events that carry each, so said as a place, not a bar: a kind of
-                // record with no user is still an event.
+                // These are scored as the share of events that carry each field, so they are described as
+                // where values go, not as a requirement: a kind of record with no user is still an event.
                 demands.append("\n\nEvents are scored on carrying a value in each of: ")
                         .append(String.join(", ", quality.getRequiredFields()))
                         .append(". Fill each wherever the record has a value for it; a record without one is "
@@ -195,9 +188,11 @@ public final class QuestionText {
                 doc.getSampleSizeLimit(), target);
     }
 
-    /**
-     * The built-in words with only the instructions: for a test or a harness that has no document.
-     */
+    /// Returns question text from the built-in templates with only the given instructions, for a test or
+    /// harness that has no document.
+    ///
+    /// @param instructions The instructions to the model, or null.
+    /// @return The question text.
     public static QuestionText builtIn(final String instructions) {
         final Templates templates = Templates.builtIn();
         return new QuestionText(templates, templates.render(Template.SYSTEM,
@@ -216,9 +211,7 @@ public final class QuestionText {
                 : "\n\nThe document that governs this stage says:\n" + instructions.strip();
     }
 
-    /**
-     * The system text: the stage's objective, the document's instructions and its scorers' demands.
-     */
+    /// @return The system text: the objective, the document's instructions and its scorers' requirements.
     public String system() {
         return system;
     }
@@ -243,8 +236,8 @@ public final class QuestionText {
         return templates.render(Template.CHAIN, variables);
     }
 
-    /// What an element does, in one line, with the schema this document's translations must write named
-    /// where the line names one (task 7).
+    /// Describes what an element does in one line, with the target schema's namespace filled in where the
+    /// line names one.
     ///
     /// @param element The element type.
     /// @return Its description.
@@ -255,15 +248,13 @@ public final class QuestionText {
                         : target.namespaceURI());
     }
 
-    /**
-     * The record boundary and nothing else (A31): a configuration that cuts the sample into records and
-     * emits each whole as one field, so that what follows can be asked about records.
-     */
+    // Renders the split question, which asks for the record boundary and nothing else, so that the
+    // questions that follow can be asked about records.
     private String split(final Split question) {
         final Map<String, String> variables = new HashMap<>();
         variables.put("headers", headers(question.sample()));
         if (question.kind() != InputKind.TEXT) {
-            // Input already in XML, or JSON a parser turns into it: no document to write, a name to give (A35).
+            // For XML, or JSON a parser turns into XML, the model names an element or key, not a document
             variables.put("sample", shown(question.sample().text()));
             variables.put("feedback", feedback(question.feedback()));
             return templates.render(question.kind() == InputKind.XML
@@ -278,9 +269,7 @@ public final class QuestionText {
         return templates.render(Template.SPLIT, variables);
     }
 
-    /**
-     * What one kind of record should become (A31): the event, or the word none.
-     */
+    // Renders the target question: what one kind of record should become, as an event or the word none.
     private String target(final TargetFor question) {
         final Map<String, String> variables = new HashMap<>();
         variables.put("headers", headers(question.sample()));
@@ -311,8 +300,8 @@ public final class QuestionText {
                 : "\nYour previous configuration was:\n" + fenced(question.previousConfiguration()) + "\n");
         variables.put("feedback", feedback(question.feedback()));
         if (question.admitting()) {
-            // The exhaustion step's question (design 04 §4): the configuration question with the admitted
-            // form in it, which no other question names (A53).
+            // The exhaustion step's question: the configuration question with the form of a marked Unknown
+            // event added, which no other question mentions.
             variables.put("marker", LearnedUnknown.MARKER);
             variables.put("admitted", fenced(LearnedUnknown.markup("the record kind")));
             return templates.render(Template.ADMISSION, variables);
@@ -320,16 +309,11 @@ public final class QuestionText {
         return templates.render(Template.CONFIGURATION, variables);
     }
 
-    /// One of the passages of rules the questions share, with the schema the translations must write
-    /// filled in (task 7). A passage is a template of its own, so it is rendered here rather than taken
-    /// as text: the outer question renders in one pass, and a slot inside a value it substitutes would
-    /// be left as written.
-    ///
-    /// Where the document names no target the passage names event-logging 3.0.0, which is what it said
-    /// in so many words before the setting existed.
-    ///
-    /// @param template The passage.
-    /// @return Its text.
+    // Renders one of the passages of rules the questions share, with the target schema filled in. A
+    // passage is a template of its own, so it is rendered here rather than taken as text: the outer question
+    // renders in one pass, and a slot inside a value it substitutes would be left as written.
+    //
+    // Where the document names no target, the passage names event-logging 3.0.0.
     private String rules(final Template template) {
         return templates.render(template, Map.of(
                 "targetStructure", structure(),
@@ -353,11 +337,9 @@ public final class QuestionText {
                         : target.rootElement()));
     }
 
-    /// The element one record becomes, as the questions name it (task 7, W1-1): event-logging's `Event`, or
-    /// the target's own where its schema makes it plain.
-    ///
-    /// @param target The target, or null for none, which is event-logging.
-    /// @return The element's local name, or null where the schema doesn't make it plain.
+    // Returns the local name of the element one record becomes: event-logging's `Event`, or the target's own
+    // where its schema makes it clear. Null where the schema doesn't make it clear. A null target means
+    // event-logging.
     private static String recordElement(final TargetSchema target) {
         if (TargetSchema.isEventLoggingOrNone(target)) {
             return "Event";
@@ -365,8 +347,8 @@ public final class QuestionText {
         return TargetStructure.recordElement(target).orElse(null);
     }
 
-    /// @return The element one record becomes, as markup, e.g. `<Event>`; where the schema doesn't make it
-    ///         plain, said as a place, e.g. "element under <Sightings>".
+    // Returns the element one record becomes, as markup, e.g. `<Event>`, or where the schema doesn't make it
+    // clear, a description of where it goes, e.g. "element under <Sightings>".
     private String targetRecord() {
         final String element = recordElement(target);
         if (element != null) {
@@ -377,14 +359,12 @@ public final class QuestionText {
                 : "element under <" + target.rootElement() + ">";
     }
 
-    /// What the target schema says a document of it holds (task 7, decision D2 option G).
-    ///
-    /// The built-in text is event-logging's, written by hand, and it stands for a document targeting
-    /// event-logging or targeting nothing — which is every document that existed before the setting did.
-    /// For any other schema it is generated from the XSD. A Learning Flow that overrides the template
-    /// says what it wants whichever schema it targets, so an override always wins.
-    ///
-    /// @return The passage.
+    // Returns the passage describing what a document of the target schema holds.
+    //
+    // The built-in text is event-logging's, written by hand, and is used for a document targeting
+    // event-logging or naming no target. For any other schema the passage is generated from the XSD. A
+    // Learning Flow that overrides the template has said what it wants whichever schema it targets, so an
+    // override always wins.
     private String structure() {
         if (templates.overrides(Template.TARGET_STRUCTURE)
             || target == null
@@ -394,20 +374,20 @@ public final class QuestionText {
         return TargetStructure.of(target);
     }
 
-    /**
-     * The settled boundary as the configuration question carries it: a parser's configuration to cut the
-     * same records, or the element that is one record where the input is XML (A35).
-     */
+    // Describes the settled record boundary for the configuration question: the configuration that cuts the
+    // records, for a parser that must cut the same ones, or the element, children or array that hold one
+    // record where the input is XML or JSON. Where the element is given one record at a time, it says that
+    // instead.
     private String split(final Boundary split,
                          final boolean oneRecord,
                          final Records records,
                          final List<String> otherKinds) {
         if (oneRecord) {
-            // What it will actually be given (§12 item 25): one record, once per record. A stylesheet
-            // written for the whole stream — counting its siblings, reaching into the document around it
-            // — is written for something that will never arrive. Said before the boundary is described,
-            // and whether or not there is a boundary to describe, because it is a fact about the input
-            // in front of the model rather than about the split that produced it.
+            // The element will be run once per record, with one record each time. A stylesheet written for
+            // the whole stream (counting its siblings, reaching into the document around it) would be
+            // written for input it will never get. This is said whether or not there is a boundary to
+            // describe, because it is a fact about the input in front of the model rather than about the
+            // split that produced it.
             return "\nThe input below is **one record**: this configuration is run once for each record of "
                    + "the stream, with one record in front of it each time, exactly as shown. Produce the "
                    + "one event for the record you are given, and do not look outside it — there is "
@@ -445,9 +425,9 @@ public final class QuestionText {
                + "event per <" + split.element() + ">, and nothing for the elements around them.\n";
     }
 
-    /// What the one record shown does not show: how many records there are, and whether they are all
-    /// alike. A configuration written from one record is run over every record, and a stream that reports
-    /// several things carries several shapes of record.
+    // Tells the model what the one record shown does not show: how many records there are, and whether they
+    // are all alike. A configuration written from one record is run over every record, and a stream that
+    // reports several kinds of thing has several shapes of record.
     private static String carried(final Records records) {
         if (records == null || records.total() == 0) {
             return "";
@@ -503,19 +483,17 @@ public final class QuestionText {
         return "```xml\n" + document.strip() + "\n```";
     }
 
-    /// The stream's other kinds of record, one apiece (A47): the configuration is run over every record,
-    /// and one written from a login alone drops the logouts. Shown only where the flow has not settled
-    /// its targets, since those already carry a record of each kind beside the event it must become.
-    ///
-    /// Said after the one-record instruction and not before it: these are examples of the *other* runs
-    /// this configuration will have, not context for the record in front of it, and reading across them
-    /// is exactly what it must not do.
-    ///
-    /// @param shown How many kinds are actually shown, which is capped
-    /// ([TargetChecks#REPRESENTATIVES]); [Records#kinds()] says how many there are. Where the cap bites,
-    /// the question says so rather than claiming one of each: a model told it has seen every shape when
-    /// it has seen three of five writes a configuration that drops the other two, which is the failure
-    /// A47 exists to prevent, with an assurance attached.
+    // Shows one record of each of the stream's other kinds. The configuration is run over every record, and
+    // one written from a login record alone will drop the logouts. The caller passes these only where the
+    // flow has not settled its targets, since targets already show a record of each kind.
+    //
+    // This comes after the one-record instruction, not before it, because these are examples of the
+    // *other* runs this configuration will have, not context for the record in front of it.
+    //
+    // The number of examples is capped ([TargetChecks#REPRESENTATIVES]), while [Records#kinds()] says how
+    // many kinds there are. Where the cap applies, the question says so rather than claiming to show one of
+    // each, because a model told it has seen every shape when it has seen three of five will write a
+    // configuration that drops the other two.
     private String otherKinds(final List<String> shown, final Records records) {
         if (shown == null || shown.isEmpty()) {
             return "";
@@ -529,8 +507,9 @@ public final class QuestionText {
                 ? "Here is one record of each of them:\n"
                 : "Here is one record of " + shown.size() + " of the " + others + " other shapes; there are "
                   + (others - shown.size()) + " more this question does not show:\n");
-        // The examples together cost no more than the record itself: this block is resent with every
-        // re-ask, and a feed whose records are kilobytes would otherwise treble the question (A44).
+        // The examples share one sample's worth of bytes (with a minimum each), because this block is
+        // resent with every re-ask, and for a feed with large records it would otherwise treble the size of
+        // the question and its token cost.
         final int each = Math.max(sampleSizeLimit / shown.size(), SHORTEST);
         for (final String record : shown) {
             text.append(shown(record, each)).append('\n');
@@ -538,12 +517,12 @@ public final class QuestionText {
         return text.toString();
     }
 
-    /// Where a transform is given the stream's own markup rather than a parser's records, said next to
-    /// the input rather than left to the transformation rules, which describe the usual case and state
-    /// `records:2`. A chain with no parser hands the element the feed's XML as it arrived; a stylesheet
-    /// that sets `xpath-default-namespace="records:2"` over it matches nothing, writes the input's text
-    /// and no elements, and fails without Saxon raising anything. The live run of 2026-09-22 lost five
-    /// attempts to exactly that on one row and two on another.
+    // Warns, next to the input, when a transform is given the stream's own XML rather than a Data Splitter's
+    // records. The transformation rules describe the usual case and say `records:2`, but a chain with no
+    // Data Splitter gives the element the feed's XML as it arrived. A stylesheet that sets
+    // `xpath-default-namespace="records:2"` over that matches nothing, writes the input's text and no
+    // elements, and fails without Saxon raising anything. Models have been seen to make this mistake
+    // repeatedly.
     private static String ownMarkup(final boolean extraction, final String input) {
         if (extraction || input == null || !input.stripLeading().startsWith("<") || input.contains(RECORDS)) {
             return "";
@@ -552,24 +531,15 @@ public final class QuestionText {
                + "are named above, and do not set xpath-default-namespace to " + RECORDS + ".\n";
     }
 
-    /// The input as far as a question should carry it: the Learning Flow's sample size limit. A sample
-    /// is already cut to that limit before it gets here (`Stage.learningPrefix`), so what this cuts is a
-    /// single record larger than the whole sample would be.
-    ///
-    /// @param input The text.
-    /// @return It, fenced, cut with a note where it did not fit.
+    // Returns the input, fenced, cut to the Learning Flow's sample size limit with a note where it did not
+    // fit. A sample is already cut to that limit before it gets here (`LearningPrefix.learningPrefix`), so
+    // what this cuts is, for example, a single record larger than the whole sample would be.
     private String shown(final String input) {
         return shown(input, sampleSizeLimit);
     }
 
-    /// The same, to a budget of the caller's choosing: several records shown in one question share what
-    /// one of them would have had.
-    ///
-    /// Measured in **bytes**, as the setting is labelled and as a model is billed (audit finding S4).
-    ///
-    /// @param input  The text.
-    /// @param budget How many bytes it may take.
-    /// @return It, fenced, cut with a note where it did not fit.
+    // The same, to a budget chosen by the caller, so that several records shown in one question can share
+    // what one would have had. The budget is in **bytes**, as the setting is labelled.
     private static String shown(final String input, final int budget) {
         if (input == null) {
             return "(nothing)";

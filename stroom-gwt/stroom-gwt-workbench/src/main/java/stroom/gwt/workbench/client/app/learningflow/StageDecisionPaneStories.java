@@ -37,11 +37,11 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.List;
 import java.util.Map;
 
-/// The `App/Main/StageDecisionPane` stories, showing Stroom's real [StageDecisionPaneController]: the
-/// pane the stepping screen shows for a supervised stage (a Learning Flow element) at the stepping
-/// cursor, where other elements show their code. `LearningFlowPlugin` registers it with
-/// `ElementStepDetailsPaneRegistry`, and `SteppingElementController` gives it each step's details,
-/// which the stories give it as a step would. It makes no requests, and is read only.
+/// The `App/Main/StageDecisionPane` stories, showing Stroom's real [StageDecisionPaneController]. This is
+/// the pane the stepping screen shows for a Learning Flow element at the stepping cursor, in place of the
+/// code other elements show. `LearningFlowPlugin` registers it with `ElementStepDetailsPaneRegistry`, and
+/// `SteppingElementController` gives it each step's details, which the stories supply as a step would. The
+/// pane makes no requests and is read only.
 public final class StageDecisionPaneStories {
 
     private static final String OPEN_DOC = "openDoc";
@@ -57,13 +57,14 @@ public final class StageDecisionPaneStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Main/StageDecisionPane", StageDecisionPaneStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // A served stream: the decision, its terms, the fragment and the scores
+                // A served stream shows the decision, the document and stream it applies to, the fragment and
+                // the scores.
                 .story("Default", context -> render(context, true))
                 .withPlay(play -> {
                     play.expect(play.findByText("Served by the binding")).toBeInTheDocument();
                     play.expect(play.getByText("Firewall logs")).toBeInTheDocument();
-                    // No total decides a step: every gate passing does, and each check says its own value
-                    // and whether it was a gate or only advice
+                    // A step is decided by every gate passing, not by a total score. Each check shows its own
+                    // value and whether it was a gate or only advice.
                     play.expect(play.getByText("Step 1 — 95%, every gate passed")).toBeInTheDocument();
                     play.expect(play.getByText("Compiles")).toBeInTheDocument();
                     play.expect(play.getByText("100% (met 100%, a gate)")).toBeInTheDocument();
@@ -73,7 +74,7 @@ public final class StageDecisionPaneStories {
                     play.expect(play.spy(OPEN_DOC)).toHaveBeenCalledWith("f-1");
                     expectNoProblems(play);
                 })
-                // A step the stage had nothing to say about clears the pane
+                // A step for which the element has no details clears the pane.
                 .story("NothingToSay", context -> render(context, false))
                 .withPlay(play -> {
                     play.expect(play.findByText("Scores")).toBeInTheDocument();
@@ -105,7 +106,7 @@ public final class StageDecisionPaneStories {
         return harness.asWidget();
     }
 
-    // A stream the stage served with its binding, as a step's details say
+    // The step details for a stream the element served with its binding.
     private static LearningFlowStepDetails details() {
         return new LearningFlowStepDetails(
                 false,

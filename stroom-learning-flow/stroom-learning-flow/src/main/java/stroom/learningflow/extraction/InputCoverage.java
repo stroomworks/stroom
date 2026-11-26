@@ -23,26 +23,24 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 
-/**
- * How much of an input the split actually consumed (ruling A11): the proportion of characters and of
- * lines that fell inside some record, as opposed to being skipped, ignored or left unmatched.
- * <p>
- * This is the primary guard against the dominant failure of a generated splitter — a configuration that
- * produces a believable number of records by quietly discarding everything it could not match. Yield alone
- * cannot see that; coverage can, and it is cheap, because the parser already reports where every record
- * began and ended.
- * <p>
- * Line breaks are never counted, on either side of the ratio: the Data Splitter excludes them from record
- * ranges, and a line consisting only of a line break carries nothing to extract. Blank lines likewise do
- * not count as lines.
- *
- * @param charsCovered Characters, other than line breaks, inside at least one record range.
- * @param charsTotal   Characters in the input, other than line breaks.
- * @param linesCovered   Non-blank lines with at least one covered character.
- * @param linesTotal     Non-blank lines in the input.
- * @param linesUncovered The one-based numbers of the non-blank lines nothing consumed, in order: what
- *                       the model is pointed at when coverage loses marks.
- */
+/// How much of an input a Data Splitter configuration consumed: the proportion of characters and of lines
+/// that fell inside some record, rather than being skipped, ignored or left unmatched. It backs the input
+/// coverage scorer.
+///
+/// It guards against the most common failure of a model-written splitter: a configuration that produces a
+/// believable number of records by quietly discarding everything it could not match. The record count alone
+/// cannot show that, but coverage can, and it is cheap to measure because the parser already reports where
+/// every record began and ended.
+///
+/// Line breaks are never counted on either side of the ratio, because the Data Splitter excludes them from
+/// record ranges and a line break carries nothing to extract. Blank lines do not count as lines either.
+///
+/// @param charsCovered   Characters, other than line breaks, inside at least one record range.
+/// @param charsTotal     Characters in the input, other than line breaks.
+/// @param linesCovered   Non-blank lines with at least one covered character.
+/// @param linesTotal     Non-blank lines in the input.
+/// @param linesUncovered The one-based numbers of the non-blank lines that no record consumed, in order. They
+///                       are shown to the model when coverage falls short.
 public record InputCoverage(int charsCovered,
                             int charsTotal,
                             int linesCovered,
@@ -122,10 +120,8 @@ public record InputCoverage(int charsCovered,
                 : (double) covered / total;
     }
 
-    /**
-     * Offsets at which each line begins, so that a one-based line and column pair can be turned into an
-     * index into the input. A trailing line break starts a final, empty line, which is harmless.
-     */
+    // Returns the offset at which each line begins, so that a one-based line and column pair can be turned
+    // into an index into the input. A trailing line break starts a final, empty line, which is harmless.
     private static int[] lineStarts(final String input) {
         int lines = 1;
         for (int i = 0; i < input.length(); i++) {

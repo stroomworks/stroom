@@ -39,26 +39,27 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/// Stroom's `XMLFragmentParser` as a step (§12 item 26): a stream of markup fragments — one
-/// `<Event>…</Event>` per line, no root — made into one document by wrapping them in a root, so that the
-/// records are the root's children and everything downstream sees ordinary XML.
+/// Runs Stroom's `XMLFragmentParser` as one step of a learning session. It turns a stream of XML fragments
+/// with no root (for example, one `<Event>…</Event>` per line) into one document by wrapping them in a root
+/// element, so that the records are the root's children and everything downstream sees ordinary XML.
 ///
-/// A stream like this is not a document, and without this it is treated as text: held out by lines, its
-/// split unanswerable and its transform run over something it cannot parse, so the attempt is abandoned.
+/// Without this step such a stream would be treated as text: its records would be shown to the model by
+/// line, the split question could not be answered, and the transform would be run over something it cannot
+/// parse, so the attempt would be abandoned.
 ///
-/// The wrapper is the element's configuration, and it is not the model's to write: the pipeline's
-/// `XMLFragmentParser` takes a `TextConverter` whose document is a root with `&fragment;` where the
-/// stream goes, and this step carries a built-in one. So no configuration question is asked for it
-/// ([#fixedConfiguration]) and the document is written with the fragment all the same, which is what a
-/// pipeline needs to run it.
+/// The wrapper is the element's configuration, but the model is not asked to write it. The pipeline's
+/// `XMLFragmentParser` takes a `TextConverter` whose document is a root element with `&fragment;` where the
+/// stream goes, and this step has a built-in one. No configuration question is asked for it
+/// ([#fixedConfiguration]), but the `TextConverter` is still written with the fragment, because a pipeline
+/// needs it to run the element.
 public final class XmlFragmentStep implements StepRunner {
 
     public static final String ELEMENT_TYPE = PipelineElementType.TYPE_XML_FRAGMENT_PARSER;
 
-    /// The wrapper as the pipeline's parser takes it: a root element with the entity where the stream's
-    /// fragments go. `records` rather than anything cleverer, because the name is the model's to ignore
-    /// — what it names is a container the records sit in, and the split question asks which of those
-    /// children is one record.
+    /// The built-in wrapper, in the form the pipeline's parser takes it: a root element with the entity
+    /// where the stream's fragments go. The root is simply called `records`, because its name does not
+    /// matter: it is only the container the records sit in, and the split question asks the model which of
+    /// its children is one record.
     public static final String WRAPPER = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE records [<!ENTITY fragment SYSTEM "fragment">]>
@@ -83,8 +84,8 @@ public final class XmlFragmentStep implements StepRunner {
         return Optional.of(CONFIGURED);
     }
 
-    /// The wrapper, which the conversation uses without asking and the writer writes as the element's
-    /// `TextConverter`.
+    /// @return The built-in wrapper, which the conversation uses without asking the model, and which is
+    /// written as the element's `TextConverter`.
     @Override
     public Optional<String> fixedConfiguration() {
         return Optional.of(WRAPPER);
@@ -95,16 +96,20 @@ public final class XmlFragmentStep implements StepRunner {
         return true;
     }
 
-    /// Markup: the fragments are the stream's own elements, so the split question is the XML one — which
-    /// element is one record — and not the JSON one, although like a JSON parser this element is never
-    /// asked for a configuration.
+    /// The fragments are XML elements, so the split question is the XML one (which element is one record),
+    /// not the JSON one, even though, like the JSON parser, this element is never asked for a
+    /// configuration.
     @Override
     public InputKind consumes() {
         return InputKind.XML;
     }
 
-    /// @param configuration A wrapper of the document's own, or null for the built-in one. Whatever it
-    ///                     is, it must be a document with one place for the fragments to go.
+    /// Wraps the fragments in the root element and checks that the result is well-formed XML.
+    ///
+    /// @param configuration A wrapper to use instead of the built-in one, or null for the built-in one. It
+    ///                      must contain `&fragment;` where the fragments go.
+    /// @param input         The stream of XML fragments.
+    /// @return The wrapped document, or no output with diagnostics if it is not well-formed.
     @Override
     public StepResult run(final String configuration, final String input) {
         final List<StoredError> diagnostics = new ArrayList<>();
@@ -117,8 +122,8 @@ public final class XmlFragmentStep implements StepRunner {
             return new StepResult(null, List.copyOf(diagnostics));
         }
         try {
-            // Read rather than merely concatenated: a fragment that is not well formed is the stream's
-            // fault and is said here, where the model can be told, rather than three elements later.
+            // Parse the result rather than trusting the concatenation, so that a fragment that is not
+            // well-formed is reported here, where the model can be told, rather than by a later element.
             final XMLReader reader = ConfinedXml.reader();
             reader.setErrorHandler(new ErrorHandler() {
                 @Override
@@ -147,13 +152,13 @@ public final class XmlFragmentStep implements StepRunner {
         return new StepResult(wrapped, List.copyOf(diagnostics));
     }
 
-    /// The stream in place of the wrapper's entity, with the DOCTYPE that declared it removed: the
-    /// entity is how the pipeline's parser is told where the fragments go, and it is not something the
-    /// document that comes out should still be carrying — the readers downstream refuse a DOCTYPE
-    /// (§11), as they should.
+    // Puts the stream in place of the wrapper's entity and removes the DOCTYPE that declared it. The entity
+    // only tells the pipeline's parser where the fragments go, and the output must not keep the DOCTYPE,
+    // because the readers downstream refuse any DOCTYPE so that the text cannot make a parse fetch
+    // anything.
     private static String wrap(final String wrapper, final String input) {
-        // The internal subset is where the entity is declared, and it holds angle brackets of its own, so
-        // the declaration ends at "]>" and not at the first ">" after it.
+        // The entity is declared in the DOCTYPE's internal subset, which contains angle brackets of its own,
+        // so the declaration ends at "]>" rather than at the first ">".
         final String withoutDoctype = wrapper.replaceAll("(?s)<!DOCTYPE[^>\\[]*(\\[.*?\\])?\\s*>\\s*", "");
         if (!withoutDoctype.contains("&fragment;")) {
             return null;

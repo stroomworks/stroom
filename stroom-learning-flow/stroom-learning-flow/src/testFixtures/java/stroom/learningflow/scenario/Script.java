@@ -25,18 +25,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-/**
- * The simulated model of design 02 §3: an ordered list of expected question and scripted reply. Each
- * question the conversation asks is checked against the next expectation and answered with its reply; a
- * question the script did not expect fails the scenario with both printed, and a script with lines
- * left over fails it at {@link #verifyExhausted()}. The script never looks at a question to decide
- * what to say — its author fixed the outcome.
- */
+/// A scripted stand-in for the model in scenario tests: an ordered list of expected questions and the
+/// replies to give.
+///
+/// Each question asked is checked against the next expected question and answered with its reply. A
+/// question the script did not expect fails the scenario, printing both, and a script with lines left
+/// over fails at [#verifyExhausted()]. The script never looks at a question to decide what to say; its
+/// author has fixed the outcome in advance.
 public final class Script implements Advisor {
 
     private final List<Line> lines = new ArrayList<>();
     private final List<Question> asked = new ArrayList<>();
-    /// Tokens charged per question answered, for a scenario about a budget; zero, as a script is free.
+    /// Tokens charged per question answered, for a scenario about a budget. Zero by default.
     private long charge;
     private final List<Structure> structures = new ArrayList<>();
     private int next;
@@ -63,12 +63,8 @@ public final class Script implements Advisor {
         };
     }
 
-    /**
-     * Answer the structural questions of A31 — split and targets — from the configurations this script
-     * will give, so that the scripted lines need state only the questions the scenario is about. A line
-     * that expects a split or target question explicitly still takes precedence.
-     */
-    /// Charge tokens for every question answered from here on, so that a budget can be spent (A5, A77).
+    /// Charges tokens for every question answered from now on, so that a scenario can use up a budget or
+    /// a grant.
     public Script charging(final long tokensPerAsk) {
         this.charge = tokensPerAsk;
         return this;
@@ -79,6 +75,9 @@ public final class Script implements Advisor {
         return asked.size() * charge;
     }
 
+    /// Answers the structural questions (the split and the targets) from the configurations this script
+    /// will give, so that the scripted lines need only state the questions the scenario is about. A line
+    /// that explicitly expects a split or target question still takes precedence.
     public Script structure(final Structure structure) {
         this.structures.add(structure);
         return this;
@@ -108,17 +107,13 @@ public final class Script implements Advisor {
         return line.reply().get();
     }
 
-    /**
-     * Every question asked, in order, for assertions after the run.
-     */
+    /// Returns every question asked, in order, for assertions after the run.
     public List<Question> asked() {
         return List.copyOf(asked);
     }
 
-    /**
-     * The questions asked that the scenario scripted — everything but the split and target turns the
-     * structure answered — so that a scenario about the configurations can count and index those alone.
-     */
+    /// Returns the questions asked other than split and target questions, which a [Structure] usually
+    /// answers, so that a scenario about the configurations can count and index those alone.
     public List<Question> scripted() {
         return asked.stream()
                 .filter(question -> !(question instanceof Question.Split) && !(question instanceof Question.TargetFor))
@@ -137,7 +132,7 @@ public final class Script implements Advisor {
 
         Script reply(String reply);
 
-        /// A reply worked out when the question is asked rather than when the script is written: for a
+        /// A reply worked out when the question is asked rather than when the script is written, for a
         /// scenario about what another node does while this attempt is still running.
         Script reply(Supplier<String> reply);
     }

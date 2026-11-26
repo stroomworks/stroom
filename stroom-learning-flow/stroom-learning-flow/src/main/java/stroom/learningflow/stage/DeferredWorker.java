@@ -31,16 +31,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-/// The worker (A5, A28): the job that advances the attempts waiting for the model. A stream of a
-/// learner nothing serves costs its task a deferral and no model call — the attempt
-/// is opened and parked at its first question — and this is what carries it on, outside the task, at
-/// whatever pace the model answers. The promotion it reaches wakes the learner's pipeline as any other
-/// does, so the streams that waited are tried again.
+/// The deferred learning worker, run by the Learning Flow Deferred Learning job, which resumes the sessions
+/// that are waiting for the model.
 ///
-/// A parked attempt is nobody's until a worker takes it (A45), so any node's may; taking it is taking
-/// its learner's claim, and the attempt is that node's until it finishes or lapses. Nothing here is a loop over a
-/// learner's streams: one pass advances each waiting attempt once, and an attempt that parks again is advanced by
-/// the next pass.
+/// When a stream arrives for a learner that nothing serves, its task is deferred without any model call: a
+/// session is opened and left waiting at its first question. This worker then resumes the session, outside
+/// the processing task, at whatever pace the model answers. A promotion it reaches wakes the learner's
+/// pipeline as any other promotion does, so the waiting streams are tried again.
+///
+/// A waiting session belongs to no node until a worker picks it up, so any node's worker may do so. Picking
+/// it up means taking its learner's claim, and the session then belongs to that node until it finishes or
+/// the claim's lease expires. The worker does not loop over a learner's streams: one pass advances each
+/// waiting session once, and a session left waiting again is advanced by the next pass.
 public final class DeferredWorker {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(DeferredWorker.class);
@@ -54,8 +56,8 @@ public final class DeferredWorker {
     private final Advisors advisors;
     private final Clock clock;
 
-    /// @param streamHeld Puts each attempt's stream into the pipeline's state before it is carried on, so
-    ///                   that a judged run reads the stream it is judging (assumption AS6).
+    /// @param streamHeld Puts each session's stream into the pipeline's state before the session is resumed,
+    ///                   so that the Stroom functions used by a judged run read the stream being judged.
     public DeferredWorker(final Stage stage,
                           final Attempts attempts,
                           final Documents documents,
@@ -74,19 +76,21 @@ public final class DeferredWorker {
         this.clock = clock;
     }
 
-    /// Advance up to `limit` attempts, oldest first: those waiting for the model, and then those a node
-    /// was carrying whose lease has lapsed (design 04 §4) — a session whose node died is carried on from
-    /// the turns it recorded, by this node, and not opened again from nothing.
+    /// Advances up to `limit` sessions, oldest first. These are the sessions waiting for the model, and the
+    /// sessions whose node's claim has expired. A session whose node died is resumed by this node from the
+    /// turns it recorded, rather than started again from nothing.
     ///
-    /// One attempt's failure is its own: a pipeline or document deleted, a stream aged off or a model that fell over
-    /// closes that attempt and the pass goes on to the next, since a job that stops at the first bad
-    /// attempt would never reach the good ones behind it.
+    /// A failure affects only its own session. A deleted pipeline or document, a stream removed by
+    /// retention, or a model error closes or skips that session and the pass moves on to the next, because a
+    /// job that stopped at the first bad session would never reach the good ones behind it.
     ///
-    /// @return How many attempts this pass carried to an end. An attempt another node took first, or one
-    /// the learner no longer wants, is not one of them: nothing was learned for it here.
+    /// @param limit The maximum number of sessions to advance in this pass.
+    /// @return How many sessions this pass advanced. A session another node took first, or one that is no
+    ///         longer needed for its learner, is not counted, because nothing was learned for it here.
     public int advance(final int limit) {
-        // Oldest first across both kinds: a lapsed session has streams waiting on it as a parked attempt
-        // has, and a cluster with a full batch of parked attempts must not leave it behind for ever.
+        // Oldest first across both kinds, because a session with an expired claim has streams waiting on it
+        // too, and a cluster that always has a full batch of waiting sessions must not leave it behind for
+        // ever.
         final List<Recorded> waiting = new ArrayList<>(attempts.awaiting(limit));
         waiting.addAll(attempts.lapsed(clock.millis(), limit));
         waiting.sort(Comparator.comparingLong(Recorded::id));
@@ -106,21 +110,23 @@ public final class DeferredWorker {
         return advanced;
     }
 
-    /// After the attempts, so that what this pass promoted is in force: the streams that wait against a
-    /// transform since replaced, which no promotion's wake could reach (see [Stage#wakeSuperseded]).
+    /// Wakes the streams that are waiting against a transform that has since been replaced, which no
+    /// promotion's wake could reach (see [Stage#wakeSuperseded]). It runs after the sessions, so that
+    /// anything this pass promoted is in force.
     private void wakeSuperseded() {
         try {
             stage.wakeSuperseded();
         } catch (final RuntimeException e) {
-            // A sweep that failed is tried again by the next pass; the attempts it follows are carried.
+            // A failed sweep is tried again by the next pass; the sessions advanced before it are not
+            // affected.
             LOGGER.error(() -> LogUtil.message("Streams waiting on a replaced transform could not be woken: {}",
                     e.getMessage()), e);
         }
     }
 
     private boolean carry(final Recorded attempt) {
-        // A deleted pipeline's learning stops at once (design 06 A135): a session carried on for it would
-        // spend on the model for a pipeline that will never run what it learns.
+        // A deleted pipeline's learning stops at once, because resuming its session would spend money on
+        // the model for a pipeline that will never run what it learns.
         if (deletedPipelines.isDeleted(attempt.attempt().learner().pipelineUuid())) {
             return abandon(attempt, "The pipeline this learner is in has been deleted");
         }
@@ -129,35 +135,35 @@ public final class DeferredWorker {
             return abandon(attempt, "The Learning Flow has been deleted");
         }
         final Long inputId = attempt.attempt().inputId();
-        // An improvement a person asked for has no stream behind it (A46): its sample is the records its
-        // binding was accepted on, put back together, which the stage reads from the regression set.
+        // An improvement a person asked for has no stream behind it. Its sample is the corpus records its
+        // binding was accepted on, reassembled by the stage.
         final Optional<Input> input = attempt.attempt().isImprovement()
                 ? stage.improvementInput(attempt.attempt())
                 : Optional.ofNullable(inputId).flatMap(inputs::byId);
         if (input.isEmpty()) {
-            // The conversation is re-walked over the sample, and the sample is the stream (A45): without it
-            // there is nothing to carry on from, and waiting longer will not bring it back.
+            // The conversation is replayed over the sample, and the sample is the stream, so without it
+            // there is nothing to resume from, and waiting longer will not bring it back.
             return abandon(attempt, attempt.attempt().isImprovement()
                     ? "The records the binding this was improving was accepted on are no longer held"
                     : "The stream this attempt was learning from is no longer held");
         }
         try {
-            // Every attempt, not once per pass: the batch runs in one pipeline scope, and an attempt that
-            // left the previous one's meta in place would take the previous stream's year without saying
-            // so (assumption AS6)
+            // Done for every session, not once per pass: the batch runs in one pipeline scope, and a session
+            // that left the previous session's meta in place would silently use the previous stream's year
             if (!attempt.attempt().isImprovement()) {
                 streamHeld.hold(inputId, attempt.attempt().learner());
             }
-            // A sentinel means the attempt was not this pass's to carry: another node had taken it, or
-            // a draft awaits review, the learner gave up, or learning was turned off while it waited. The stage has
-            // said so against the attempt; this pass simply did not advance it.
-            // In the words the run was asked with (N9), not the Learning Flow's words today: a session is
-            // a conversation, and the model is shown its own history as it resumes.
+            // A sentinel means the session was not this pass's to advance: another node had taken it, a draft
+            // awaits review, the learner gave up, or learning was disabled while it waited. The stage has
+            // recorded this against the session; this pass simply did not advance it.
+            // The advisor uses the question text the session was started with, not the Learning Flow's text
+            // today, because a session is a conversation and the model is shown its own history as it
+            // resumes.
             final StageRun run = stage.resume(doc.get(), attempt.id(), input.get(),
                     advisors.of(doc.get(), attempt.attempt().askedWith()));
             return !(run.decision() instanceof Sentinel);
         } catch (final RuntimeException e) {
-            // The stage has already recorded what this came to against the attempt; the pass goes on.
+            // The stage has already recorded the outcome against the session; the pass goes on.
             LOGGER.error(() -> LogUtil.message("Attempt {} could not be carried on: {}",
                     attempt.id(), e.getMessage()), e);
             return false;

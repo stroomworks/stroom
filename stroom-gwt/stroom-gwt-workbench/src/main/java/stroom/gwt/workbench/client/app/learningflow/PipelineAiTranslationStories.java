@@ -36,20 +36,20 @@ import stroom.learningflow.client.component.TurnAnswerEditorController;
 
 import com.google.gwt.user.client.ui.Widget;
 
-/// The `App/Editors/PipelineAiTranslation` stories: a pipeline's AI Translation tab
-/// ([PipelineAiTabController]) in Stroom's real pipeline editor, with fake REST replies ([AiPipelines]): where
-/// the pipeline's AI element's feed stands, its learning run's conversation and waiting streams, and what can be
-/// done about it, by the pipeline's permissions. Its dialogs: giving a paused run more
-/// ([GrantEditorController]), answering a question ([TurnAnswerEditorController]), the prompt that asks why a
-/// feed stops learning ([SupervisorPromptController]) and the notes left for a feed
-/// ([GuidanceEditorController]).
+/// The `App/Editors/PipelineAiTranslation` stories show a pipeline's AI Translation tab
+/// ([PipelineAiTabController]) in Stroom's real pipeline editor, with fake REST replies ([AiPipelines]). The
+/// tab shows the status of the feed learned by the pipeline's Learning Flow element, its learning run's
+/// conversation and waiting streams, and the actions the pipeline's permissions allow. The tab's dialogs are
+/// covered too: giving a parked run more time or tokens ([GrantEditorController]), answering a question
+/// ([TurnAnswerEditorController]), the prompt that asks why a feed should stop learning
+/// ([SupervisorPromptController]), and the notes left for a feed ([GuidanceEditorController]).
 public final class PipelineAiTranslationStories {
 
     private static final String PAUSED = "Paused: ran out of time at \"Write the parser\" (question 4).";
     private static final String TAB = "Learning Status";
     private static final String TRANSLATING_WITH = "Translating with";
     private static final String HISTORY = "Learning history";
-    // The firewall's pipeline just translating, with nothing waiting
+    // The firewall pipeline's learner serving its translation, with no streams waiting.
     private static final String TRANSLATING_NOTHING_WAITING = LearningFlowFixtures.FIREWALL_TRANSLATING
             .replace("\"waiting\": 2", "\"waiting\": 0");
 
@@ -64,16 +64,17 @@ public final class PipelineAiTranslationStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/PipelineAiTranslation", PipelineAiTranslationStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // The tab, opened from the document's Feeds tab: the firewall's feed paused out of time, why,
-                // and what to do about it
+                // The tab for the firewall's feed, whose run was paused because it ran out of time. The tab says
+                // why it paused and what can be done about it.
                 .story("Default", context -> render(context, false))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(DocEditors.tab(play, TAB)).toBeInTheDocument());
                     play.expect(play.findByRole("heading", "Firewall pipeline")).toBeInTheDocument();
                     play.expect(play.findByText(PAUSED)).toBeInTheDocument();
-                    // One AI element, so there is no choosing between them
+                    // There is only one Learning Flow element, so the element chooser is hidden.
                     play.expect(play.queryByText("Smart Pipeline element")).not().toBeVisible();
-                    // Why it paused, in parts; "Give it more" is a button already, so it is said, not linked
+                    // The reason it paused is shown as details and suggestions. "Give it more" already has its
+                    // own button, so that suggestion is plain text rather than a link.
                     final Play reportDetails = play.within(play.getByRole("list", "Details"));
                     play.expect(reportDetails.getByText(
                             "Each run may take 5 minutes; this one had taken 5 minutes 2 seconds."))
@@ -89,11 +90,12 @@ public final class PipelineAiTranslationStories {
                             .toBeInTheDocument();
                     play.expect(play.getByRole("button", StroomDom.button("Answer it myself"))).toBeInTheDocument();
                     play.expect(play.getByText(TextMatch.startingWith("Went back once"))).toBeInTheDocument();
-                    // Nothing learned yet, so no learned translation to open
+                    // Nothing has been learned yet, so there is no learned translation to open.
                     play.expect(play.queryByText(TRANSLATING_WITH)).not().toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // A feed translating says which learned translation it runs; its name opens it
+                // A feed being translated shows which learned translation it uses, and clicking its name opens
+                // it.
                 .story("LearnedTranslation", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.PAUSED,
@@ -108,8 +110,9 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(play.spy(AiPipelines.OPENED)).toHaveBeenCalledWith("f-2"));
                     DocEditors.expectNoProblems(play);
                 })
-                // A pipeline just translating, with nothing waiting: where it stands and the note to the AI are in
-                // sight, and its learning history is folded until asked for, with no waiting streams' tab
+                // For a pipeline that is translating with no streams waiting, its status and the note to the AI
+                // are visible, its learning history is folded until asked for, and there is no waiting streams
+                // tab.
                 .story("TranslatingFoldsHistory", context -> AiPipelines.render(context, false,
                         AiPipelines.ONE_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
@@ -127,7 +130,7 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.queryByText("Waiting streams", StroomDom.LINK_TAB_LABEL)).not().toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // A run that needs someone opens the learning history of its own accord
+                // A run that needs a person opens the learning history automatically.
                 .story("PausedOpensHistory", context -> render(context, false))
                 .withPlay(play -> {
                     play.waitFor(() -> play.expect(play.getByRole("button", HISTORY))
@@ -135,7 +138,8 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.findByText(LearningFlowFixtures.TURN_4)).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // The last question is open, with what it asked; another opens to its score and answer
+                // The last question is expanded to show what it asked. Expanding another shows its score and
+                // answer.
                 .story("Conversation", context -> render(context, false))
                 .withPlay(play -> {
                     play.expect(play.findByText(LearningFlowFixtures.TURN_4)).toBeInTheDocument();
@@ -149,7 +153,7 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.getByText(TextMatch.containing("<var id='field' />"))).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The streams waiting for the feed, on the second tab beneath it
+                // The streams waiting for the feed are listed on the second tab beneath the conversation.
                 .story("WaitingStreams", context -> render(context, false))
                 .withPlay(play -> {
                     play.findByText(PAUSED);
@@ -157,7 +161,7 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.findByText("Coverage short")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // A paused run given more time: OK sends it
+                // A paused run is given more time, and OK sends the grant.
                 .story("GrantDialogOk", context -> render(context, false))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -183,7 +187,7 @@ public final class PipelineAiTranslationStories {
                             RequestMatcher.post("/learningFlowSupervisor/v1/7/grant").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
-                // The question the run stopped at, answered by hand: OK sends it
+                // The question the run stopped at is answered by hand, and OK sends the answer.
                 .story("AnswerDialogOk", context -> render(context, false))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -208,7 +212,7 @@ public final class PipelineAiTranslationStories {
                             RequestMatcher.post("/learningFlowSupervisor/v1/7/turns/4").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
-                // Stop learning, from More: the prompt asks why, and OK sends it
+                // Stop learning, chosen from the More menu, prompts for a reason, and OK sends it.
                 .story("StopLearningPromptOk", context -> render(context, false))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -232,7 +236,7 @@ public final class PipelineAiTranslationStories {
                             RequestMatcher.post("/learningFlowSupervisor/v1/learners/ss-1/giveUp").toSpyMatcher());
                     DocEditors.expectNoProblems(play);
                 })
-                // A note left for the AI, sent from beneath the conversation
+                // A note for the AI is sent from the box beneath the conversation.
                 .story("NoteSent", context -> render(context, false))
                 .withPlay(play -> {
                     play.findByText(PAUSED);
@@ -242,12 +246,12 @@ public final class PipelineAiTranslationStories {
                             RequestMatcher.post("/learningFlowSupervisor/v1/guidance/ss-1")
                                     .withJsonBodyContaining("{\"message\": \"Ports are numbers.\"}")
                                     .toSpyMatcher()));
-                    // Sent, the box is emptied for the next
+                    // Once sent, the box is emptied for the next note.
                     play.waitFor(() -> play.expect(play.getByLabelText("Note to the AI")).toHaveValue(""));
                     DocEditors.expectNoProblems(play);
                 })
-                // What the open question was sent as (N9): rebuilt by the server and shown in a dialog, with what
-                // to know about it
+                // The prompt the open question was sent as, which the server rebuilds, is shown in a dialog
+                // with notes about it.
                 .story("PromptDialog", context -> promptRender(context, """
                         {"prompt": "You write Stroom pipeline configurations.\\n\\nWrite the parser for:\\na,b,c",
                           "notes": ["The questions and answers before it went with it, as the turns above \
@@ -264,7 +268,7 @@ public final class PipelineAiTranslationStories {
                             "The questions and answers before it"))).toBeNull());
                     DocEditors.expectNoProblems(play);
                 })
-                // Someone who may not view data is told why, and shown no prompt
+                // A user who may not view data is told why and is not shown the prompt.
                 .story("PromptDialogRefused", context -> promptRender(context, """
                         {"refusal": "The prompt carries the stream's own text, so it is shown only to \
                         someone who may view data."}"""))
@@ -277,7 +281,7 @@ public final class PipelineAiTranslationStories {
                     play.click(screen.getByRole("button", StroomDom.button("Close")));
                     DocEditors.expectNoProblems(play);
                 })
-                // The notes in use, shown in the guidance dialog, closed with Close
+                // The notes in use are shown in the guidance dialog, which is closed with Close.
                 .story("NotesDialog", context -> render(context, false))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -287,7 +291,8 @@ public final class PipelineAiTranslationStories {
                     play.waitFor(() -> play.expect(screen.queryByText("Timestamps are in UTC.")).toBeNull());
                     DocEditors.expectNoProblems(play);
                 })
-                // A run whose model didn't reply in time: failed, not still learning, with what to do about it
+                // A run whose model didn't reply in time is shown as failed rather than still learning, with
+                // suggestions for what to do.
                 .story("FailedRun", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.FAILED,
@@ -306,8 +311,8 @@ public final class PipelineAiTranslationStories {
                             .toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // A new translation waiting for a person (Track 2 step 4): how it was judged, the gates first,
-                // beside Approve and Reject
+                // A new translation waiting for a person to approve it shows how it was judged, gates first,
+                // beside the Approve and Reject buttons.
                 .story("AwaitingReviewEvidence", context -> runRender(context, LearningFlowFixtures.AWAITING_REVIEW))
                 .withPlay(play -> {
                     play.expect(play.findByText("A new translation is ready for you to check")).toBeInTheDocument();
@@ -320,7 +325,8 @@ public final class PipelineAiTranslationStories {
                     play.expect(play.queryByText(TextMatch.startingWith("Approved by"))).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // Held back by a spend ceiling (A24): whose, and that it clears by itself
+                // A learner held back by its Learning Flow's spending limit says which limit it is and that it
+                // clears by itself.
                 .story("SpendLimit", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.APPROVED,
@@ -332,7 +338,8 @@ public final class PipelineAiTranslationStories {
                             .toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The zone the pipeline reads timestamps in, and where it comes from (decision N6)
+                // The tab shows the time zone the pipeline reads timestamps in, and where that setting comes
+                // from.
                 .story("TimeZone", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.PAUSED,
@@ -344,15 +351,15 @@ public final class PipelineAiTranslationStories {
                                                 + "otherwise.")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // Once approved, who approved it and when stays beside how it was judged
+                // Once approved, who approved it and when is shown beside how it was judged.
                 .story("ApprovedBy", context -> runRender(context, LearningFlowFixtures.APPROVED))
                 .withPlay(play -> {
                     play.expect(play.findByText(TextMatch.startingWith("Approved by jo, "))).toBeInTheDocument();
                     play.expect(play.getByRole("list", "How it was judged")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // Read only, the pipeline viewed and not edited: where the feed stands, and nothing offered that
-                // changes its learning, which the server would refuse
+                // When the pipeline is read only, the feed's status is shown, but nothing that would change its
+                // learning is offered, since the server would refuse it.
                 .story("ReadOnly", context -> render(context, true))
                 .withPlay(play -> {
                     play.expect(play.findByText(PAUSED)).toBeInTheDocument();
@@ -367,8 +374,8 @@ public final class PipelineAiTranslationStories {
                             .toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // A pipeline with two AI elements: which to show is chosen at the top, and one that hasn't
-                // learned anything says so
+                // For a pipeline with two Learning Flow elements, the one to show is chosen at the top, and one
+                // that hasn't learned anything says so.
                 .story("TwoElements", context -> AiPipelines.render(context, false, AiPipelines.TWO_ELEMENTS,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.PAUSED,
@@ -384,7 +391,7 @@ public final class PipelineAiTranslationStories {
                             .toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // A pipeline without an AI element has no AI Translation tab
+                // A pipeline without a Learning Flow element has no AI Translation tab.
                 .story("NoAiElement", context -> AiPipelines.render(context, false, AiPipelines.NO_ELEMENT,
                         LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,
                                 LearningFlowFixtures.PAUSED,
@@ -418,8 +425,8 @@ public final class PipelineAiTranslationStories {
         play.expect(screen.findByText("Stop learning this feed", StroomDom.DIALOG_TITLE)).toBeInTheDocument();
     }
 
-    // The firewall's pipeline at its AI Translation tab, its feed paused out of time
-    // The pipeline with the firewall's paused run, its open question's prompt answered as given
+    // Renders the pipeline with the firewall's paused run, replying with `rebuilt` when the open question's
+    // prompt is requested.
     private static Widget promptRender(final StoryContext context, final String rebuilt) {
         return AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                 LearningFlowFixtures.pipelineRoutes(RestFixtures.builder()
@@ -429,7 +436,7 @@ public final class PipelineAiTranslationStories {
                 AiPipelines.ELEMENT);
     }
 
-    // The pipeline with the firewall's run as given
+    // Renders the pipeline with the given firewall run.
     private static Widget runRender(final StoryContext context, final String run) {
         return AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                 LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC, run,
@@ -437,6 +444,7 @@ public final class PipelineAiTranslationStories {
                 AiPipelines.ELEMENT);
     }
 
+    // Renders the firewall pipeline at its AI Translation tab, with its run paused because it ran out of time.
     private static Widget render(final StoryContext context, final boolean readOnly) {
         return AiPipelines.render(context, readOnly, AiPipelines.ONE_ELEMENT,
                 LearningFlowFixtures.pipelineRoutes(RestFixtures.builder(), LearningFlowFixtures.DOC,

@@ -26,14 +26,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/// The overall figures a QA person judges a Smart Pipeline's translation by, on its Quality Assurance tab,
-/// without reading every record: what it scores lately and over how many records, against the line its Learning
-/// Flow flags it below; what it scored when it went live, against the pass mark; and how many streams wait for a
-/// translation. Each is a figure with a sentence saying what it rests on, and a tone where it calls for
-/// attention. A plain class, so that it is tested without a browser.
+/// Works out the headline figures shown on a pipeline's Quality Assurance tab, so that a person can judge a
+/// Smart Pipeline's translation without reading every record.
+///
+/// The figures are: its recent rolling score and how many records that covers, compared with the threshold
+/// below which its Learning Flow flags it; the score it had when it went live; and how many streams are
+/// waiting for a translation. Each figure has a note saying what it is based on, and a tone that highlights
+/// it when it needs attention. This is a plain class so that it can be unit tested without a browser.
 public final class QualityFigures {
 
-    /// Said where the pipeline has no translation in use, so has nothing to judge yet.
+    /// The message shown when the pipeline has no translation in use, so there is nothing to judge yet.
     static final String NOTHING_IN_USE = "No translation is in use yet, so there is nothing to judge. Its "
                                          + "Learning Status says how learning one is going.";
 
@@ -45,12 +47,13 @@ public final class QualityFigures {
         this.message = message;
     }
 
-    /// Works out a Smart Pipeline's figures.
+    /// Works out a Smart Pipeline's headline figures.
     ///
-    /// @param learner Its learner row.
-    /// @param doc     The settings of the Learning Flow it learns under, or null where not known, when the lines
-    ///                they draw aren't said.
-    /// @return Its figures, or none and a message where it has no translation in use.
+    /// @param learner The learner of the Smart Pipeline element.
+    /// @param doc     The settings of the Learning Flow it learns under, or null if not known, in which case the
+    ///                flagging threshold is not mentioned.
+    /// @return The figures. If no translation is in use, only the waiting streams figure is given, with a
+    ///         message.
     public static QualityFigures of(final SupervisorLearner learner, final LearningFlowDoc doc) {
         final List<Figure> figures = new ArrayList<>();
         if (learner.getBindingUuid() == null) {
@@ -64,7 +67,7 @@ public final class QualityFigures {
     }
 
 
-    /// The volume over the window, in a sentence.
+    /// Describes the volume of data translated over the period covered, in a sentence.
     ///
     /// @param days The days, oldest first.
     /// @return E.g. "1,204 records in 37 streams over the last 14 days. 18 of those records were declared
@@ -85,8 +88,8 @@ public final class QualityFigures {
         if (records == 0) {
             return PlainWords.count(streams, "stream") + " translated" + over + " Their records weren't counted.";
         }
-        // A declared skip is a record the translation said was deliberately not an event, and nothing
-        // caps how many it may declare (ruling A148): this sentence is what a person judges that by
+        // A declared skip is a record the translation says it deliberately did not turn into an event. There
+        // is no limit on how many it may declare, so the count is shown here for a person to judge.
         return PlainWords.count(records, "record") + " in " + PlainWords.count(streams, "stream") + over
                + (skips == 0
                 ? ""
@@ -94,11 +97,12 @@ public final class QualityFigures {
                   + "translation.");
     }
 
-    /// The cardinality of the translation in use: of the records it was learned and checked on, what they
-    /// became, and how many kinds of record it settled.
+    /// Works out the cardinality figures of the translation in use: of the records it was learned and checked
+    /// on, how many became real events, marked Unknown events or no event, and how many kinds of record it
+    /// identified.
     ///
-    /// @param report The pipeline's report.
-    /// @return The figures; none where no translation is in use or it keeps no records.
+    /// @param report The quality report for the Smart Pipeline element.
+    /// @return The figures; empty if no translation is in use or it has kept no records.
     public static List<Figure> cardinality(final QualityReport report) {
         final int kept = report.getTranslated() + report.getUnknown() + report.getNone();
         if (report.getBindingUuid() == null || kept == 0) {
@@ -123,8 +127,8 @@ public final class QualityFigures {
         return figures;
     }
 
-    /// @param report The pipeline's report.
-    /// @return What the cardinality figures are of, in a sentence; null where there are none.
+    /// @param report The quality report for the Smart Pipeline element.
+    /// @return A sentence describing what the cardinality figures cover; null if no translation is in use.
     public static String cardinalityNote(final QualityReport report) {
         final int kept = report.getTranslated() + report.getUnknown() + report.getNone();
         if (report.getBindingUuid() == null) {
@@ -141,7 +145,7 @@ public final class QualityFigures {
         return figures;
     }
 
-    /// @return What is said in place of the figures of a translation, or null where there is one.
+    /// @return The message shown when there is no translation in use, or null if there is one.
     public String getMessage() {
         return message;
     }
@@ -189,7 +193,8 @@ public final class QualityFigures {
     // --------------------------------------------------------------------------------
 
 
-    /// One figure: what it is, its value, what it rests on, and whether it calls for attention.
+    /// One figure: its label, its value, a note on what it is based on, and a tone saying whether it needs
+    /// attention.
     public static final class Figure {
 
         private final String label;
@@ -204,22 +209,22 @@ public final class QualityFigures {
             this.tone = tone;
         }
 
-        /// @return What it is, e.g. "Score lately".
+        /// @return The figure's label, e.g. "Score lately".
         public String getLabel() {
             return label;
         }
 
-        /// @return Its value, e.g. "98%".
+        /// @return The figure's value, e.g. "98%".
         public String getValue() {
             return value;
         }
 
-        /// @return What it rests on, in a sentence or two.
+        /// @return A sentence or two on what the figure is based on.
         public String getNote() {
             return note;
         }
 
-        /// @return Whether it calls for attention: warning where it does, good where all is well.
+        /// @return The tone, e.g. warning when the figure needs attention or good when all is well.
         public Tone getTone() {
             return tone;
         }

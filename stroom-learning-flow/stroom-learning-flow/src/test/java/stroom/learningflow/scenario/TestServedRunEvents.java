@@ -42,17 +42,17 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 01 §12 item 2: the run that is judged is the run that is served, and a [StageRun] carries the
-/// events of *its own* run or none at all.
+/// Tests that a [StageRun] carries the events of its own fragment run or none at all, so that the run that
+/// is judged is the run that is served.
 ///
-/// A fragment runner keeps one run's events and the next run replaces them, so the events have to be
-/// taken in the call that made the run. A judgement made over the element runners — which is how a chain
-/// is judged as it is learned, before it has been written as a fragment — made no run and must carry
-/// nothing, or it takes whatever the runner happens to be holding: a variant tried and rejected earlier
-/// in the same call, or an earlier stream of the same pipeline scope.
+/// A fragment runner keeps the events of its last run, and the next run replaces them, so the events have to
+/// be taken in the call that made the run. A judgement made over the element runners (which is how a chain is
+/// judged while it is learned, before it is written as a fragment) makes no fragment run and must carry
+/// nothing. Otherwise it would pick up whatever the runner happens to hold, such as a candidate tried and
+/// rejected earlier in the same call, or an earlier stream of the same pipeline.
 ///
-/// One stage over three streams, since a stage's runner is a stage's: a stream learned, one of the same
-/// learner stepped, and then a second learner learning behind it.
+/// The test uses one stage over three streams, because the runner belongs to the stage: a stream learned, a
+/// stream of the same learner stepped, and then a stream of another feed processed after it.
 class TestServedRunEvents {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -83,16 +83,15 @@ class TestServedRunEvents {
                 .describedAs("nothing has run the fragment it wrote, so there is nothing to serve with")
                 .isNull();
 
-        // A bound stream's run, where one is still made and handed on: the stepper's (A30), which plays
-        // the run's events on to what is stepped beneath it. A task streams a bound stream instead
-        // (design 04 §3) and makes no run to carry.
+        // The stepper still makes a run for a bound stream and passes the run's events on to the elements
+        // stepped after it. A processing task streams a bound stream instead and makes no run to carry.
         final StageRun served = stage.dryRun(doc, Scenarios.LEARNER, stream(2, FEED), false);
         assertThat(served.produced()).describedAs("the same learner, bound").isNotNull();
         assertThat(served.events())
                 .describedAs("judged by running the fragment, and served by that same run")
                 .isSameAs(runner.emitted.get(runner.emitted.size() - 1));
 
-        // And now a second learner, behind a stage whose runner is holding the stream before it.
+        // Then a stream of another feed, through a stage whose runner still holds the previous stream's run.
         final StageRun other = scenarios.process(document -> script, scenarios.learnerBindings, runner, doc, stream(3,
                 OTHER_FEED)).learned();
         assertThat(other.produced()).describedAs("the second learner learned and was bound").isNotNull();
@@ -120,9 +119,9 @@ class TestServedRunEvents {
     // --------------------------------------------------------------------------------
 
 
-    /// A fragment runner that emits something distinguishable on every run, as a node's does and the
-    /// stand-in does not. What it emits is never fired at anything — what is being asserted is *which*
-    /// run's events a judgement ended up with, and identity says that better than content.
+    /// A fragment runner that records a distinct event list on every run, as a node's runner does and the
+    /// stand-in does not. The events are never played to anything: the test asserts which run's events a
+    /// judgement ended up with, and object identity shows that better than content.
     private static final class Emitting implements FragmentRunner {
 
         private final List<EventList> emitted = new ArrayList<>();
@@ -132,7 +131,7 @@ class TestServedRunEvents {
             this.runner = runner;
         }
 
-        /// Served as the runner it wraps serves: what is watched here is what a run is given.
+        /// Serves through the wrapped runner without recording anything; only calls to `run` record events.
         @Override
         public ServedStream serve(final DocRef fragment,
                                   final InputStream input,

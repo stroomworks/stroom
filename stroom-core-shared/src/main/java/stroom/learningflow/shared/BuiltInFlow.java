@@ -24,12 +24,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/// One built-in default setup as the client is given it (Track 2 step 1c): which setup it is, what to
-/// call it, and its steps.
+/// One built-in example flow as the server sends it to the client: which example it is, its display name, and
+/// its steps.
 ///
-/// The steps are defined as JSON on the server, beside `FlowExamples`, because the client has neither
-/// classpath resources nor Jackson. A document the client opens already carries its own steps; these are
-/// what it needs to say which setup a document matches, and to start a new one from.
+/// The steps are defined as JSON on the server, read by `FlowExamples`, because the client has neither
+/// classpath resources nor Jackson. A document the client opens already carries its own steps; the client
+/// needs these to tell which example a document's steps match, and to start a new document from one.
 @JsonInclude(Include.NON_NULL)
 public class BuiltInFlow {
 

@@ -21,9 +21,9 @@ import stroom.docref.HasDisplayValue;
 import java.util.ArrayList;
 import java.util.List;
 
-/// The ready-made sets of checks a Learning Flow can start from (the one model of checks, decision D6).
-/// *Standard* is what a new Learning Flow has: the objective checks as gates, literals and time
-/// plausibility as advice once they are built, and the heuristic checks off.
+/// The ready-made sets of check settings a Learning Flow document can choose from. *Standard* is what a new
+/// document has: the objective checks as gates, the literals and time plausibility checks as advice, and the
+/// heuristic checks (yield, extraction quality, business rules) off.
 public enum CheckPreset implements HasDisplayValue {
     LENIENT("Lenient",
             "The events must compile, be valid against the event schema, account for every record read, keep what "
@@ -77,9 +77,9 @@ public enum CheckPreset implements HasDisplayValue {
 
     private CheckSetting setting(final Check check) {
         return switch (check) {
-            // Completeness is a gate from the start, in every preset (UM-2, option C taken for literals
-            // only): a record that never became an event is the fault the whole of task 2 is about, and a
-            // translation that legitimately makes fewer events says so with a declared skip
+            // Completeness is a gate in every preset: a record that silently never became an event is exactly
+            // the fault it exists to catch, and a translation that legitimately makes fewer events says so
+            // with a declared skip
             case COMPILE, PERMITTED, CONFORMANCE, COMPLETENESS, PRESERVATION, REGRESSION -> CheckSetting.of(
                     check, CheckState.GATE);
             case COVERAGE -> new CheckSetting(check, this == LENIENT
@@ -98,15 +98,15 @@ public enum CheckPreset implements HasDisplayValue {
             case RULES -> CheckSetting.of(check, this == STRICT
                     ? CheckState.GATE
                     : CheckState.OFF);
-            // Advice by default, whatever the preset (stage 0b group 4): it shows beside a draft and goes
-            // back to the model, but does not refuse a candidate until it has run on real feeds without
-            // crying wolf. Strict gates it.
+            // Advice except under Strict: it shows beside a draft and goes back to the model, but the check is
+            // new, so it does not refuse a candidate until it has proved on real feeds that it does not give
+            // false failures. Strict gates it.
             case TIMES -> CheckSetting.of(check, this == STRICT
                     ? CheckState.GATE
                     : CheckState.ADVICE);
-            // Advice first, then a gate once it has run on the demo feeds without false failures
-            // (stage 0b group 4, option C for literals): a translation that writes this stream's year or
-            // environment into itself is wrong for the next stream, but the check is new
+            // Advice except under Strict, for the same reason as the times check: a translation that writes
+            // this stream's year or environment into itself is wrong for the next stream, but the check is new
+            // and has not yet proved it gives no false failures
             case LITERALS -> CheckSetting.of(check, this == STRICT
                     ? CheckState.GATE
                     : CheckState.ADVICE);

@@ -21,11 +21,11 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-/**
- * The simulated model: replies in the order scripted, whatever is asked, and keeps every question so a
- * test can assert what the conversation put to it. Running out of script is a test failure, not a refusal —
- * a conversation asking more than the test expected is the thing under test.
- */
+/// A simulated model for the learning tests. It gives its scripted replies in order, whatever is asked, and
+/// keeps every question and transcript so a test can assert what the conversation sent it.
+///
+/// Running out of replies fails the test rather than acting as a refusal, because a conversation that asks
+/// more questions than the test expected is exactly what the test should catch.
 class CannedAdvisor implements Advisor {
 
     private final Deque<String> replies;
@@ -50,9 +50,10 @@ class CannedAdvisor implements Advisor {
         return questions;
     }
 
-    /**
-     * @return The transcript that accompanied the nth question.
-     */
+    /// Returns the transcript sent with a given question.
+    ///
+    /// @param index The zero-based index of the question.
+    /// @return The earlier questions and answers that accompanied that question.
     List<Exchange> transcriptAt(final int index) {
         return transcripts.get(index);
     }

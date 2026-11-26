@@ -27,11 +27,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Which attempts the Supervisor view is asking for (A28): across every document by default, and
- * narrowed by any of the things a person looking for one would know — which document, which feed, which
- * mode it ran in, or what it came to. Newest first, a page at a time.
- */
+/// Criteria for the learning sessions (attempts) the Supervisor lists. By default sessions of every document
+/// are included; they can be narrowed by document, feed, promotion mode, status or learner. Results come newest
+/// first, a page at a time.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class AttemptCriteria extends BaseCriteria {
 
@@ -52,7 +50,8 @@ public class AttemptCriteria extends BaseCriteria {
         this(null, null, null, null, null, null);
     }
 
-    /// Without the attempts of deleted pipelines, as the Supervisor shows them unless asked (A137).
+    /// Creates criteria that leave out the sessions of deleted pipelines, which the Supervisor hides unless
+    /// asked to show them.
     public AttemptCriteria(final PageRequest pageRequest,
                            final List<CriteriaFieldSort> sortList,
                            final String docUuid,
@@ -62,7 +61,11 @@ public class AttemptCriteria extends BaseCriteria {
         this(pageRequest, sortList, docUuid, feed, promotionMode, statuses, false, null);
     }
 
-    /// One learner's sessions, newest first (design 06 A143), whatever their pipeline's state.
+    /// Creates criteria for one learner's sessions, newest first, including those of a deleted pipeline.
+    ///
+    /// @param pageRequest The page to fetch.
+    /// @param learner     The learner whose sessions to list.
+    /// @return The criteria.
     public static AttemptCriteria forLearner(final PageRequest pageRequest, final LearnerRef learner) {
         return new AttemptCriteria(pageRequest, null, null, null, null, null, true, learner);
     }
@@ -103,13 +106,13 @@ public class AttemptCriteria extends BaseCriteria {
         return statuses;
     }
 
-    /// Whether the attempts of pipelines since deleted are shown too (design 06 A137): kept to be read
-    /// until they age out, and left out unless a person asks for them.
+    /// @return Whether the sessions of pipelines since deleted are included too. Such sessions are kept until
+    /// they age out, but are left out unless a person asks for them.
     public boolean isShowDeletedPipelines() {
         return showDeletedPipelines;
     }
 
-    /// One learner's sessions only, or every learner's when null (design 06 A143).
+    /// @return The learner whose sessions alone are listed, or null for every learner's.
     public LearnerRef getLearner() {
         return learner;
     }

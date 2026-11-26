@@ -27,17 +27,13 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/**
- * What serves a learner (A124): a pipeline fragment, referenced by DocRef (A20), learned by it and bound
- * to it. Nothing selects among bindings any more: a learner is served by its binding, or waits on its
- * draft.
- * <p>
- * A binding carries the little history rebinding needs: when the fragment was promoted, the score it was
- * promoted on, and the one state a learned binding passes through before it is simply bound — a
- * <em>draft</em> the learner's streams wait on until it is approved (A25), whether by a person or, on an
- * automatic Learning Flow, by the system at once (simplification option A).
- * A binding has a {@code uuid} so that the runtime state of A26 can name it stably.
- */
+/// What serves a learner: a learned pipeline fragment, referenced by its DocRef, which the Smart Pipeline
+/// element runs as a nested pipeline. A learner is served by its one binding, or waits for its draft.
+///
+/// A binding carries the little history rebinding needs: when the fragment was promoted, the score it was
+/// promoted on, and whether it is still a *draft*. Every learned binding starts as a draft, which serves
+/// nothing until it is approved, by a person under review mode or by the system at once under automatic
+/// promotion. A binding has a `uuid` so that the runtime tables can refer to it reliably.
 @JsonPropertyOrder({
         "uuid",
         "pipeline",
@@ -48,47 +44,39 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class Binding {
 
-    /**
-     * Null until the store or the supervisor assigns one; the client never generates it.
-     */
+    /// Null until the server assigns one; the client never generates it.
     @JsonProperty
     private final String uuid;
-    /**
-     * The fragment: a Pipeline document with no destination.
-     */
+    /// The fragment: a Pipeline document with no destination.
     @JsonProperty
     private final DocRef pipeline;
-    /**
-     * Written by a stage in review mode; the learner's streams wait on it until Approve clears it (A25).
-     * This flag is authoritative; the learner's own state mirrors it.
-     */
+    /// Whether this binding is a draft awaiting approval; streams nothing else serves wait until it is
+    /// approved. This flag is authoritative; the learner's own state mirrors it.
     @JsonProperty
     private final boolean draft;
     @JsonProperty
     private final Long promotedTimeMs;
     @JsonProperty
     private final Double score;
-    /**
-     * What one record is in the stream, as the variant was learned (A35): the stage counts a stream's
-     * records and judges yield by it. Null for raw text, whose parser cuts the records, and for bindings
-     * written before it was carried, which count the root's children as before.
-     */
+    /// What one record is in the stream, as the binding was learned. The Smart Pipeline element counts a
+    /// stream's records and judges yield by it. Null for raw text, whose parser cuts the records, and for
+    /// bindings written by an earlier version that did not record it, for which the root's children are
+    /// counted.
     @JsonProperty
     private final RecordBoundary recordBoundary;
-    /// The snapshot of the fragment's configuration this binding serves with (A61): what a deferral row is
-    /// stamped with and what an output records. Null for a binding written before snapshots existed, which
-    /// is snapshotted the first time it serves.
+    /// The snapshot of the fragment's configuration this binding serves with. A deferred stream is stamped
+    /// with it and each output records it, so that a stream can later be reprocessed exactly as it was first
+    /// processed. Null for a binding written by an earlier version without snapshots, which is snapshotted
+    /// the first time it serves.
     @JsonProperty
     private final String snapshot;
-    /**
-     * The version of the row this binding was read at, for a {@code replace} to check it has not moved
-     * since (audit finding W7-3); null for a binding built rather than read, which {@code append} and an
-     * unchecked {@code replace} take as "no opinion".
-     * <p>
-     * Without it {@code replace} was last-writer-wins however carefully it took the row lock: a node
-     * writing a binding from its cache would write the whole row back, reverting a rebind another node
-     * had made to the pipeline and the snapshot in between.
-     */
+    /// The version of the database row this binding was read at, so that a `replace` can check the row has
+    /// not changed since (optimistic locking). Null for a binding built rather than read, which `append` and
+    /// an unchecked `replace` treat as "don't check".
+    ///
+    /// Without it, `replace` would be last-writer-wins however carefully it took the row lock: a node writing
+    /// a binding from its cache would write the whole row back, reverting a rebind another node had made to
+    /// the pipeline and the snapshot in between.
     @JsonProperty
     private final Integer version;
 
@@ -111,7 +99,7 @@ public class Binding {
         this.version = version;
     }
 
-    /// A binding with no version: one built rather than read from a row.
+    /// Creates a binding with no version, i.e. one built rather than read from a row.
     ///
     /// @param uuid           Its uuid.
     /// @param pipeline       The fragment it runs.
@@ -159,13 +147,13 @@ public class Binding {
         return recordBoundary;
     }
 
-    /// The snapshot this binding serves with (A61), or null for a binding written before snapshots existed.
+    /// @return The snapshot this binding serves with, or null for a binding written before snapshots existed.
     public String getSnapshot() {
         return snapshot;
     }
 
-    /// @return The version of the row this was read at, for a `replace` to check it has not moved since
-    ///         (W7-3); null for a binding built rather than read.
+    /// @return The version of the row this was read at, for a `replace` to check it has not changed since;
+    ///         null for a binding built rather than read.
     public Integer getVersion() {
         return version;
     }
@@ -273,13 +261,14 @@ public class Binding {
             return this;
         }
 
-        /// The snapshot the binding serves with (A61).
+        /// @param snapshot The snapshot of the fragment's configuration the binding serves with.
+        /// @return This builder.
         public Builder snapshot(final String snapshot) {
             this.snapshot = snapshot;
             return this;
         }
 
-        /// The version of the row it was read at (W7-3).
+        /// The version of the row the binding was read at, for optimistic locking.
         ///
         /// @param version The version, or null for a binding built rather than read.
         /// @return This builder.

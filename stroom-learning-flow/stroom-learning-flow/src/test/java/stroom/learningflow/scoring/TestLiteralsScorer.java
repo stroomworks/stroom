@@ -32,11 +32,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Whether a translation has this stream's own data written into it (Track 1 task 3).
+/// Tests the literals check, which reports a translation that has values from the stream it was learned on
+/// written into it.
 ///
-/// A translation is learned from one stream and serves every stream after it, so a value copied out of
-/// the stream it was learned on is wrong for all the rest — and wrong quietly, since the translation
-/// still compiles, still validates and still carries real content.
+/// A translation is learned from one stream and serves every stream after it, so a value copied out of the
+/// stream it was learned on is wrong for all the others. It is wrong silently, because the translation still
+/// compiles, still validates and still carries real content.
 class TestLiteralsScorer {
 
     private static final StreamFacts STREAM = new StreamFacts(1L, "NETFILTER", "Raw Events", 0L,
@@ -55,7 +56,7 @@ class TestLiteralsScorer {
 
     @Test
     void aYearWrittenIntoTheTranslationIsReported() {
-        // The dev instance's fault: a syslog date with no year, and a year written into the stylesheet
+        // A typical case: a syslog date with no year, and the year written into the stylesheet
         final Score score = score("""
                 <xsl:template match="record">
                   <When><xsl:value-of select="concat('2023', '-', @when)"/></When>
@@ -82,8 +83,8 @@ class TestLiteralsScorer {
 
     @Test
     void thisStreamsOwnHeaderWrittenIntoTheOutputIsReported() {
-        // The sharpest form of the fault: the value is right for the stream it was learned on and wrong
-        // for every other
+        // The clearest form of the fault: the value is right for the stream it was learned on and wrong for
+        // every other
         final Score score = score("""
                 <xsl:template match="record">
                   <Event><System><Environment>Production</Environment></System></Event>
@@ -121,7 +122,8 @@ class TestLiteralsScorer {
 
     @Test
     void aDatePatternIsNotADate() {
-        // 'yyyy-MM-dd' is how a date is read, not a date written in: refusing it would refuse the fix
+        // 'yyyy-MM-dd' is a pattern for reading a date, not a date written in. Refusing it would refuse the
+        // very fix the check recommends
         assertThat(score("""
                 <xsl:template match="record">
                   <When><xsl:value-of select="stroom:format-date(@when, 'yyyy-MM-dd''T''HH:mm:ss.SSSXX')"/></When>
@@ -139,7 +141,7 @@ class TestLiteralsScorer {
 
     @Test
     void shortValuesAreLeftAlone() {
-        // Two characters match something by accident too easily to be worth saying
+        // Two-character values match by accident too easily to be worth reporting
         assertThat(score("""
                 <xsl:template match="record">
                   <Event><Id>OK</Id></Event>
@@ -148,7 +150,8 @@ class TestLiteralsScorer {
 
     @Test
     void itIsAdviceUntilItHasRunOnRealFeeds() {
-        // Stage 0b group 4, option C for literals: advice first, then a gate
+        // The check is new, so it only advises in the standard preset until it has proved it gives no false
+        // failures; under Strict it is a gate
         assertThat(setting(CheckPreset.STANDARD).getState()).isEqualTo(CheckState.ADVICE);
         assertThat(setting(CheckPreset.STRICT).getState()).isEqualTo(CheckState.GATE);
     }

@@ -30,28 +30,30 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/// The static stylesheet check of decision N1, as a check of the one model: a learned stylesheet may use
-/// only what is on the [allow-list][AiXsltAllowList], and what it uses that it may not is fed back to the
-/// model as the reason, like any other check.
+/// The permitted check, a static check on a learned stylesheet: it may use only the XSLT/XPath functions
+/// and instructions on the [allow-list][AiXsltAllowList]. Anything it uses that is not permitted is fed
+/// back to the model as the reason, like any other check.
 ///
-/// This is a safety check rather than a quality one, so a Learning Flow cannot turn it down to advice or
-/// off (`CheckSettings.problems`). On an automatic Learning Flow nobody reads the stylesheet before it
-/// runs, and until Track 2 step 6 adds run-time enforcement this check is the only guard.
+/// This is a safety check rather than a quality one, so a Learning Flow cannot set it to advice or off
+/// (`CheckSettings.problems`). With automatic promotion nobody reads the stylesheet before it runs, and
+/// the list is not enforced when the stylesheet runs, so this check is the only guard.
 ///
-/// It judges the stylesheet, not the output, so it only has something to say about a step that wrote one.
-/// A parser's configuration is a data-splitter or a JSON path, which reaches nothing, and a chain being
-/// chosen has no configuration at all; for those this scores nothing and the check does not appear.
+/// It judges the stylesheet, not the output, so it only applies to a step that wrote one. A parser's
+/// configuration is a Data Splitter configuration or a JSON path, which cannot call anything, and a chain
+/// being chosen has no configuration at all; for those it gives no score and the check does not appear.
 public final class PermittedScorer implements Scorer {
 
     private static final ElementId PERMITTED = new ElementId("Permitted");
 
     private final AiXsltAllowList allowList;
 
-    /// Uses the list this release has in code.
+    /// Creates the scorer with the allow-list built into this release.
     public PermittedScorer() {
         this(AiXsltAllowList.hardCoded());
     }
 
+    /// Creates the scorer with a given allow-list.
+    ///
     /// @param allowList What a learned stylesheet may use.
     public PermittedScorer(final AiXsltAllowList allowList) {
         this.allowList = allowList;

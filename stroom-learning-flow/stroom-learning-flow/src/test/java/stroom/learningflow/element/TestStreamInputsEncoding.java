@@ -39,17 +39,16 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/// Audit finding S3: **the worker reads a stream in the feed's encoding, as serving does.**
+/// Tests that the background learning worker reads a stream in its feed's encoding, as serving does.
 ///
-/// Learning happens in the worker (A60), which decoded every stream as UTF-8 whatever the feed said,
-/// while the task path has always honoured the feed's encoding. So a feed in windows-1252 or UTF-16 was
-/// learned from wrongly decoded text and then served correctly decoded: the parser was taught against
-/// characters the stream does not contain.
+/// Serving a stream through a processor task decodes it in the feed's encoding. If the worker read every stream
+/// as UTF-8 instead, a feed in windows-1252 or UTF-16 would be learned from wrongly decoded text and then served
+/// correctly decoded, so the parser would be taught against characters the stream does not contain.
 class TestStreamInputsEncoding {
 
     private static final long META_ID = 7L;
     private static final String FEED = "ACCENTS";
-    /// Text that decodes differently in the two encodings, and is a record a parser might cut.
+    /// A record a parser might split, containing characters that are encoded differently in each encoding.
     private static final String TEXT = "2026-01-01,Zoë,café,logon\n";
 
     @Test
@@ -62,7 +61,7 @@ class TestStreamInputsEncoding {
 
     @Test
     void aFeedInUtf16IsReadableAtAll() throws Exception {
-        // Read as UTF-8 this is not text a parser could cut records from at all
+        // Read as UTF-8, this is not text a parser could split into records at all
         final Input input = inputs(TEXT.getBytes(StandardCharsets.UTF_16), "UTF-16")
                 .byId(META_ID).orElseThrow();
 
@@ -79,7 +78,8 @@ class TestStreamInputsEncoding {
 
     @Test
     void anEncodingThisNodeCannotUseIsAReasonToGoOnInUtf8() throws Exception {
-        // Not a reason to abandon the stream: the pipeline does the same, and most feeds are UTF-8
+        // An unknown encoding is not a reason to abandon the stream. The pipeline falls back to UTF-8 too, and
+        // most feeds are UTF-8
         final Input input = inputs(TEXT.getBytes(StandardCharsets.UTF_8), "no-such-charset")
                 .byId(META_ID).orElseThrow();
 
@@ -89,7 +89,7 @@ class TestStreamInputsEncoding {
     // --------------------------------------------------------------------------------
 
 
-    /// A stream of bytes as the data store hands one over: one segment, read straight through.
+    /// Bytes presented as the data store presents a stream: one segment, read straight through.
     private static final class BytesAsSegments extends SegmentInputStream {
 
         private final ByteArrayInputStream bytes;
@@ -137,8 +137,10 @@ class TestStreamInputsEncoding {
         }
     }
 
+    /// Creates a `StreamInputs` over a single mocked stream.
+    ///
     /// @param bytes    The stream's bytes.
-    /// @param encoding What the feed says it is written in, or null for none.
+    /// @param encoding The encoding the feed declares, or null for none.
     /// @return A `StreamInputs` over a stream of those bytes.
     private static StreamInputs inputs(final byte[] bytes, final String encoding) throws Exception {
         final Meta meta = mock(Meta.class);

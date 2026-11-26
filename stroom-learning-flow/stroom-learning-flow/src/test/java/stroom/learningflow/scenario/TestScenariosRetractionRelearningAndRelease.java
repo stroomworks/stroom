@@ -44,12 +44,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Design 02 §5, scenarios 28, 27 and 13: what happens to a binding after it is made. A provisional
- * binding that fails the gate is retracted; a bound learner whose rolling score falls relearns while the
- * incumbent serves; binding a learner wakes the streams that waited for it. The feed is a headerless CSV
- * of four fields, so that a regex splitter can be right about it and then wrong when the feed changes.
- */
+/// Tests what happens to a binding after it is made.
+///
+/// A bound learner whose rolling score falls is marked for relearning by a person, and relearns while the
+/// existing binding keeps serving. A marked learner waits for a stream with enough records to judge a
+/// candidate on. Binding a learner wakes the streams that waited for it. The feed is a CSV of four fields
+/// with no header, so that a regex splitter can be right about it and then wrong when the feed changes.
 class TestScenariosRetractionRelearningAndRelease {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -92,9 +92,8 @@ class TestScenariosRetractionRelearningAndRelease {
         return "2020-06-17T08:" + String.format("%02d", i) + ":00.000Z,user" + i + ",office,logon\n";
     }
 
-    /**
-     * {@code records} access lines, every {@code alarmEvery}th replaced by an alarm line of three fields.
-     */
+    /// Builds `records` access lines, with every `alarmEvery`th line replaced by an alarm line of three
+    /// fields.
     private static String lines(final int records, final int alarmEvery) {
         final StringBuilder text = new StringBuilder();
         for (int i = 0; i < records; i++) {
@@ -113,11 +112,10 @@ class TestScenariosRetractionRelearningAndRelease {
         return output.split("<Event>", -1).length - 1;
     }
 
-    // Scenario 28 (a provisional binding is not retracted by the floor) is retired with the provisional
-    // state itself (SIM-3 option E, Track 2 step 1): a first result learned from too few records is a
-    // draft now, whatever the Learning Flow's mode, so nothing serves on a judgement it has not had.
-    // What the scenario was really about — a stream the translation cannot read puts the stream back
-    // rather than recording a clean run — is scenario 27's third stream and Track 1 task 2's fix 1.
+    // There is no test of a provisional binding being retracted: a first result learned from too few records
+    // is always a draft, whatever the promotion mode, so nothing serves without having been judged. A stream
+    // the translation cannot read is deferred rather than recorded as clean, which is tested in
+    // TestScenario64TheStreamTheTranslationStoppedReading.
 
     @Test
     void scenario27AFallingRollingScoreIsKeptForTheListAndAPersonMarksTheLearner() {
@@ -132,9 +130,9 @@ class TestScenariosRetractionRelearningAndRelease {
         final Binding incumbent = ((Promoted) first.decision()).binding();
         assertThat(((Promoted) first.decision()).score()).isEqualTo(1.0);
 
-        // Twenty records of which six are a second kind the splitter does not match. No new learner: the
-        // binding still serves, the fourteen that parse become events, the six are errors on the way — not
-        // sentinels — and the learner's rolling score falls below the threshold.
+        // Twenty records, of which six are a second kind the splitter does not match. The binding still
+        // serves: the fourteen that parse become events, and the six are reported as processing errors
+        // rather than the stream being errored. The learner's rolling score falls below the threshold.
         final String withAlarms = lines(20, 3);
         final Script silent = Script.of();
         final StageRun second = scenarios.process(silent, first.doc(), stream(2, withAlarms)).learned();
@@ -142,17 +140,17 @@ class TestScenariosRetractionRelearningAndRelease {
         assertThat(silent.asked()).isEmpty();
         assertThat(second.decision()).isInstanceOf(Bound.class);
         assertThat(events(second.output())).isEqualTo(14);
-        // The score is no trigger (design 04 §6): it is kept for the Supervisor's list of what could be
-        // better (A46), and a person reading the stream's errors is who marks the learner (A100).
+        // The score does not trigger relearning itself. It is shown in the Supervisor's list of what could be
+        // better, and a person reading the stream's errors marks the learner.
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isEmpty();
         assertThat(second.doc()).isEqualTo(first.doc());
         scenarios.states.markForRelearning(Scenarios.LEARNER, DOC, "Rolling score below the threshold: improve it");
 
-        // The next stream starts an attempt, opening with why the incumbent fell short: the mark's reason
-        // and the coverage shortfall, on the chain question and on each element's first. The incumbent
-        // serves it meanwhile; the candidate handles both kinds, beats the incumbent on this stream and
-        // is no worse on the record it was accepted on, so the binding is rebound to it — same binding, new
-        // fragment.
+        // The next stream starts an attempt whose questions open with why the current binding fell short: the
+        // mark's reason and the coverage shortfall. The current binding serves the stream meanwhile. The
+        // candidate handles both kinds of record, does better on this stream and is no worse on the records
+        // the binding was accepted on, so the binding is rebound to it: the same binding and fragment, edited
+        // in place under a new snapshot.
         final Script relearn = scenarios.script(FOUR_FIELDS_AND_ALARMS, XSLT)
                 .expect(QuestionMatcher.chain()
                         .withFeedbackMentioning("Relearning: Rolling score below")
@@ -186,7 +184,7 @@ class TestScenariosRetractionRelearningAndRelease {
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isEmpty();
         assertThat(scenarios.stores.pipelines.list()).describedAs("one fragment per learner (A58)").hasSize(1);
 
-        // And the stream after that is served by the new fragment, every record an event.
+        // The stream after that is served by the updated fragment, with every record becoming an event.
         final StageRun fourth = scenarios.process(silent, third.doc(), stream(4, withAlarms)).learned();
         assertThat(fourth.decision()).isInstanceOf(Bound.class);
         assertThat(fourth.produced().fragment()).isEqualTo(rebound.binding().getPipeline());
@@ -201,14 +199,14 @@ class TestScenariosRetractionRelearningAndRelease {
         final StageRun first = scenarios.process(script, doc(5), stream(1, lines(7, 0))).learned();
         assertThat(first.decision()).isInstanceOf(Promoted.class);
 
-        // A blank stream after promotion is nothing to judge the learner on: no score, no mark.
+        // A blank stream after promotion gives nothing to judge the learner on: no score and no mark.
         final Script silent = Script.of();
         final StageRun blank = scenarios.process(silent, first.doc(), stream(2, "\n")).learned();
         assertThat(blank.decision()).isInstanceOf(Bound.class);
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isEmpty();
 
-        // The score falls and a person marks the learner (design 04 §6); a stream of three records cannot
-        // meet A14 for a candidate, so the incumbent serves it, the model is not asked, and the mark waits.
+        // The score falls and a person marks the learner. A stream of three records has too few records to
+        // judge a candidate on, so the current binding serves it, the model is not asked, and the mark stays.
         scenarios.process(silent, first.doc(), stream(3, lines(20, 3))).learned();
         scenarios.states.markForRelearning(Scenarios.LEARNER, DOC, "Scored below the threshold: improve it");
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isPresent();
@@ -228,8 +226,8 @@ class TestScenariosRetractionRelearningAndRelease {
     @Test
     void scenario13BindingALearnerWakesTheStreamsThatWaitedForIt() {
         final Scenarios scenarios = new Scenarios();
-        // Two streams arrive while learning is disabled: each waits for a person (design 04 §3, the kill
-        // switch), on a row, with no session opened.
+        // Two streams arrive while learning is disabled. Each waits for a person on a deferral row, with no
+        // session opened.
         final LearningFlowDoc disabled = doc(5).copy().learningMode(LearningMode.DISABLED).build();
         final Script silent = Script.of();
         for (long id = 11; id <= 12; id++) {
@@ -240,8 +238,8 @@ class TestScenariosRetractionRelearningAndRelease {
         assertThat(silent.asked()).isEmpty();
         assertThat(scenarios.attempts.forDocument(DOC, 10)).isEmpty();
 
-        // Learning is switched on and the next stream is learned on: the promotion wakes the two that
-        // waited (design 04 §5.3), and nothing is asked of reprocessing.
+        // Learning is switched on and the next stream is learned from. The promotion wakes the two that
+        // waited, without anything needing to be reprocessed.
         final Script script = learning(scenarios, FOUR_FIELDS);
         final StageRun run = scenarios.process(script, doc(5), stream(13, lines(6, 0))).learned();
         script.verifyExhausted();

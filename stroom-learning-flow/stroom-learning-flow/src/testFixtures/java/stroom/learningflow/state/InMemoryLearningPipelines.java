@@ -44,8 +44,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/// The learning pipelines list over the in-memory stores: what a node's query does as joins, done here in
-/// Java over every learner each store knows. An agreement test holds the two to one answer.
+/// An in-memory [LearningPipelines], which builds the Supervisor's list of learning pipelines from the
+/// in-memory stores. It does in Java, over every learner any store knows, what `LearningPipelinesDao`
+/// does with joins in one query. `TestLearningPipelinesDao` checks that the two give the same answer.
 public final class InMemoryLearningPipelines implements LearningPipelines {
 
     private static final Set<AttemptStatus> OPEN = Set.of(AttemptStatus.IN_PROGRESS, AttemptStatus.AWAITING_MODEL);
@@ -137,8 +138,8 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
                     deleted,
                     false));
         }
-        // The same order as the node's query, ties broken the same way, so that a page turned twice reads
-        // the same twice.
+        // The same order as the database query, with ties broken the same way, so that the order is
+        // stable from page to page.
         matched.sort(Comparator.comparingInt(SupervisorLearner::getWaiting).reversed()
                 .thenComparing(SupervisorLearner::getLastSessionMs, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(row -> row.getLearner().getPipelineUuid())
@@ -157,9 +158,9 @@ public final class InMemoryLearningPipelines implements LearningPipelines {
                 attempts.all().stream().filter(attempt -> attempt.attempt().learner().equals(learner)).toList())));
     }
 
-    /// The document the learner runs under where it has no state to say: what its bindings, then its
-    /// waiting streams, record, which are brought to the document it runs under now; failing those, its
-    /// latest session's, which keeps the document it ran under.
+    /// Returns the document of a learner that has no state row: the one its bindings record, failing that
+    /// its waiting streams (both are kept up to date with the document it runs under), and failing those
+    /// its latest session's, which records the document it ran under.
     private static String documentOf(final List<Held> held,
                                      final List<Deferral> waits,
                                      final List<Recorded> sessions) {

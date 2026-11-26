@@ -32,8 +32,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The one model of checks (UM-2, UM-3, D1): a gate that falls short decides a step's outcome; advice that
-/// falls short decides it only where the step has a rule for it.
+/// Tests how a scorecard turns the checks' scores into a step's outcome.
+///
+/// Every check is either a gate or advice. A gate that falls short decides a step's outcome; advice that falls
+/// short decides it only where the step has a rule for that outcome.
 class TestScorecard {
 
     private static final FlowStep NO_RULES = FlowStep.builder(QuestionKind.CONFIGURE)
@@ -108,7 +110,8 @@ class TestScorecard {
         assertThat(scorecard.threshold(Check.WHOLENESS)).isEqualTo(0.9);
     }
 
-    /// Design 06 A144: a shortfall's score is the check that decided it, as the outcome names it.
+    /// A turn that fell short is given the score of the check that decided its outcome, so the score shown
+    /// matches the outcome.
     @Test
     void aShortfallIsScoredByTheCheckThatDecidedIt() {
         assertThat(Scorecard.deciding(verdict(
@@ -120,8 +123,8 @@ class TestScorecard {
                 .isEmpty();
     }
 
-    /// A pass is scored by the gate that passed by the least, and where no gate applied, by the check that
-    /// did; the compile gate is never it.
+    /// A turn that passed is given the score of the gate that passed by the smallest margin or, where no gate
+    /// applied, of the check that did. The compile gate is never used.
     @Test
     void aPassIsScoredByTheCheckThatPassedByTheLeast() {
         assertThat(Scorecard.deciding(verdict(

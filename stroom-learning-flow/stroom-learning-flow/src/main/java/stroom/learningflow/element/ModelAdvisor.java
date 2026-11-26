@@ -37,20 +37,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * The node's advisor (design 01 §10, §12 item 6): a model document's chat model, asked the questions of
- * {@link QuestionText} — the words the live smoke measured — after the system text and the attempt's
- * transcript so far, so the model sees the whole conversation. Every invocation is audited against the
- * Learning Flow document with the model, the kind of question, the tokens charged and the outcome,
- * as A9 requires of a change nobody watches; the sample itself is not written to the audit, because the
- * audit is not the place to keep a second copy of a feed's data (A146: samples are never redacted, so
- * what would be written is the data itself). Transport retries
- * are the chat model's own (the client retries a dropped connection before this sees it), so a 503 is not
- * a failed candidate; the attempt's budgets are the conversation's, fed by {@link #tokensUsed()}.
- * <p>
- * No response cache stands between this and the model: a re-ask with the same words must reach the model,
- * which is the cache-bypass §10 asks for.
- */
+/// The [Advisor] used on a node, which asks a real model. It sends the model's chat model the system
+/// text, then the attempt's transcript so far, then the new question, all worded by [QuestionText], so the
+/// model sees the whole conversation.
+///
+/// Every call is audited against the Learning Flow document, recording the model, the kind of question,
+/// the tokens used and the outcome, because promotion can be automatic with nobody watching. The sample
+/// data itself is not written to the audit: samples are never redacted, so writing them would put a
+/// second copy of the feed's data in the audit log.
+///
+/// Transport retries are handled by the chat model's client (it retries a dropped connection before
+/// this class sees it), so an HTTP 503 does not count as a failed candidate. The attempt's token budget is
+/// fed by [#tokensUsed()].
+///
+/// There is no response cache between this and the model, because asking again with the same words
+/// must reach the model.
 public final class ModelAdvisor implements Advisor {
 
     static final String EVENT_TYPE = "LearningFlowAsk";
@@ -79,11 +80,12 @@ public final class ModelAdvisor implements Advisor {
         return ask(transcript, question, List.of());
     }
 
-    /// The document's words, then what a supervisor has said about this learner (A46), then the conversation.
+    /// Asks a question, sending the document's system text followed by any guidance people have left for
+    /// this learner, then the conversation so far.
     ///
-    /// Guidance goes in the **system** message beside the document's own instructions, because that is
-    /// what it is: a standing fact about the feed, not a turn of the conversation. Put in as a turn it
-    /// would have to be answered; put in here it is simply true for every question that follows.
+    /// Guidance goes in the **system** message beside the document's own instructions, because it is a
+    /// standing fact about the feed, not a turn of the conversation. As a turn it would need an answer; in
+    /// the system message it simply applies to every question that follows.
     @Override
     public String ask(final List<Exchange> transcript, final Question question, final List<Given> guidance) {
         final List<ChatMessage> messages = new ArrayList<>();
@@ -101,7 +103,7 @@ public final class ModelAdvisor implements Advisor {
                     ? 0
                     : response.tokenUsage().totalTokenCount();
             tokens.addAndGet(used);
-            // A reply with no message, or a message with no text, is an empty answer
+            // A reply with no message, or a message with no text, is treated as an empty answer.
             final String reply = NullSafe.getOrElse(response.aiMessage(), AiMessage::text, "");
             eventLog.process(document, EVENT_TYPE, "Asked " + modelName + " a " + kind + " question, turn "
                                                    + (transcript.size() + 1) + ": " + used + " tokens, "

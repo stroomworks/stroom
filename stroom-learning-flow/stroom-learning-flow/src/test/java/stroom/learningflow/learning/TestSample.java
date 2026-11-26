@@ -24,8 +24,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What an attempt shows the model of its stream (A126): the feed and the type, feed first, and nothing
-/// else the stream carries, since nothing else is asked for.
+/// Tests which of a stream's metadata a learning attempt shows the model: the feed and the type, feed first,
+/// and nothing else, because nothing else is asked for.
 class TestSample {
 
     @Test

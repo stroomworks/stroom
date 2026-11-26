@@ -33,28 +33,23 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The degeneracy probe for the extraction stage (design §9, item 3, applied to ruling A11). The dominant
- * failure of a generated splitter is a configuration that produces a believable number of records by
- * quietly discarding everything it could not match. This hand-writes that configuration against a corpus
- * case and confirms the coverage scorer sees what yield alone cannot. If the scorer cannot catch a
- * deliberately degenerate splitter, it will not catch an accidentally degenerate one.
- */
+/// Tests that the extraction scorers catch a degenerate Data Splitter configuration.
+///
+/// The most common failure of a generated splitter is a configuration that produces a believable number of
+/// records by quietly discarding everything it could not match. These tests hand-write such configurations
+/// against a corpus case and confirm that input coverage sees what yield alone cannot. If the scorers cannot
+/// catch a deliberately degenerate splitter, they will not catch an accidentally degenerate one.
 class TestExtractionDegeneracy {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TestExtractionDegeneracy.class);
 
     private static final NodeFixture FIXTURE = new NodeFixture();
 
-    /**
-     * Six quoted CSV lines, no header; the golden yields six records at full coverage.
-     */
+    /// Six quoted CSV lines with no header. Its golden configuration yields six records at full coverage.
     private static final String CASE = "002_csv_without_header";
 
-    /**
-     * Matches only the lines that mention the office and, with {@code ignoreErrors}, throws the rest away
-     * without a word. Two tidy records come out.
-     */
+    /// Matches only the lines that mention the office and, with `ignoreErrors`, silently discards the rest.
+    /// Two well-formed records come out.
     private static final String DISCARDS_UNMATCHED_LINES = """
             <?xml version="1.1" encoding="UTF-8"?>
             <dataSplitter xmlns="data-splitter:3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -71,10 +66,8 @@ class TestExtractionDegeneracy {
             </dataSplitter>
             """;
 
-    /**
-     * Takes every line as a record but keeps only its first field. Six records come out, each missing three
-     * quarters of what was there. Whether anyone hears about it is decided by {@code ignoreErrors}.
-     */
+    /// Takes every line as a record but keeps only its first field. Six records come out, each missing three
+    /// quarters of its content. Whether the loss is reported as errors depends on `ignoreErrors`.
     private static String discardsFieldsWithinRecords(final boolean ignoreErrors) {
         return """
                 <?xml version="1.1" encoding="UTF-8"?>
@@ -97,11 +90,11 @@ class TestExtractionDegeneracy {
         final Probe good = probe(golden.configuration(), golden);
         final Probe degenerate = probe(DISCARDS_UNMATCHED_LINES, golden);
 
-        // Yield alone says the degenerate configuration is merely less productive.
+        // Yield alone makes the degenerate configuration look merely less productive.
         assertThat(degenerate.result().recordCount()).isEqualTo(2);
         assertThat(degenerate.result().diagnostics()).isEmpty();
 
-        // Coverage says it threw away two thirds of the input.
+        // Coverage shows that it threw away most of the input.
         assertThat(good.coverage().charRatio()).isEqualTo(1.0);
         assertThat(degenerate.coverage().charRatio()).isLessThan(0.5);
         assertThat(degenerate.coverage().lineRatio()).isLessThan(0.5);
@@ -109,8 +102,10 @@ class TestExtractionDegeneracy {
 
     @Test
     void theCoverageScoreIsTheCharacterShareAndTheDiagnosticNamesTheLines() {
-        // A36: the header case's golden reads the header into a variable — one line in seven, a sixteenth of
-        // the characters. The score is the sixteenth; the line is still named.
+        // The coverage score is the share of input characters consumed. In the header case the golden
+        // configuration leaves the header line unconsumed: one line in seven, but only about a sixteenth of the
+        // characters. So the score is the character share, well above 0.9, while the diagnostic still reports
+        // the unconsumed line.
         final Golden header = ExtractionCorpus.goldens().stream()
                 .filter(golden -> golden.stem().equals("001_csv_with_header"))
                 .findFirst()
@@ -133,9 +128,9 @@ class TestExtractionDegeneracy {
         final Golden golden = golden();
         final Probe degenerate = probe(discardsFieldsWithinRecords(false), golden);
 
-        // Every line became a record, so yield and coverage are both complete: a record's span is the
-        // whole of what it was split from, however little of it the configuration kept. The Data Splitter
-        // itself is what notices, raising an error per record for the content its expressions left behind.
+        // Every line became a record, so yield and coverage are both complete: a record's span is the whole of
+        // what it was split from, however little of it the configuration kept. Only the Data Splitter itself
+        // notices, by raising an error per record for the content its expressions left unmatched.
         assertThat(degenerate.result().recordCount()).isEqualTo(6);
         assertThat(degenerate.coverage().charRatio()).isEqualTo(1.0);
         assertThat(degenerate.result().count(Severity.ERROR)).isEqualTo(6);
@@ -147,9 +142,9 @@ class TestExtractionDegeneracy {
         final Golden golden = golden();
         final Probe degenerate = probe(discardsFieldsWithinRecords(true), golden);
 
-        // With errors ignored, nothing in the extraction stage sees the loss. Catching it needs a signal
-        // over the output — field count against the incumbent, or the downstream schema stage — which is
-        // why a generated configuration must not be allowed to ignore errors.
+        // With errors ignored, nothing in the extraction step sees the loss. Catching it would need a check on
+        // the output, such as comparing field counts with the current binding or schema validation further
+        // down the chain. This is why the model is told not to set ignoreErrors.
         assertThat(degenerate.result().recordCount()).isEqualTo(6);
         assertThat(degenerate.coverage().charRatio()).isEqualTo(1.0);
         assertThat(degenerate.result().diagnostics()).isEmpty();

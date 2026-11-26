@@ -16,19 +16,16 @@
 
 package stroom.learningflow.scenario;
 
-/**
- * A headerless door-access CSV of four fields — time, user, place, action — as scenarios synthesise it:
- * regular enough for a regex splitter to be right about, and varied enough to be wrong about.
- */
+/// Generates headerless door-access CSV for scenario tests, with four fields: time, user, place and action.
+/// It is regular enough for a regular expression splitter to handle correctly, and can include alarm lines
+/// that vary it enough for a splitter to get wrong.
 public final class CsvLines {
 
     private CsvLines() {
     }
 
-    /**
-     * {@code records} access lines for users {@code prefix0..}, every {@code alarmEvery}th replaced by an
-     * alarm line of three fields when {@code alarmEvery} is positive.
-     */
+    /// Returns `records` access lines for users `prefix0`, `prefix1` and so on. When `alarmEvery` is
+    /// positive, every `alarmEvery`th line is replaced by an alarm line of three fields.
     public static String lines(final int records, final String prefix, final int alarmEvery) {
         final StringBuilder text = new StringBuilder();
         for (int i = 0; i < records; i++) {
@@ -44,10 +41,8 @@ public final class CsvLines {
         return lines(records, "user", 0);
     }
 
-    /**
-     * A stylesheet derived from another by one exact cut, so that a scenario can state precisely what its
-     * flawed candidate lacks.
-     */
+    /// Returns a stylesheet with one exact block removed, so that a scenario can state precisely what its
+    /// flawed candidate lacks. The block must appear exactly once.
     public static String without(final String stylesheet, final String block) {
         if (stylesheet.indexOf(block) < 0 || stylesheet.indexOf(block) != stylesheet.lastIndexOf(block)) {
             throw new IllegalArgumentException("The block to cut must appear exactly once:\n" + block);

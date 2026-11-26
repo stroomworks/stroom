@@ -37,43 +37,37 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.xml.parsers.ParserConfigurationException;
 
-/**
- * A record's structure with its values removed: what tells one kind of record from another where a
- * sample is chosen, records are counted and a target is checked. For raw text it is the token-class
- * skeleton of the first non-blank line — runs of digits, letters, whitespace and each punctuation
- * character reduced to a class — so two lines differing only in values share it. For markup it is the
- * element tree of one record, its attribute names and the values that name a field, no text.
- */
+/// Computes a record's skeleton, its structure with its values removed, which is used to tell one kind of
+/// record from another when a sample is chosen, records are counted and a target is checked.
+///
+/// For raw text it is the token-class skeleton of the first non-blank line: runs of digits, letters and
+/// whitespace are each reduced to one class character, and punctuation is kept, so two lines that differ
+/// only in their values share a skeleton. For markup it is the element tree of one record, with its
+/// attribute names and the attribute values that name a field, but no text.
 public final class RecordSkeleton {
 
     private RecordSkeleton() {
     }
 
-    /**
-     * Markup begins with a tag, a declaration or a comment; a BSD syslog line begins with {@code <34>},
-     * which is text.
-     */
+    /// Markup begins with a tag, a declaration or a comment. A BSD syslog line begins with e.g. `<34>`, which
+    /// is text, so a digit after `<` does not count.
     private static final Pattern MARKUP = Pattern.compile("^\\s*<(\\?|!|[A-Za-z_])");
     private static final char BOM = '\uFEFF';
-    /**
-     * The attribute that names a value in the XSL/json vocabulary: always a field's name, by construction.
-     */
+    /// The attribute that names a value in the XML form of JSON produced by the JSON parser; its value is
+    /// always a field's name.
     private static final String KEY = "key";
-    /**
-     * Attributes that name a field by convention — {@code <Data Name="LogonType">} — but as often carry a
-     * value — {@code <User Name="alice"/>}: their value counts only where the element repeats among its
-     * siblings, which is what a run of named fields looks like and a lone value does not.
-     */
+    /// Attributes that name a field by convention, as in `<Data Name="LogonType">`, but just as often hold a
+    /// value, as in `<User Name="alice"/>`. Their value is only included where the element repeats among its
+    /// siblings, which is what a run of named fields looks like and a lone value does not.
     private static final Set<String> NAMING = Set.of("name", "Name", "Key");
 
     public static boolean isMarkup(final String data) {
         return MARKUP.matcher(withoutBom(data)).find();
     }
 
-    /**
-     * The text without a leading byte order mark, which is not content and would otherwise make markup or
-     * JSON read as text; the stage strips it from a stream once, and the tests that classify text call this.
-     */
+    /// Returns the text without a leading byte order mark, which is not content and would otherwise make
+    /// markup or JSON look like plain text. The stage strips it from a stream once, and the tests that
+    /// classify text call this.
     public static String withoutBom(final String data) {
         return !data.isEmpty() && data.charAt(0) == BOM
                 ? data.substring(1)
@@ -103,14 +97,13 @@ public final class RecordSkeleton {
         return skeleton.toString();
     }
 
-    /**
-     * The skeleton of one markup record — its kind, for choosing one representative of each: the elements
-     * and their attribute names, nested as the record nests them, no text; the value of a {@code key}
-     * attribute, and of a {@code Name} where the element repeats among its siblings, since records of one
-     * vocabulary — named {@code Data}, or a JSON map — are told apart by what their fields are called.
-     * Repeated siblings of one skeleton count once, so an array is one kind however many items it holds.
-     * A record that does not parse has its text skeleton.
-     */
+    /// Gets the skeleton of one markup record, which identifies its kind so that one representative of each
+    /// kind can be chosen. It holds the elements and their attribute names, nested as in the record, with no
+    /// text. It also holds the value of a `key` attribute, and of a `Name` attribute where the element
+    /// repeats among its siblings, because records of one vocabulary (named `Data` elements, or a JSON map)
+    /// are told apart by what their fields are called. Repeated siblings with the same skeleton count once,
+    /// so an array is one kind however many items it holds. A record that does not parse as XML gets its
+    /// text skeleton instead.
     public static String recordSkeleton(final String record) {
         final Node root = tree(record);
         return root == null
@@ -153,10 +146,9 @@ public final class RecordSkeleton {
         return root[0];
     }
 
-    /**
-     * One element of a record: its name, its attribute names in document order with the values that name,
-     * and its distinct children.
-     */
+    /// One element of a record: its name, its attributes in document order, and its children. When it is
+    /// rendered, only the attribute values that name a field are included, and repeated identical children
+    /// appear once.
     private static final class Node {
 
         private final String name;

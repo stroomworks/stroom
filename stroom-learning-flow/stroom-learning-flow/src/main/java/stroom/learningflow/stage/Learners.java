@@ -17,22 +17,23 @@
 
 package stroom.learningflow.stage;
 
-/// Which document a learner's rows are kept under (design 06 phase J slice 2b). What a learner keeps is
-/// its own — its bindings, its state, what has been said to it and the streams
-/// waiting on it — and each row records the document the learner runs under beside it, since that is
-/// what the Supervisor lists by and what decides who may see and act on a row.
+/// Keeps the document recorded on a learner's rows up to date with the document the learner runs under.
 ///
-/// A pipeline's element can be pointed at another document. What the learner learned goes with it, so
-/// the rows are brought to the new document when the learner is first met under it: left where they
-/// were, the new document's Supervisor would not show what serves its pipeline, and the old document's
-/// editors could still retract it.
+/// A learner's rows (its bindings, its state, its guidance and the streams waiting on it) belong to the
+/// learner, and each also records the document the learner runs under, because that is what the
+/// Supervisor lists by and what decides who may see and act on a row.
+///
+/// A pipeline's element can be pointed at another document, and what the learner learned goes with it. The
+/// rows are therefore moved to the new document when the learner is first seen under it. Otherwise the new
+/// document's Supervisor would not show what serves its pipeline, and the old document's editors could
+/// still retract it.
 public interface Learners {
 
-    /// The learner runs under this document now: every row it keeps that records another document is
-    /// brought to this one. Called for every stream a task decides, so an implementation remembers what
-    /// it has already done and makes this cheap when nothing has changed.
+    /// Records that the learner now runs under this document, moving every row of the learner that records
+    /// another document to this one. This is called for every stream a task decides, so an implementation
+    /// should remember what it has already done and make the call cheap when nothing has changed.
     ///
     /// @param learner The learner.
-    /// @param docUuid The document it runs under.
+    /// @param docUuid The UUID of the document it runs under now.
     void runsUnder(Learner learner, String docUuid);
 }

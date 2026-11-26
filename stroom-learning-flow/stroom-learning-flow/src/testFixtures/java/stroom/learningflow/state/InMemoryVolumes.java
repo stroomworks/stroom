@@ -22,8 +22,8 @@ import stroom.learningflow.shared.VolumeDay;
 import java.util.Collection;
 import java.util.List;
 
-/// Volume in a harness without a database: none. The scenarios run streams to judge what is learned, not to
-/// count them; a node counts them from its output rows.
+/// An in-memory [Volumes] that always reports no volume. The scenarios run streams to judge what is
+/// learned, not to count them; a node counts them from its output rows.
 public class InMemoryVolumes implements Volumes {
 
     @Override

@@ -22,42 +22,39 @@ import stroom.util.shared.NullSafe;
 import java.time.DateTimeException;
 import java.time.ZoneId;
 
-/// Which time zone a timestamp carrying no offset is in (decision N6, option F), and where that came
-/// from.
+/// The time zone that timestamps with no offset are read in, and where that zone came from.
 ///
-/// The model is never asked to choose or assume a zone. It is resolved here, written into the stream's
-/// metadata as [#KEY], and read back by the learned stylesheet with `stroom:meta('ResolvedTimeZone')` —
-/// so changing a feed's zone needs no relearning, which is the point of resolving it rather than letting
-/// the translation decide.
+/// The model is never asked to choose or assume a zone. The zone is resolved here, written into the
+/// stream's metadata as [#KEY], and read by the learned stylesheet with `stroom:meta('ResolvedTimeZone')`.
+/// Resolving it outside the translation means changing a feed's zone needs no relearning.
 ///
-/// @param zone   The zone to read timestamps in.
-/// @param source Where it came from, which the Learning Status tab shows so that a surprising date can be
-///               traced to what set the zone.
-/// @param problem What was wrong with what was asked for, or null where nothing was. A bad zone is
-///                reported rather than quietly treated as UTC: a feed whose zone is misspelt would
-///                otherwise be hours out with nothing said.
+/// @param zone    The zone to read timestamps in.
+/// @param source  Where the zone came from, which the Learning Status tab shows so that a surprising date
+///                can be traced to what set the zone.
+/// @param problem What was wrong with the zones given, or null where nothing was. An invalid zone is
+///                reported rather than quietly treated as UTC, because otherwise a feed whose zone is
+///                misspelt would be hours out with no warning.
 public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
 
-    /// The metadata key the resolved zone is written under. The sender's own `TimeZone` attribute is
-    /// never overwritten — this is what the stage worked out, which is a different thing from what the
-    /// sender said.
+    /// The metadata key the resolved zone is written under. The sender's own `TimeZone` attribute is never
+    /// overwritten, because the resolved zone is not necessarily what the sender said.
     public static final String KEY = "ResolvedTimeZone";
 
-    /// The receipt header a sender may state its zone in: an IANA zone id such as `Europe/London`.
+    /// The header in which a sender may state its zone, as an IANA zone id such as `Europe/London`.
     public static final String HEADER = "TimeZone";
 
     /// Resolves a stream's zone: the header it carries, else the pipeline's property, else UTC.
     ///
     /// @param header   The stream's `TimeZone` header, or null where it carries none.
     /// @param property The Smart Pipeline element's `timeZone` property, or null where it is not set.
-    /// @return The zone, where it came from, and what was wrong with what was asked for.
+    /// @return The zone, where it came from, and any problem with the zones that were given.
     public static ResolvedZone of(final String header, final String property) {
         final ZoneId fromHeader = parse(header);
         if (fromHeader != null) {
             return new ResolvedZone(fromHeader, TimeZoneSource.HEADER, null);
         }
-        // A header that was given and could not be read is reported, and the resolution carries on to
-        // the property: the sender said something wrong, which is not a reason to stop translating
+        // A header that was given but is not a valid zone is reported, and resolution carries on to the
+        // property: a sender's mistake is not a reason to stop translating.
         final String headerProblem = NullSafe.isNonBlankString(header)
                 ? "The stream's " + HEADER + " header is \"" + header.trim()
                   + "\", which is not a time zone. "
@@ -81,13 +78,15 @@ public record ResolvedZone(ZoneId zone, TimeZoneSource source, String problem) {
                 : problem + "Times with no offset are being read as UTC.");
     }
 
-    /// @return The zone as the metadata carries it, e.g. `Europe/London`.
+    /// The zone's id, as written into the metadata.
+    ///
+    /// @return The zone id, e.g. `Europe/London`.
     public String id() {
         return zone.getId();
     }
 
     /// @param value A zone id.
-    /// @return The zone, or null where the value is absent or is not one.
+    /// @return The zone, or null where the value is blank or not a valid zone id.
     private static ZoneId parse(final String value) {
         if (NullSafe.isBlankString(value)) {
             return null;

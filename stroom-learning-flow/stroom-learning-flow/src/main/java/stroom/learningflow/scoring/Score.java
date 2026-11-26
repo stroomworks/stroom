@@ -22,15 +22,13 @@ import stroom.util.shared.StoredError;
 import java.util.List;
 import java.util.Set;
 
-/**
- * One scorer's judgement of one step: a value in [0, 1] and the diagnostics that explain it, which are
- * what the model is told when the score loses marks (design §10).
- *
- * @param failingRecords For a scorer that judges records one by one (design 04 §3), which of the step's
- *                       output records fell short — zero-based, in output order, as {@link OutputRecords}
- *                       has them. Empty for a scorer that measures the step as a whole, and where every
- *                       record passed.
- */
+/// One scorer's measure of one step: a value in [0, 1] and the diagnostics that explain it, which are
+/// what the model is told when the score is less than perfect.
+///
+/// @param failingRecords For a scorer that judges records individually, which of the step's output records
+///                       fell short, as zero-based indexes in output order, as [OutputRecords] lists them.
+///                       Empty for a scorer that measures the step as a whole, and where every record
+///                       passed.
 public record Score(Check type, double value, List<StoredError> diagnostics, Set<Integer> failingRecords) {
 
     public Score {
@@ -41,7 +39,7 @@ public record Score(Check type, double value, List<StoredError> diagnostics, Set
         failingRecords = Set.copyOf(failingRecords);
     }
 
-    /// A score with no record-level account: the scorer measures the step as a whole.
+    /// Creates a score with no per-record failures, for a scorer that measures the step as a whole.
     public Score(final Check type, final double value, final List<StoredError> diagnostics) {
         this(type, value, diagnostics, Set.of());
     }

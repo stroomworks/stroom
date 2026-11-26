@@ -25,11 +25,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * The bindings of every output as a list: what scenarios run over, and what a node runs over until the
- * A26 module exists — node-local and gone on restart.
- Every method is synchronised: one node's tasks share it.
- */
+/// An in-memory [Outputs], recording which binding produced each output as a list, for scenarios and for a
+/// node run without the database module. It is local to one node and lost on restart. Every method is
+/// synchronised, because one node's tasks share it.
 public final class InMemoryOutputs implements Outputs {
 
     private final List<Emitted> emitted = new ArrayList<>();
@@ -38,8 +36,8 @@ public final class InMemoryOutputs implements Outputs {
     public synchronized void emitted(final long inputId,
                                      final String pipeline,
                                      final Produced produced) {
-        // One row per input per binding per pipeline, as the table has it: a stream processed twice by one
-        // pipeline under one binding is one thing to replay, and two pipelines are two outputs.
+        // One row per input, binding and pipeline, as in the table: a stream processed twice by one
+        // pipeline under one binding is one row to replay, and two pipelines make two outputs.
         emitted.removeIf(output -> output.inputId() == inputId
                                    && output.produced().bindingUuid().equals(produced.bindingUuid())
                                    && Objects.equals(output.pipeline(), pipeline));
@@ -60,14 +58,15 @@ public final class InMemoryOutputs implements Outputs {
     public synchronized Optional<Produced> asProcessed(final String docUuid,
                                                        final long inputId,
                                                        final String pipeline) {
-        // The last thing recorded for this input on this pipeline by this document's stage: a stream
-        // served twice keeps one row per binding, and what its output is now is what ran last.
+        // The last row recorded for this input on this pipeline under this document. A stream served
+        // twice keeps one row per binding, and its current output is the one that ran last.
         return emitted.stream()
                 .filter(output -> output.inputId() == inputId)
-                // This document's stage, since a pipeline may hold two and they record the same input.
+                // Only this document's rows, since a pipeline may contain two Smart Pipeline elements,
+                // each recording the same input.
                 .filter(output -> output.produced().docUuid().equals(docUuid))
-                // This pipeline's, exactly: a stream another pipeline produced is another output, and an
-                // output of no pipeline is of no pipeline rather than of any.
+                // Only this pipeline's rows: a stream another pipeline produced is a different output, and
+                // a null pipeline matches only rows with no pipeline, not every pipeline.
                 .filter(output -> Objects.equals(output.pipeline(), pipeline))
                 .map(Emitted::produced)
                 .reduce((first, last) -> last);
@@ -75,8 +74,7 @@ public final class InMemoryOutputs implements Outputs {
 
     @Override
     public synchronized int prune(final long producedBeforeMs) {
-        // Nothing in memory is old: a node's own list lasts as long as the node does, and what a node
-        // holds is bounded by that.
+        // Nothing is pruned in memory: the list lasts only as long as the node, which limits its size.
         return 0;
     }
 

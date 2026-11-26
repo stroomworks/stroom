@@ -20,8 +20,9 @@ import stroom.core.client.gin.PluginModule;
 import stroom.learningflow.client.LearningFlowPlugin;
 import stroom.learningflow.client.LearningFlowSupervisorPlugin;
 
-/// The Learning Flow document's plugin, and the Supervisor's (A28), which puts it in the Monitoring
-/// menu. Their screens need no bindings.
+/// Registers the client plugins for Learning Flow: the one for the Learning Flow document type, and the one
+/// that adds the Supervisor (the screen for watching and steering learning sessions) to the Monitoring menu.
+/// Their screens are made by GIN without any explicit bindings.
 public class LearningFlowModule extends PluginModule {
 
     @Override

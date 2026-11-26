@@ -33,13 +33,14 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// What a Smart Pipeline element has learned, on its pipeline's Structure tab, shown only while such an element
-/// is selected. Folded until asked for ([Disclosure], "What it learned"), as the pipeline and its learned
-/// translation are one thing to a person, and what was learned is an extension point most need not see. Unfolded:
-/// the learned translation it runs, as a link that opens it; its elements in the order records pass through them
-/// ([LearnedParts]), each with its type and the documents it uses as links; and a link to the pipeline's Learning
-/// Status tab, where its learning is followed. Where nothing has been learned, a sentence says so.
-/// [LearnedTranslationController] fills it.
+/// Shows what a Smart Pipeline element has learned, on its pipeline's Structure tab, only while such an element
+/// is selected. It is collapsed until asked for ([Disclosure], "What it learned"), because most people think of
+/// the pipeline and its learned translation as one thing and don't need to see the learned parts.
+///
+/// When expanded it shows the learned translation the element uses, as a link that opens it; the translation's
+/// elements in the order records pass through them ([LearnedParts]), each with its type and links to the
+/// documents it uses; and a link to the pipeline's Learning Status tab, where its learning is followed. If
+/// nothing has been learned, a sentence says so. [LearnedTranslationController] fills it.
 public class LearnedTranslation extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -60,30 +61,30 @@ public class LearnedTranslation extends Component {
     private Consumer<DocRef> onOpenDocument = document -> {
     };
 
-    /// Makes it hidden and folded.
+    /// Creates it hidden and collapsed.
     public LearnedTranslation() {
         initWidget(BINDER.createAndBindUi(this));
         showMessage("");
     }
 
-    /// @param shown Whether it is shown: only while a Smart Pipeline element is selected.
+    /// @param shown Whether it is shown, which it should be only while a Smart Pipeline element is selected.
     public void setShown(final boolean shown) {
         asWidget().setVisible(shown);
     }
 
-    /// @return Whether it is unfolded.
+    /// @return Whether it is expanded.
     public boolean isOpen() {
         return disclosure.isOpen();
     }
 
-    /// @param onToggle Told whether it is unfolded, each time the user unfolds or folds it.
+    /// @param onToggle Called with whether it is now expanded, each time the user expands or collapses it.
     public void setOnToggle(final Consumer<Boolean> onToggle) {
         disclosure.setOnToggle(onToggle);
     }
 
-    /// Says something in place of what was learned, e.g. that nothing has been yet.
+    /// Shows a message instead of what was learned, e.g. that nothing has been learned yet.
     ///
-    /// @param text What to say.
+    /// @param text The message, or empty for none.
     public void showMessage(final String text) {
         message.setText(text);
         message.setVisible(!text.isEmpty());
@@ -95,7 +96,8 @@ public class LearnedTranslation extends Component {
     /// Shows what was learned.
     ///
     /// @param name    The learned translation's name.
-    /// @param learned Its elements, in order; empty where they can't be read, which is then said.
+    /// @param learned The translation's elements, in order; empty if they can't be fetched, in which case a
+    ///                message says so.
     public void showLearned(final String name, final List<Part> learned) {
         translationLine.setVisible(true);
         fragment.setText(name);
@@ -116,7 +118,7 @@ public class LearnedTranslation extends Component {
         fragment.setOnClick(onOpenFragment);
     }
 
-    /// @param onOpenDocument Told the document whose link is pressed, e.g. an element's XSLT.
+    /// @param onOpenDocument Called with the document whose link is pressed, e.g. an element's XSLT.
     public void setOnOpenDocument(final Consumer<DocRef> onOpenDocument) {
         this.onOpenDocument = onOpenDocument;
     }
@@ -126,7 +128,7 @@ public class LearnedTranslation extends Component {
         openStatus.setOnClick(onOpenStatus);
     }
 
-    // One element: its type, its name, and a link to each document it uses
+    // Builds one element's row: its type, its name, and a link to each document it uses
     private AriaPanel row(final Part part) {
         final AriaPanel row = new AriaPanel();
         row.setRole("listitem");

@@ -13,7 +13,8 @@
     </Events>
   </xsl:template>
 
-  <!-- One record is one audit event: the lines that share a serial, each a data of its type -->
+  <!-- One record is one audit event: the lines that share a serial number, each as a data element of
+       its type -->
   <xsl:template match="record">
     <xsl:variable name="first" select="data[1]"/>
     <xsl:variable name="seconds" select="xs:decimal($first/data[@name='time']/@value)"/>

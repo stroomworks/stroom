@@ -38,9 +38,10 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.Map;
 
-/// Pipelines with Learning Flow elements, opened in Stroom's real [PipelineEditor] at its AI Translation tab,
-/// for the stories of that tab and of the reports a stopped learning run gives there. The firewall's pipeline
-/// (`p-1`) learns under the "Firewall logs" document ([LearningFlowFixtures#DOC_REF]).
+/// Story fixtures for pipelines with Learning Flow elements, opened in Stroom's real [PipelineEditor] at its
+/// AI Translation tab. They are used by the stories of that tab and of the reports it shows when a learning
+/// run stops. The firewall pipeline (`p-1`) learns under the "Firewall logs" document
+/// ([LearningFlowFixtures#DOC_REF]).
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
@@ -50,11 +51,11 @@ import java.util.Map;
 /// | `LearningFlowFixtures#pipelineRoutes` | what the Supervisor says about its learners |
 final class AiPipelines {
 
-    /// The firewall's pipeline.
+    /// The firewall pipeline.
     static final DocRef FIREWALL_PIPELINE = new DocRef(PipelineDoc.TYPE, "p-1", "Firewall pipeline");
-    /// The id of the firewall's pipeline's AI element.
+    /// The id of the firewall pipeline's Learning Flow element.
     static final String ELEMENT = "learningFlow";
-    /// The spy told the uuid of each document the tab asks Stroom to open.
+    /// The name of the spy that records the UUID of each document the tab asks Stroom to open.
     static final String OPENED = "openedDocument";
 
     private static final String DOC_JSON = "{\"type\": \"LearningFlow\", \"uuid\": \"ss-1\", "
@@ -85,14 +86,15 @@ final class AiPipelines {
             .replace("__AI__", AI_TYPE)
             .replace("__XSLT__", XSLT_TYPE);
 
-    /// The firewall's pipeline: a Learning Flow element learning under "Firewall logs".
+    /// The firewall pipeline's data: one Learning Flow element using the "Firewall logs" document.
     static final String ONE_ELEMENT = """
             {"elements": {"add": [{"id": "learningFlow", "type": "LearningFlow", "name": "Learn the feed"}]},
               "links": {"add": [{"from": "Source", "to": "learningFlow"}]},
               "properties": {"add": [{"element": "learningFlow", "name": "learningFlow",
                 "value": {"entity": DOC}}]}}""".replace("DOC", DOC_JSON);
 
-    /// The firewall's pipeline with a second AI element beside the first, which hasn't learned anything.
+    /// The firewall pipeline's data with a second Learning Flow element beside the first, which has not
+    /// learned anything.
     static final String TWO_ELEMENTS = """
             {"elements": {"add": [{"id": "learningFlow", "type": "LearningFlow", "name": "Learn the feed"},
                 {"id": "audit", "type": "LearningFlow", "name": "Learn the audit feed"}]},
@@ -102,7 +104,7 @@ final class AiPipelines {
                 {"element": "audit", "name": "learningFlow", "value": {"entity": DOC}}]}}"""
             .replace("DOC", DOC_JSON);
 
-    /// The firewall's pipeline without an AI element: an XSLT filter alone.
+    /// The firewall pipeline's data with no Learning Flow element, only an XSLT filter.
     static final String NO_ELEMENT = """
             {"elements": {"add": [{"id": "xslt", "type": "XSLTFilter"}]},
               "links": {"add": [{"from": "Source", "to": "xslt"}]}}""";
@@ -114,14 +116,15 @@ final class AiPipelines {
         // Static utility
     }
 
-    /// The firewall's pipeline, opened as Stroom opens one, then shown at its AI Translation tab where it has
-    /// an AI element.
+    /// Renders the firewall pipeline, opened as Stroom opens a pipeline, and then shown at its AI Translation
+    /// tab if `openAt` names a Learning Flow element.
     ///
     /// @param context      The story's context.
     /// @param readOnly     Whether the user may only view the pipeline.
     /// @param pipelineData The pipeline's data, e.g. [#ONE_ELEMENT].
     /// @param learningflow The Supervisor's routes ([LearningFlowFixtures#pipelineRoutes]).
-    /// @param openAt       The AI element to show the tab at, or null to open the pipeline at its default tab.
+    /// @param openAt       The Learning Flow element to show the tab for, or null to open the pipeline at its
+    ///                     default tab.
     /// @return The story's widget.
     static Widget render(final StoryContext context,
                          final boolean readOnly,
@@ -139,8 +142,8 @@ final class AiPipelines {
         harness.getSecurityContext().setDocumentPermission(readOnly
                 ? DocumentPermission.VIEW
                 : DocumentPermission.EDIT);
-        // Opened once Stroom has started, as PipelinePlugin opens a document: load it, check the user may edit
-        // it, read it into the editor and show the tab
+        // Once Stroom has started, open the document as PipelinePlugin does: load it, set whether the user
+        // may edit it, read it into the editor and show the tab.
         harness.afterStartUp(() -> {
             final PipelineEditor editor = injector.getPipelineEditor();
             final DocumentEditorHost<PipelineDoc> controller = new DocumentEditorHost<>(
@@ -169,7 +172,7 @@ final class AiPipelines {
                + "\", \"name\": \"" + docRef.get("name") + "\"}";
     }
 
-    // The pipeline's routes, its editor's other tabs' and the Supervisor's
+    // The REST routes for the pipeline, its editor's other tabs and the Supervisor.
     private static RestFixtures routes(final RestFixtures.Builder learningflow, final String pipelineData) {
         final String doc = "{\"type\": \"Pipeline\", \"uuid\": \"p-1\", \"name\": \"Firewall pipeline\", "
                            + "\"version\": \"v1\", \"pipelineData\": " + pipelineData + "}";

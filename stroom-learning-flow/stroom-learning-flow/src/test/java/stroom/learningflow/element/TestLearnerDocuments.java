@@ -35,8 +35,9 @@ import org.mockito.Mockito;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The document a learner runs under, as its pipeline names it now (design 06 phase J slice 2b): what a
-/// Supervisor request's learner is held to.
+/// Tests how the Learning Flow document a learner runs under is found from its pipeline's current settings.
+///
+/// The Supervisor uses this to check that a request's learner belongs to the document the request names.
 class TestLearnerDocuments {
 
     private static final String PIPELINE = "pipeline-1";

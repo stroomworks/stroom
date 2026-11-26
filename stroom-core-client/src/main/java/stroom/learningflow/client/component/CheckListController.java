@@ -27,9 +27,10 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.List;
 import java.util.Objects;
 
-/// A Learning Flow's checks ([CheckList]), each edited in a [CheckEditorController] dialog. Every
-/// check has a setting, so checks are edited, never added or removed ([CheckSet]). Nothing can be
-/// changed while the document is read only ([Contexts#READ_ONLY]).
+/// Wires the grid of a Learning Flow's quality checks ([CheckList]) on the Setup tab, opening a
+/// [CheckEditorController] dialog to edit a check. Every check always has a setting ([CheckSet]), so checks
+/// are edited, never added or removed. Nothing can be changed while the document is read only
+/// ([Contexts#READ_ONLY]).
 public class CheckListController extends Controller {
 
     private final Provider<CheckEditorController> editorProvider;
@@ -39,10 +40,10 @@ public class CheckListController extends Controller {
     private Runnable onChange = () -> {
     };
 
-    /// Made by GIN; [#attach(CheckList)] gives it its list.
+    /// Created by GIN; [#attach(CheckList)] then gives it its grid.
     ///
     /// @param eventBus       The application's event bus.
-    /// @param editorProvider Makes the dialog that edits a check.
+    /// @param editorProvider Creates the dialog that edits a check.
     @Inject
     public CheckListController(final EventBus eventBus,
                                 final Provider<CheckEditorController> editorProvider) {
@@ -50,10 +51,10 @@ public class CheckListController extends Controller {
         this.editorProvider = editorProvider;
     }
 
-    /// Attaches it to its list, declared in its owner's template.
+    /// Attaches this controller to its grid, which is declared in the owning screen's template.
     ///
-    /// @param view The list.
-    /// @return This.
+    /// @param view The grid of checks.
+    /// @return This controller.
     public CheckListController attach(final CheckList view) {
         this.view = Objects.requireNonNull(view, "view");
         initWidget(view);
@@ -67,19 +68,19 @@ public class CheckListController extends Controller {
 
     /// Shows a Learning Flow's checks, none selected.
     ///
-    /// @param settings The Learning Flow's checks; any not named have their defaults.
+    /// @param settings The Learning Flow's check settings. A check they don't name is shown with its default.
     public void read(final List<CheckSetting> settings) {
         checks.read(settings);
         view.clearSelection();
         show();
     }
 
-    /// @return Every check's setting, as it is now.
+    /// @return Every check's setting, including any edits.
     public List<CheckSetting> write() {
         return checks.write();
     }
 
-    /// @param onChange Run when a check is changed.
+    /// @param onChange Run when a check's setting is changed.
     public void setOnChange(final Runnable onChange) {
         this.onChange = onChange;
     }

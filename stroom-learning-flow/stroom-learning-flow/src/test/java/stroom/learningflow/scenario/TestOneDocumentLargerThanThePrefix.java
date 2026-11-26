@@ -36,13 +36,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Track 1 task 4, the second half (N2 option E): **a stream that is one XML or JSON document larger
-/// than the prefix read as text is refused, with a reason.**
+/// Tests that a stream consisting of one XML or JSON document larger than the prefix read for learning is
+/// refused, with a reason.
 ///
-/// A part of a document is not a document. Cut at the prefix it does not parse, so there is nothing to
-/// settle a record boundary over — and the split step used to pass with no boundary at all, leaving
-/// everything after it judged on nothing. Reading a whole stream of any size into memory to learn from
-/// is what the prefix exists to prevent, so the answer is to say what is wrong and what would make the
+/// A truncated document does not parse, so there is nothing to find a record boundary in, and without a
+/// boundary every later step would be judged on nothing. Reading the whole stream into memory instead is
+/// what the prefix exists to prevent, so learning stops and reports what is wrong and what would make the
 /// feed learnable.
 class TestOneDocumentLargerThanThePrefix {
 
@@ -56,8 +55,9 @@ class TestOneDocumentLargerThanThePrefix {
 
         final StageRun run = scenarios.process(silent, doc(), streamed(oneHugeXmlDocument())).learned();
 
-        // Given up in a task, parked in the worker — which of the two is the stage's business, not this
-        // refusal's. What matters is that the run carries the report rather than failing in silence.
+        // Depending on where it runs, the stage either gives the learner up (in a processing task) or parks
+        // the session (in the worker). Either is acceptable here; what matters is that the run carries a
+        // report explaining the refusal rather than failing silently.
         final StopReport report = reportOf(run);
         assertThat(report).isNotNull();
         assertThat(report.getError())
@@ -76,10 +76,9 @@ class TestOneDocumentLargerThanThePrefix {
 
     @Test
     void aStreamOfRecordsLongerThanThePrefixIsLearnedFromItsPrefixAsBefore() {
-        // The regression this refusal could cause, and the reason it asks whether the sample *looks* like
-        // markup rather than only whether it parses. A chain whose first element is a transform reads
-        // anything down the same branch, so a CSV stream of a million lines reaches it too — and its
-        // prefix is a perfectly good sample. These are the feeds the whole feature is for.
+        // Guards against the refusal catching ordinary text feeds, which is why it checks whether the sample
+        // looks like markup rather than only whether it parses. A very long CSV stream goes through the same
+        // code, and its prefix is a perfectly good sample to learn from.
         final Scenarios scenarios = new Scenarios();
         final StringBuilder lines = new StringBuilder("dt,who,where,what\n");
         while (lines.length() < Input.PREFIX_BYTES * 2) {
@@ -99,7 +98,7 @@ class TestOneDocumentLargerThanThePrefix {
                         report -> assertThat(report.getError()).doesNotContain("larger than"));
     }
 
-    /// A document for a text feed: a parser in front of the transform, as a real CSV feed has.
+    /// A document for a text feed, allowing a parser in front of the transform as a real CSV feed has.
     private static LearningFlowDoc textDoc() {
         return Scenarios.document()
                 .uuid("doc-1")
@@ -110,9 +109,9 @@ class TestOneDocumentLargerThanThePrefix {
                 .build();
     }
 
-    /// @param run A run.
-    /// @return The report it carries, or null where it carries none: a run given up in a task and one
-    ///         parked in the worker are the same refusal said by different callers.
+    /// @param run The stage run to read the report from.
+    /// @return The report carried by a parked or given-up decision, or null if the run carries none. Both
+    ///         kinds are read, because the same refusal is a give-up in a task and a park in the worker.
     private static StopReport reportOf(final StageRun run) {
         if (run.decision() instanceof final Parked parked) {
             return parked.report();
@@ -132,7 +131,8 @@ class TestOneDocumentLargerThanThePrefix {
         return xml.append("</export>").toString();
     }
 
-    /// The stream as a task has it: a prefix of text, and the whole of it behind an opener.
+    /// Builds the stream as a processing task has it: a text prefix, and a supplier that opens the whole
+    /// stream.
     private static Input streamed(final String data) {
         final String prefix = data.substring(0, Math.min(data.length(), Input.PREFIX_BYTES));
         return Input.streamed(1L, "BIG", "Raw Events", Map.of(), prefix, "pipeline-1",

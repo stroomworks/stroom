@@ -19,18 +19,18 @@ package stroom.learningflow.stage;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LogUtil;
 
-/// Writing a run's record beside what the run did, which may not fail what it is a record of: an attempt is
-/// written after the fragment, the binding and the output are, so a database that refuses the row must not
-/// undo a stream that succeeded or a binding change that was made.
+/// Writes a session's record without letting a failure to write it fail the work it records. A session's
+/// row is written after the fragment, binding and output it describes, so a database error on that row must
+/// not undo a stream that succeeded or a binding change that has been made.
 final class Bookkeeping {
 
     private Bookkeeping() {
     }
 
-    /// Writes a record, logging rather than throwing where it cannot be written.
+    /// Writes a record, logging an error rather than throwing if it cannot be written.
     ///
     /// @param logger The caller's logger, so that a failure is logged under the class that wrote it.
-    /// @param write  What writes the record.
+    /// @param write  The action that writes the record.
     static void record(final LambdaLogger logger, final Runnable write) {
         try {
             write.run();

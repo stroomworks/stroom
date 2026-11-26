@@ -27,19 +27,18 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The two positions a supervised stage can stand in (design 01 §3, §12 item 4), as the roles each
-/// element declares.
+/// Tests that the Smart Pipeline element declares the parser role, so it can only stand at a parser's position
+/// in a pipeline.
 ///
-/// The rule being held to is the pipeline editor's, in `StructureValidationUtil`: below a parser it
-/// accepts any element that is not itself a reader, a parser or a destination. A supervisor that
-/// declares the parser role therefore cannot be placed below one — which is why the `RECORD` position of
-/// A1, and the extract-then-transform pair of §3, needed a second element that is a filter.
+/// The pipeline editor's rule, in `StructureValidationUtil`, accepts below a parser any element that is not
+/// itself a reader, a parser or a destination. An element that declares the parser role therefore cannot be
+/// placed below another parser.
 ///
-/// Stated here rather than by calling that rule because it lives in the GWT client and a server test
-/// cannot reach it. What can drift is the roles, and it is the roles this holds.
+/// The rule is restated here rather than called, because it lives in the GWT client where a server test
+/// cannot reach it. What could drift is the roles the element declares, so that is what this test checks.
 class TestSupervisorPositions {
 
-    /// The roles the editor refuses below a parser.
+    /// The roles the pipeline editor refuses below a parser.
     private static final Set<String> REFUSED_BELOW_A_PARSER = Set.of(
             PipelineElementType.ROLE_READER,
             PipelineElementType.ROLE_PARSER,

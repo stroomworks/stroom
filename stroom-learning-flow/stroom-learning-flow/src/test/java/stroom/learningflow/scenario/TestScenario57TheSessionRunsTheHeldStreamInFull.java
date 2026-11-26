@@ -42,17 +42,16 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 57: **the session runs the held stream in full** (A64, A65, A73; design 04 §4
-/// and its §8 scenarios 1 and 12).
+/// Tests that a session is only done when the whole held stream (the stream that opened it) clears the bar,
+/// not just the sample the model was shown.
 ///
-/// The held stream is the acceptance test (A50). A stream of twelve records whose logoffs all lie beyond
-/// the sample the model is shown: the first candidate translates logons alone and clears the sample, is
-/// promoted, and the worker's full pass over the stream finds the records that fell short — as the
-/// parser cut them, with what the transform made of them — and puts them to the model as the next
-/// question's evidence. The second candidate translates both; the full pass clears; the session ends
-/// with one attempt, one binding, one fragment edited in place, and the stream woken. A session that cannot
-/// finish — out of candidates — parks for a person: its learner held, its stream waiting, the worker
-/// leaving it alone.
+/// The stream has twelve records whose logoffs all lie beyond the sample. The first candidate translates
+/// only logons, clears the sample and is promoted. The worker's full pass over the stream then finds the
+/// records that fell short, shows them to the model as the parser split them along with what the transform
+/// made of them, and asks again. The second candidate translates both, and the full pass clears. The session
+/// ends with one attempt, one binding, one fragment edited in place, and the stream woken. A session that
+/// runs out of candidates is parked for a person: it keeps its claim on the learner, its stream waits, and
+/// the worker leaves it alone.
 class TestScenario57TheSessionRunsTheHeldStreamInFull {
 
     private static final String DOC = "doc-1";
@@ -76,8 +75,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         final StageRun first = task(scenarios, silent).decide(doc, Scenarios.LEARNER, input(1L, STREAM));
         assertThat(first.decision()).isInstanceOf(Deferred.class);
 
-        // Round one learns from the sample, where every record is a logon; the full pass then finds the
-        // logoffs and round two is asked with them in front of it.
+        // Round one learns from the sample, where every record is a logon. The full pass then finds the
+        // logoffs, and round two is asked with them included.
         final Script script = scenarios.script(CSV.configuration(), LOGON_ONLY)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -95,8 +94,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         final List<Recorded> attempts = scenarios.attempts.forDocument(DOC, 10);
         assertThat(attempts).describedAs("one session, carried to its end (A64)").hasSize(1);
         assertThat(attempts.get(0).status()).isEqualTo(AttemptStatus.PROMOTED);
-        // Both rounds' turns are the attempt's, numbered on from one round to the next, so that a re-walk
-        // replays the whole session in order and no round writes over an earlier one.
+        // Both rounds' turns belong to the one attempt, numbered on from one round to the next, so that
+        // replaying the session replays it all in order and no round overwrites an earlier one.
         final List<Turn> turns = attempts.get(0).turns();
         assertThat(turns).extracting(Turn::number)
                 .containsExactlyElementsOf(IntStream.rangeClosed(1, turns.size()).boxed().toList());
@@ -107,7 +106,7 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         assertThat(scenarios.snapshots.forBinding(binding.getUuid())).describedAs("two promotions").hasSize(2);
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).contains(1L);
 
-        // The stream is served in full by the task that wakes.
+        // The woken task serves the stream in full.
         final StageRun decided = task(scenarios, silent).decide(doc, Scenarios.LEARNER, input(1L, STREAM));
         assertThat(decided.decision()).describedAs(decided.decision().toString()).isInstanceOf(Bound.class);
         final TextSink sink = new TextSink();
@@ -119,20 +118,20 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         assertThat(scenarios.deferrals.forDocument(DOC)).isEmpty();
     }
 
-    /// §8 scenario 12: a session out of candidates parks and holds. Its stream stays deferred, no second
-    /// session opens for the learner, and the worker leaves it alone.
+    /// A session out of candidates is parked and keeps its claim on the learner. Its stream stays deferred,
+    /// no second session opens for the learner, and the worker leaves it alone until a person acts.
     @Test
     void aSessionOutOfCandidatesParksForAPersonAndHoldsItsLearner() {
         final Scenarios scenarios = new Scenarios();
-        // The direct flow with one candidate a step: the session has one try at the transform.
+        // The direct flow with one candidate per step, so the session has one try at the transform.
         final LearningFlowDoc doc = doc().copy().flow(FlowExamples.flow(FlowExample.DIRECT)).maxAttempts(1).build();
         scenarios.documents.put(doc);
         scenarios.inputs.put(input(1L, STREAM));
         final Script silent = Script.of();
         task(scenarios, silent).decide(doc, Scenarios.LEARNER, input(1L, STREAM));
 
-        // The one candidate does not compile, nor does the one the exhaustion step asks for: the session
-        // has nothing left to try.
+        // The one candidate does not compile, and nor does the one the exhaustion step asks for, so the
+        // session has nothing left to try.
         final Script script = scenarios.script(CSV.configuration(), LOGON_ONLY)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -150,15 +149,15 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
                 .isEmpty();
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 1L)).describedAs("the stream waits").isPresent();
 
-        // The worker leaves it alone; a task of the learner waits on it and opens no second session.
+        // The worker leaves it alone, and a task for the learner waits on it without opening a second session.
         assertThat(scenarios.worker(script).advance(10)).isZero();
         final StageRun again = task(scenarios, silent).decide(doc, Scenarios.LEARNER, input(2L, STREAM));
         assertThat(again.decision()).isInstanceOf(Deferred.class);
         assertThat(scenarios.attempts.forDocument(DOC, 10)).hasSize(1);
         assertThat(scenarios.attempts.awaiting(10)).isEmpty();
 
-        // A person's answer carries it on (A28, A65): the stylesheet answered instead, the worker re-walks
-        // the session from what it has now been told, the full pass clears and both streams are woken.
+        // A person's answer lets it carry on. They answer the stylesheet turn themselves, the worker replays
+        // the session with that answer, the full pass clears and both streams are woken.
         final int stylesheetTurn = parked.turns().get(parked.turns().size() - 1).number();
         scenarios.supervisorActions().amend(doc, parked.id(), stylesheetTurn, Scenarios.fenced(TRANSLATES_BOTH),
                 "a person");
@@ -175,7 +174,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         return scenarios.stage(document -> silent, scenarios.learnerBindings);
     }
 
-    /// The demo document, with the sample the model is shown cut to the header and the first few logons.
+    /// Builds the demo document, with the sample the model is shown limited to the header and the first few
+    /// logons.
     private static LearningFlowDoc doc() {
         return DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
@@ -194,8 +194,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFull {
         return text.toString();
     }
 
-    /// The stream as a task has it (design 04 §3): the prefix as text — here the header and the logons —
-    /// and the whole of it to be read as a fragment runs over it.
+    /// Builds the stream as a task has it: a text prefix (here the header and the logons), and a supplier
+    /// that opens the whole stream for a fragment to run over.
     private static Input input(final long id, final String data) {
         final int prefix = data.indexOf("logoff") - "2020-06-17T08:08:00.000Z,user8,office,".length();
         return Input.streamed(id, FEED, "Raw Events", Map.of(), data.substring(0, prefix), "pipeline-1",

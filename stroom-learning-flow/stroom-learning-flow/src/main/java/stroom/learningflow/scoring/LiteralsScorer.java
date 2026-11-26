@@ -35,34 +35,37 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/// Whether a translation has this stream's own data written into it (Track 1 task 3).
+/// The literals scorer, which checks whether a translation has values from this stream hard-coded into
+/// its stylesheet.
 ///
-/// A translation is learned from one stream and serves every stream after it, so a value copied out of
-/// the stream it was learned on is wrong for all the rest — and wrong quietly, because the translation
-/// still compiles, still validates and still carries real content. The year is the clearest case and the
-/// one the dev instance showed: a syslog date with no year, and a `2023` written into the stylesheet.
+/// A translation is learned from one stream and serves every stream after it, so a value copied from the
+/// stream it was learned on is wrong for all the others, and wrong silently, because the translation
+/// still compiles, still validates and still produces real content. The year is the clearest case: a
+/// syslog date with no year, and `2023` written into the stylesheet.
 ///
-/// Three kinds are looked for, each of which has a right answer the translation should use instead:
+/// It looks for three kinds of value, each of which has a correct alternative the translation should use
+/// instead:
 ///
-/// - **A year**, which belongs to `stroom:format-date` and the stream's own time.
-/// - **A time zone**, which belongs to `stroom:meta('ResolvedTimeZone')` (decision N6).
-/// - **One of this stream's header values** — its feed, environment or system — which belongs to
+/// - **A year** (or a whole date), which should come from `stroom:format-date` and the stream's own time.
+/// - **A time zone**, which should come from `stroom:meta('ResolvedTimeZone')`.
+/// - **One of this stream's header values** (e.g. its feed, environment or system), which should come from
 ///   `stroom:feed-name()` or `stroom:meta`.
 ///
-/// **Advice first, then a gate** (stage 0b group 4): a value that happens to match a header is not
-/// certainly a fault, and this should run on real feeds before it refuses anything.
+/// The check presets make it advisory, except under Strict where it is a gate, because a value that
+/// happens to match a header is not certainly a fault, and the check should prove itself on real feeds
+/// before it is allowed to refuse candidates.
 public final class LiteralsScorer implements Scorer {
 
     private static final ElementId LITERALS = new ElementId("Literals");
 
-    /// A year on its own, in the range a log might carry. A four-digit number in a date pattern such as
-    /// `yyyy-MM-dd` is the pattern, not a year, and is not matched because the pattern is not a number.
+    /// A year on its own, in the range a log might contain. A date pattern such as `yyyy-MM-dd` is not
+    /// matched, because it is not a number.
     private static final Pattern YEAR = Pattern.compile("(19|20)\\d{2}");
     /// A date or datetime beginning with a year, e.g. `2023-10-19T09:06:02.000Z`.
     private static final Pattern DATED = Pattern.compile("((19|20)\\d{2})-\\d{2}-\\d{2}.*");
 
-    /// The headers whose values a translation should read rather than write: the ones that describe the
-    /// stream rather than its content, and so differ between the streams one translation serves.
+    /// The headers whose values a translation should read rather than hard-code: the ones that describe
+    /// the stream rather than its content, and so differ between the streams one translation serves.
     private static final Set<String> HEADERS = Set.of("Feed", "Environment", "System", "Type",
             "StreamType", "TimeZone");
 
@@ -102,17 +105,19 @@ public final class LiteralsScorer implements Scorer {
         return Optional.of(new Score(type(), 0.0, diagnostics));
     }
 
-    /// @param literal A value the stylesheet writes out as itself.
-    /// @param facts   This stream, whose own values are the ones that must not be written in.
-    /// @return What is wrong with it, or null where there is nothing wrong.
+    /// Checks one literal value from the stylesheet.
+    ///
+    /// @param literal A value the stylesheet writes out literally.
+    /// @param facts   Facts about this stream, whose own values must not be hard-coded.
+    /// @return A message saying what is wrong with it, or null where there is nothing wrong.
     private static String said(final String literal, final StreamFacts facts) {
         final String trimmed = literal.strip();
         if (trimmed.length() < SHORTEST) {
             return null;
         }
         for (final String header : HEADERS) {
-            // Through the facts rather than the attribute map: a stream's feed and type are its own
-            // fields, not headers, and they are the values most likely to be copied
+            // Read through the facts rather than the attribute map, because a stream's feed and type are
+            // its own fields, not headers, and they are the values most likely to be copied.
             final String value = facts.attribute(header);
             if (value != null && value.length() >= SHORTEST && trimmed.equalsIgnoreCase(value)) {
                 return "The translation writes \"" + trimmed + "\" into its output, which is this stream's "
@@ -140,8 +145,9 @@ public final class LiteralsScorer implements Scorer {
     }
 
     /// @param value A literal.
-    /// @return Whether it names a time zone. `UTC` and an offset are left out: a translation writing an
-    ///         ISO instant properly ends it with `Z`, and refusing that would refuse the right answer.
+    /// @return Whether it is a region-based zone id such as `Europe/London`. `UTC` and offsets are not
+    ///         matched, because a translation writing an ISO instant correctly ends it with `Z`, and
+    ///         refusing that would refuse the right answer.
     private static boolean isZone(final String value) {
         if (!value.contains("/")) {
             return false;

@@ -18,9 +18,9 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/// Which of the chain's elements a `CONFIGURE` step configures (A37): the `parser` is the chain's first
-/// element where it parses raw input; the `transform` is every element after it. A step with no role
-/// configures every element in chain order.
+/// Which of the chain's elements a `CONFIGURE` step asks the model to configure. The `parser` is the chain's
+/// first element, where that element parses raw input; the `transform` is every element after it. A step with
+/// no role configures every element in chain order.
 public enum ConfigureRole implements HasDisplayValue {
     PARSER("parser"),
     TRANSFORM("transform");

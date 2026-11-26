@@ -24,10 +24,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/// What the Setup tab needs to know about a Learning Flow's target schema (task 7), read from its XSD on
-/// the server, since the client can't read one: whether it is event-logging, whose marked Unknowns the
-/// fallback writes (W1-3), and which elements its root may hold, since every child of the root is read as
-/// one record (W1-5).
+/// What the Setup tab needs to know about a Learning Flow document's target schema, read from its XSD on the
+/// server because the client cannot read one. It says whether the schema is event-logging, which matters
+/// because only event-logging has the marked Unknown events the fallback step writes, and which elements the
+/// root may hold, since every child of the root is read as one record.
 @JsonInclude(Include.NON_NULL)
 public class TargetSchemaSummary {
 

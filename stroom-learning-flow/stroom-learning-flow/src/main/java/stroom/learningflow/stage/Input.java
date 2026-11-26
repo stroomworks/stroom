@@ -24,40 +24,36 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Supplier;
 
-/**
- * One stream as the stage receives it: its metadata and its data.
- *
- * @param id         What names the stream in a deferral and an output row: its meta id in a node.
- * @param feed       The feed name.
- * @param type       The stream type, e.g. {@code Raw Events}.
- * @param attributes The stream's attribute map — the receipt headers.
- * @param data       The stream's content.
- * @param pipeline   The uuid of the pipeline processing it, where one is: what an output row records, so
- *                   that what a binding produced is counted where it was produced. Null where nothing is
- *                   processing it — a worker re-walking an attempt, a scenario.
- * @param opener     Where the whole stream is read from, where `data` is only its prefix (design 04 §3);
- *                   null where `data` is the whole of it.
- * @param receivedMs When the stream was received, which is what a timestamp carrying no year takes its
- *                   year from (`stroom:format-date`) and what the times check measures an event against.
- *                   Null where it is not known, and then neither of those happens rather than either
- *                   reading the clock — judging and serving must agree (assumption AS6).
- */
+/// One stream as the stage receives it: its metadata and its data.
+///
+/// @param id         The id that identifies the stream in deferral and output rows; in a node, its meta id.
+/// @param feed       The feed name.
+/// @param type       The stream type, e.g. `Raw Events`.
+/// @param attributes The stream's attribute map, i.e. the receipt headers.
+/// @param data       The stream's content, or only its first [#PREFIX_BYTES] if `opener` is set.
+/// @param pipeline   The UUID of the pipeline processing it, if any. An output row records it, so that what
+///                   a binding produced is counted against the pipeline that produced it. Null if nothing
+///                   is processing it, e.g. the worker replaying a session, or a test.
+/// @param opener     Opens the whole stream, if `data` is only its prefix; null if `data` is the whole of it.
+/// @param receivedMs When the stream was received. A timestamp with no year takes its year from this
+///                   (`stroom:format-date`), and the times check measures an event against it. Null if not
+///                   known, in which case neither happens, rather than either falling back to the current
+///                   time, because judging and serving must agree.
 public record Input(long id, String feed, String type, Map<String, String> attributes, String data,
                     String pipeline, Supplier<InputStream> opener, Long receivedMs) {
 
-    /// How much of a stream is read as text before anything is decided about it (design 04 §3, *streams
-    /// of any size*): enough for the sample the model is shown, which the
-    /// document bounds far below this, and no more. The rest is read as the fragment runs over it.
+    /// How much of a stream is read as text before anything is decided about it, so that streams of any
+    /// size can be handled. It is enough for the sample the model is shown, which the document limits to
+    /// far less than this. The rest is read as the fragment runs over it.
     public static final int PREFIX_BYTES = 64 * 1024;
 
-    /// How much of a stream a piece of text is, in the units the sample size limit is set in.
+    /// Measures text in the units the sample size limit is set in.
     ///
-    /// **Bytes, not characters** (audit finding S4). The editor has always labelled the setting
-    /// "Sample size limit (bytes)" while the code compared it with `String.length()`, so a feed in a
-    /// language that does not fit in one byte a character was given up to three times the sample it was
-    /// set to have — and every model is billed by what it is sent.
+    /// The limit is in **bytes, not characters**, as the editor labels it ("Sample size limit (bytes)").
+    /// Comparing it with `String.length()` would give a feed whose characters take more than one byte up
+    /// to three times the sample it was set to have, and models are billed by what they are sent.
     ///
-    /// @param text The text; null counts as nothing.
+    /// @param text The text; null counts as zero.
     /// @return Its length in UTF-8 bytes.
     public static int bytes(final String text) {
         return text == null
@@ -65,11 +61,12 @@ public record Input(long id, String feed, String type, Map<String, String> attri
                 : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
-    /// The longest prefix of some text that fits a budget of bytes, cut at a character boundary.
+    /// Gets the longest prefix of some text that fits within a number of UTF-8 bytes, cut at a character
+    /// boundary.
     ///
     /// @param text   The text.
-    /// @param budget How many bytes.
-    /// @return The prefix; the whole of it where it already fits.
+    /// @param budget The maximum number of bytes.
+    /// @return The prefix, or the whole text if it already fits.
     public static String withinBytes(final String text, final int budget) {
         if (text == null || bytes(text) <= budget) {
             return text;
@@ -85,53 +82,54 @@ public record Input(long id, String feed, String type, Map<String, String> attri
         attributes = Map.copyOf(attributes);
     }
 
-    /// A stream whose text is all in hand: the whole of it is `data`.
+    /// Creates a stream whose whole text is in `data`.
     public Input(final long id, final String feed, final String type, final Map<String, String> attributes,
                  final String data, final String pipeline) {
         this(id, feed, type, attributes, data, pipeline, null, null);
     }
 
-    /// A stream read through an opener, or one whose received time is known.
+    /// Creates a stream that may be read in full through an opener.
     public Input(final long id, final String feed, final String type, final Map<String, String> attributes,
                  final String data, final String pipeline, final Supplier<InputStream> opener) {
         this(id, feed, type, attributes, data, pipeline, opener, null);
     }
 
     /// @param receivedMs When this stream was received.
-    /// @return The same stream, knowing when it arrived.
+    /// @return A copy of this stream with its received time set.
     public Input receivedAt(final Long receivedMs) {
         return new Input(id, feed, type, attributes, data, pipeline, opener, receivedMs);
     }
 
-    /// What the checks and the stand-in `stroom:` functions may read of this stream.
+    /// Gets the facts about this stream that the checks and the stand-in `stroom:` functions may read.
     ///
     /// @return Its facts.
     public StreamFacts facts() {
         return new StreamFacts(id, feed, type, receivedMs, attributes);
     }
 
-    /// Whether `data` is the whole stream. Where it is not, `data` is the first [#PREFIX_BYTES] of it as
-    /// text, and the whole is read through [#open].
+    /// Whether `data` is the whole stream. If it is not, `data` is the first [#PREFIX_BYTES] of it as text,
+    /// and the whole stream is read through [#open].
     public boolean complete() {
         return opener == null;
     }
 
-    /// The whole stream, as bytes, for a fragment to run over. Where the stream was read in full, its
-    /// text; otherwise what the stream's opener gives, which in a node is the stream itself and may be
-    /// opened once.
+    /// Opens the whole stream, as bytes, for a fragment to run over. If the stream was read in full, this is
+    /// its text; otherwise it is what the opener supplies, which in a node is the stream itself and may
+    /// only be opened once.
     public InputStream open() {
         return opener == null
                 ? new ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8))
                 : opener.get();
     }
 
-    /// A stream as a scenario has it: nothing is processing it.
+    /// Creates a stream that no pipeline is processing, as tests use.
     public Input(final long id, final String feed, final String type, final Map<String, String> attributes,
                  final String data) {
         this(id, feed, type, attributes, data, null);
     }
 
-    /// A stream read as far as its prefix, the rest to be read as the fragment runs over it.
+    /// Creates a stream of which only the prefix has been read; the rest is read as the fragment runs over
+    /// it.
     public static Input streamed(final long id, final String feed, final String type,
                                  final Map<String, String> attributes, final String prefix, final String pipeline,
                                  final Supplier<InputStream> opener) {

@@ -28,20 +28,20 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
-/// Which feeds a Learning Flow document's Feeds tab lists, in a dialog ([FeedFilterEditor]) opened by the
-/// filter button of the tab's table, as Stroom's other lists are filtered: by where the feeds stand, and
-/// whether those whose pipeline was deleted are listed too.
+/// Shows the dialog ([FeedFilterEditor]) that filters a list of Smart Pipelines, opened by the filter button
+/// above the list's table, as Stroom's other lists are filtered. It filters by the state of each pipeline's
+/// learner, and by whether pipelines that have been deleted are listed too.
 ///
-/// Not modal: the tab goes on refreshing behind it. What it was opened with is taken when it is opened, so
-/// that the answer is what the dialog showed.
+/// The dialog is not modal, so the list keeps refreshing behind it. The counts it shows are those when it was
+/// opened and are not updated while it is open, so that OK applies the choice as the dialog showed it.
 public class FeedFilterEditorController extends Controller {
 
     private final FeedFilterEditor view;
 
-    /// Made by GIN, with its editor.
+    /// Created by GIN.
     ///
     /// @param eventBus The application's event bus.
-    /// @param view     Its component.
+    /// @param view     The dialog's content.
     @Inject
     public FeedFilterEditorController(final EventBus eventBus,
                                       final FeedFilterEditor view) {
@@ -52,11 +52,12 @@ public class FeedFilterEditorController extends Controller {
 
     /// Shows the filter as a dialog, owned by `opener` until it is closed.
     ///
-    /// @param opener      The tab whose feeds it filters.
+    /// @param opener      The list it filters.
     /// @param filter      Which feeds are listed now.
     /// @param showDeleted Whether feeds whose pipeline was deleted are listed now.
-    /// @param counts      How many feeds each choice lists, as the tab last read them.
-    /// @param onOk        Given which feeds to list and whether deleted ones too, when OK is pressed.
+    /// @param counts      The number of pipelines each choice would list, as of the list's last refresh.
+    /// @param onOk        Called, when OK is pressed, with which feeds to list and whether to list feeds
+    ///                    whose pipeline was deleted.
     public void edit(final HasControllerNode opener,
                      final FeedFilter filter,
                      final boolean showDeleted,

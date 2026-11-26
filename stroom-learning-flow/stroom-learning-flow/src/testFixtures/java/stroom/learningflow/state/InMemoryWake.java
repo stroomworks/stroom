@@ -22,16 +22,18 @@ import stroom.learningflow.stage.Wake;
 import java.util.ArrayList;
 import java.util.List;
 
-/// The wake as a record of what was woken: what scenarios assert on. Waking a pipeline wakes the tasks of
-/// the streams waiting on its learners, so what is recorded is their rows as they stood. Every method is
-/// synchronised.
+/// An in-memory [Wake] that records what was woken, for scenarios to assert on. Waking a pipeline wakes
+/// the tasks of the streams waiting on its learners, so it records their deferral rows as they were at the
+/// time. It does not remove the rows. Every method is synchronised.
 public final class InMemoryWake implements Wake {
 
     private final InMemoryDeferrals deferrals;
     private final List<String> pipelines = new ArrayList<>();
     private final List<Deferral> woken = new ArrayList<>();
 
-    /// @param deferrals The rows a wake reads, as a task wakes the streams its rows name.
+    /// Creates a wake that reads the given deferrals.
+    ///
+    /// @param deferrals The deferral rows a wake reads to find the streams to wake.
     public InMemoryWake(final InMemoryDeferrals deferrals) {
         this.deferrals = deferrals;
     }
@@ -44,12 +46,12 @@ public final class InMemoryWake implements Wake {
         return waiting.size();
     }
 
-    /// Every row woken so far, in the order they were woken.
+    /// Returns every row woken so far, in the order they were woken.
     public synchronized List<Deferral> woken() {
         return List.copyOf(woken);
     }
 
-    /// Every pipeline woken so far, in the order they were woken, once each time.
+    /// Returns every pipeline woken so far, in the order they were woken, once for each wake.
     public synchronized List<String> pipelines() {
         return List.copyOf(pipelines);
     }

@@ -33,17 +33,17 @@ import jakarta.inject.Singleton;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
-/// What a learner has settled into, in front of the rows (design 01 §12 item 8): given up, marked to
-/// learn again, or awaiting a person's review. Every stream asks all three before it is served or waits,
-/// and they change only when a learner settles — three queries per stream per node, otherwise, for an
-/// answer that is almost always "none of them".
+/// A per-node cache, in front of the database rows, of the parts of a learner's state that every stream
+/// checks: whether it has given up, whether it is marked to learn again, and whether a draft awaits review.
 ///
-/// The rolling scores are deliberately *not* cached. They are a count across the cluster (A44's
-/// reasoning applied to A23's scores): every served stream adds to them, so a node's own copy would be
-/// wrong the moment another node served a stream, and caching a counter that every stream writes saves
-/// nothing.
+/// Every stream checks all three before it is served or deferred, and they change rarely. Without the cache
+/// that would be three queries per stream on every node, for an answer that is almost always "none of them".
 ///
-/// Held until what writes them says otherwise: every write goes to the rows and then fires an event for
+/// The rolling scores are deliberately *not* cached. They are a cluster-wide count that every served stream
+/// adds to, so a node's own copy would be wrong as soon as another node served a stream, and caching a value
+/// that every stream writes saves nothing.
+///
+/// Entries are kept until a write invalidates them. Every write goes to the rows and then fires an event for
 /// the learner's pipeline, which clears that pipeline's learners on every node.
 @Singleton
 @EntityEventHandler(type = Learner.EVENT_TYPE)
@@ -110,15 +110,16 @@ public class CachedLearnerStates implements LearnerStates, Clearable, EntityEven
         changed(learner);
     }
 
-    /// Straight to the rows: a count every served stream adds to, which no node may hold its own copy
-    /// of, and which changes none of what is cached.
+    /// Writes straight to the rows. The rolling score is a cluster-wide count that every served stream adds
+    /// to, so it is not cached, and updating it does not affect any cached state.
     @Override
     public OptionalDouble scored(final Learner learner, final String docUuid, final double score,
                                  final int records, final int skipped, final int memory) {
         return rows.scored(learner, docUuid, score, records, skipped, memory);
     }
 
-    /// Straight to the rows, for the same reason [#scored] is: a count every served stream adds to.
+    /// Reads straight from the rows, for the same reason as [#scored]: the rolling score is a count that
+    /// every served stream on any node adds to.
     @Override
     public Optional<Rolling> rolling(final Learner learner) {
         return rows.rolling(learner);
@@ -142,8 +143,8 @@ public class CachedLearnerStates implements LearnerStates, Clearable, EntityEven
     // --------------------------------------------------------------------------------
 
 
-    /// What a learner has settled into: three answers read together, since every stream asks for all
-    /// three.
+    /// The cached state of one learner. The three values are loaded together because every stream asks for
+    /// all three.
     private record Settled(Optional<String> givenUp, Optional<String> relearn, Optional<String> draft) {
 
     }

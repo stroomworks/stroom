@@ -18,26 +18,25 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/// What a variant can be run again over (ruling A1, design 01 §4): the smallest thing the loop can
-/// replay, which is decided by the fragment and not by anyone's preference.
+/// The smallest unit of input a candidate chain can be run again over, which depends on the elements in the
+/// chain.
 ///
-/// A pipeline element is pushed its input once, so running a candidate twice means having the input
-/// again. Where a parser stands at the head of the chain there is nothing smaller than the stream to
-/// have — the raw bytes above it cannot be replayed from a record — and where the chain begins with a
-/// transform the records already exist and one of them is enough.
+/// A pipeline element is given its input once, so running a candidate again means having the input again.
+/// Where any element in the chain is a parser, nothing smaller than the stream will do, because the raw bytes
+/// a parser reads cannot be recovered from a record. Where the chain has no parser, the records already exist
+/// and one of them is enough.
 ///
-/// It is derived from the fragment at build time rather than declared on the document (A1 revised,
-/// 2026-09-17), because under A21 the model chooses the chain per learner and a document that spans
-/// several learners may span both kinds. It is not what decides *scoring* granularity, which follows the
-/// chain: stream-level after a parser, per record after a filter.
+/// It is worked out from the elements rather than set on the document, because the model chooses the chain
+/// for each learner. The Smart Pipeline element sits where a parser sits, so it uses only the stream unit,
+/// and it checks that a document's allowed elements agree with that.
 public enum ReplayUnit implements HasDisplayValue {
 
-    /// The chain contains a parser, so what is replayed is the stream — or a bounded prefix of it,
-    /// re-read from the store, which is re-readable by construction.
+    /// The chain contains a parser, so what is replayed is the stream, or a bounded prefix of it, read again
+    /// from the stream store.
     STREAM("Stream"),
 
-    /// The chain begins with a transform, so the records exist already and one of them is the unit: the
-    /// record's events are buffered and replayed, which costs one record's work.
+    /// The chain has no parser, so the records exist already and one record is the unit. The record's events
+    /// are buffered and replayed, which costs one record's work.
     RECORD("Record");
 
     private final String displayValue;

@@ -34,9 +34,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Decision N9, option D extended, Track 2 step 4: the prompt a turn was put to the model with is rebuilt
-/// when someone asks for it, from the words the run recorded and the sample read back from its stream,
-/// rather than stored. The rebuild asks nobody and writes nothing.
+/// Tests rebuilding the prompt a turn was sent to the model with.
+///
+/// Prompts are not stored. When someone asks to see one, it is rebuilt from the question text the run recorded
+/// and the sample read back from the run's stream. The rebuild does not call the model and writes nothing.
 class TestRebuildingWhatWasAsked {
 
     private static final String DOC = "doc-1";
@@ -48,7 +49,7 @@ class TestRebuildingWhatWasAsked {
     void eachTurnIsRebuiltInTheRunsOwnWordsOverItsSample() {
         final Scenarios scenarios = new Scenarios();
         final Recorded run = learned(scenarios);
-        // The Learning Flow is edited after the run: the rebuild must say what was asked then
+        // The Learning Flow is edited after the run, and the rebuild must still show what was asked then
         final LearningFlowDoc edited = doc("Turnstiles now.");
         scenarios.documents.put(edited);
         final int turnsBefore = run.turns().size();
@@ -71,7 +72,7 @@ class TestRebuildingWhatWasAsked {
 
     @Test
     void aRunWhoseWordsWereNotKeptIsNotRebuilt() {
-        // Rather than shown today's words as though they were the ones used
+        // It is not rebuilt, rather than showing today's text as though it were what was used
         final Scenarios scenarios = new Scenarios();
         scenarios.documents.put(doc("Badge readers."));
         final long id = scenarios.attempts.opened(new Attempt(Scenarios.LEARNER, DOC, "DOOR-ACCESS",
@@ -81,7 +82,7 @@ class TestRebuildingWhatWasAsked {
         assertThat(scenarios.stage(Script.of()).rebuild(doc("Badge readers."), id, STREAM)).isEmpty();
     }
 
-    // A run that learned the stream, its turns recorded with the words it was asked in
+    // Runs a session that learns the stream, recording its turns and the question text it was asked in
     private static Recorded learned(final Scenarios scenarios) {
         final LearningFlowDoc doc = doc("Badge readers.");
         scenarios.documents.put(doc);

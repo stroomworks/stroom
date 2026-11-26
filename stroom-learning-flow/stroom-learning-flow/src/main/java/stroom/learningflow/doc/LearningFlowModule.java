@@ -26,6 +26,7 @@ import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
 
+/// Guice module for the Learning Flow document type, its pipeline element, and its REST resources.
 public class LearningFlowModule extends AbstractModule {
 
     @Override
@@ -38,10 +39,11 @@ public class LearningFlowModule extends AbstractModule {
 
         RestResourcesBinder.create(binder())
                 .bind(LearningFlowResourceImpl.class)
-                // The Supervisor is a view of every document's attempts (A28), not a tab on one, so its
-                // resource sits beside the document's rather than inside it.
+                // The Supervisor shows learning under every Learning Flow document rather than being a tab
+                // on one document, so it has a resource of its own beside the document's.
                 .bind(SupervisorResourceImpl.class)
-                // A Smart Pipeline's Quality Assurance tab: one pipeline's translated output, judged
+                // Serves a Smart Pipeline's Quality Assurance tab, which shows one pipeline's translated
+                // output and how it was judged.
                 .bind(QualityResourceImpl.class);
     }
 }

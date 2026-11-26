@@ -30,20 +30,20 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The stylesheet is model-authored and therefore untrusted (design §11). Every route out of the process
- * must be shut, and shut loudly: a candidate that reaches for one fails with a diagnostic, not silently
- * with an empty result.
- */
+/// Tests the stand-in XSLT step runner, which runs candidate stylesheets while learning.
+///
+/// The stylesheet is written by the model and is therefore untrusted. Every way out of the process must be
+/// blocked, and blocked visibly: a candidate that tries one fails with a diagnostic, not silently with an empty
+/// result.
 class TestStandInXsltStep {
 
     private static final String INPUT = "<in>x</in>";
 
     @Test
     void aPreparedStylesheetIsCompiledOnceAndRunOverRecordAfterRecord() {
-        // §12 item 25: the fragment gives its transform one record at a time, so a candidate is run once
-        // per record of the stream. Compiling is the expensive half and does not depend on the input, so
-        // it is paid for the candidate and not for every record of it.
+        // The fragment gives its transform one record at a time, so a candidate is run once per record of the
+        // stream. Compiling is the expensive part and does not depend on the input, so it is done once per
+        // candidate, not once per record.
         final String stylesheet = """
                 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
                   <xsl:template match="/"><out><xsl:value-of select="in"/></out></xsl:template>
@@ -140,8 +140,8 @@ class TestStandInXsltStep {
         }
     }
 
-    // Security review finding 2 (23 November 2026): parse-xml() parsed a DOCTYPE with Saxon's own
-    // parser, so an external entity read a local file. The XSLT sandbox refuses the DOCTYPE.
+    // A regression test for a security review finding: parse-xml() parsed a DOCTYPE with Saxon's own parser,
+    // so an external entity could read a local file. The XSLT sandbox now refuses the DOCTYPE.
     @ParameterizedTest
     @ValueSource(strings = {
             "<!DOCTYPE d [<!ENTITY x SYSTEM 'FILE'>]><d>&x;</d>",
@@ -166,8 +166,8 @@ class TestStandInXsltStep {
         }
     }
 
-    // Security review finding 1 (23 November 2026) reproduced environment-variable() returning the
-    // process's environment through this runner. The XSLT sandbox hides it.
+    // A regression test for a security review finding: environment-variable() returned the process's
+    // environment through this runner. The XSLT sandbox now hides it.
     @Test
     void aStylesheetMayNotReadTheEnvironment() {
         final String path = System.getenv("PATH");
@@ -188,7 +188,8 @@ class TestStandInXsltStep {
                + "<xsl:template match='/'>" + body + "</xsl:template></xsl:stylesheet>";
     }
 
-    // A document written as an XPath string literal in double-quoted attribute.
+    // Escapes a document so it can be written as a single-quoted XPath string literal inside a double-quoted
+    // attribute.
     private static String escapedForAnAttribute(final String document) {
         return document.replace("&", "&amp;")
                 .replace("<", "&lt;")

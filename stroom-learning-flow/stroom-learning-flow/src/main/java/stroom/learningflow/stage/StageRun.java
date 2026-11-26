@@ -25,29 +25,28 @@ import stroom.util.shared.StoredError;
 
 import java.util.List;
 
-/**
- * Everything a scenario asserts on after one run (design 02 §1).
- *
- * @param doc         The document the stage ran under.
- * @param decision    What was decided.
- * @param learner     The learner that met the stream (A114).
- * @param produced    What produced the output (design 01 §7.3 rule 3); null when there is none.
- * @param output      What the bound or promoted fragment produced over the whole stream; null for a
- *                    sentinel or a learner that gave up.
- * @param verdicts    The scorecard's verdicts on the fragment over the whole stream, one per step, in
- *                    chain order; empty when nothing ran.
- * @param transcript  Every exchange with the model, oldest first; empty when it was not consulted.
- * @param events      The same output as the events the fragment emitted making it, for a caller with
- *                    a downstream to play them on to — which is how the supervisor element serves a
- *                    stream without running the fragment a second time. Null where the fragment was
- *                    run by something with no pipeline under it, as Tier 1 runs it, and where
- *                    nothing ran at all.
- * @param diagnostics What the fragment's elements said making that output, for a caller that must
- *                    put them on the pipeline's error stream (A20). A fragment runs under an error
- *                    receiver of its own, so that a candidate's complaints reach the model rather
- *                    than the operator; the one run that is served has to be heard, and these are
- *                    what it said. Empty where nothing ran or nothing is served.
- */
+/// The result of one run of the stage over a stream: what was decided and everything that was produced.
+/// The Smart Pipeline element uses it to serve or defer the stream, and tests assert on it.
+///
+/// @param doc         The document the stage ran under.
+/// @param decision    What was decided.
+/// @param learner     The learner the stream was processed for.
+/// @param produced    The binding and snapshot that produced the output; null when there is no output.
+/// @param output      What the bound or promoted fragment produced over the whole stream; null for a
+///                    sentinel or a learner that gave up.
+/// @param verdicts    The scorecard's verdicts on the fragment over the whole stream, one per step, in
+///                    chain order; empty when nothing ran.
+/// @param transcript  Every exchange with the model, oldest first; empty when the model was not asked.
+/// @param events      The same output as the events the fragment emitted while producing it, for a caller
+///                    that has a downstream pipeline to replay them into. This is how the Smart Pipeline
+///                    element serves a stream without running the fragment a second time. Null if the
+///                    fragment was run with no pipeline under it, as the Tier 1 tests run it, or if
+///                    nothing ran at all.
+/// @param diagnostics What the fragment's elements reported while producing that output, for a caller that
+///                    must put them on the pipeline's error stream. A fragment runs under an error receiver
+///                    of its own, so that a candidate's errors are fed back to the model rather than shown
+///                    to the operator; but errors from the run that is actually served must be reported,
+///                    and these are they. Empty if nothing ran or nothing is served.
 public record StageRun(LearningFlowDoc doc,
                        Decision decision,
                        Learner learner,
@@ -58,12 +57,13 @@ public record StageRun(LearningFlowDoc doc,
                        EventList events,
                        List<StoredError> diagnostics) {
 
-    /// A run refused before it decided anything: the stream is sentinelled with the reason.
+    /// Creates a run that was refused before anything was decided; the stream gets a sentinel (an error)
+    /// with the reason.
     ///
-    /// @param doc     The document.
-    /// @param learner The learner.
-    /// @param reason  Why.
-    /// @return The run.
+    /// @param doc     The document the stage ran under.
+    /// @param learner The learner the stream was processed for.
+    /// @param reason  Why the run was refused.
+    /// @return The refused run.
     static StageRun refused(final LearningFlowDoc doc, final Learner learner, final String reason) {
         return new StageRun(doc, new Sentinel(reason), learner, null, null, List.of(), List.of(), null,
                 List.of());

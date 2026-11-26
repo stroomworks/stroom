@@ -55,10 +55,9 @@ public interface LearningFlowResource
             operationId = "fetchLearningFlowTemplates")
     BuiltInTemplates templates();
 
-    /// The built-in default setups with their steps (Track 2 step 1c). They are defined as JSON on the
-    /// server, since the client has neither classpath resources nor Jackson; a document the client opens
-    /// carries its own steps, so these are what it needs to name which setup a document matches and to
-    /// start a new one from.
+    /// Fetches the built-in example flows with their steps. They are defined as JSON on the server, since the
+    /// client has neither classpath resources nor Jackson. A document the client opens carries its own steps,
+    /// so the client needs these only to tell which example a document matches and to start a new one from.
     ///
     /// @return Every built-in setup, in the order [FlowExample] declares them.
     @GET
@@ -68,8 +67,8 @@ public interface LearningFlowResource
             operationId = "fetchLearningFlowFlowExamples")
     List<BuiltInFlow> flowExamples();
 
-    /// What the Setup tab says about a target schema (task 7): whether it is event-logging, and which
-    /// elements its root may hold. Held to USE on the schema, as the Setup tab's picker is.
+    /// Fetches what the Setup tab shows about a target schema: whether it is event-logging, and which elements
+    /// its root may hold. The caller needs USE permission on the schema, as for the Setup tab's schema picker.
     ///
     /// @param uuid The `XMLSchema` document's UUID.
     /// @return Its summary, or null where it can't be read.

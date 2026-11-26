@@ -25,21 +25,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-/// What the Learning Status tab says about how a new translation was judged (Track 2 step 4, approval
-/// evidence), for a person deciding whether to approve it: one line per check, the gates first, then the
-/// advice; and who approved or rejected it, and when. A plain class, so the words are tested without a
-/// browser.
+/// Builds the text that the Learning Status tab shows about how a new translation was judged, for a person
+/// deciding whether to approve it. There is one line per check, gates first and then advice, and a line
+/// saying who approved or rejected it, and when. It is a plain class so that the wording can be tested
+/// without a browser.
 public final class Evidence {
 
     private Evidence() {
         // Static utility
     }
 
-    /// One line per check that judged the translation, the gates before the advice, each saying what it
-    /// scored and whether that reached the check's threshold, e.g. "Compiles: 100%, a gate it passed".
+    /// Describes how a translation did on each check that judged it, gates before advice. Each line says
+    /// what it scored and whether that reached the check's threshold, e.g. "Compiles: 100%, a gate it passed".
     ///
-    /// @param results How it did on each check.
-    /// @return The lines; empty where there are no results.
+    /// @param results The translation's result on each check, or null for none.
+    /// @return One line per result; empty if there are no results.
     public static List<String> lines(final List<CheckResult> results) {
         final List<String> lines = new ArrayList<>();
         if (results == null) {
@@ -58,11 +58,12 @@ public final class Evidence {
         return lines;
     }
 
-    /// Who decided about a run's translation, and when, e.g. "Approved by jo, 23 Nov 2026 10:12".
+    /// Describes who approved or rejected a run's translation, and when, e.g.
+    /// "Approved by jo, 23 Nov 2026 10:12".
     ///
-    /// @param run    The run.
-    /// @param format Says when, as the user likes dates.
-    /// @return The line, or null where nobody decided.
+    /// @param run    The learning run, or null.
+    /// @param format Formats a time in milliseconds in the user's preferred date format.
+    /// @return The line, or null if nobody has reviewed the translation.
     public static String reviewed(final SupervisorAttempt run, final Function<Long, String> format) {
         if (run == null || run.getReviewedBy() == null) {
             return null;

@@ -20,11 +20,12 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-/// A stream read through, counting the bytes that are **content**: everything but ASCII whitespace.
+/// An input stream wrapper that counts the bytes that are **content**, i.e. everything but ASCII
+/// whitespace.
 ///
-/// It is here to tell an empty stream from one the parser could make nothing of. Counting every byte
-/// would not do it: a stream holding one newline has a byte in it and no content, and reading that as
-/// "the translation no longer reads this feed" would defer it and pay for a relearning.
+/// It is used to tell an empty stream apart from one the parser could make nothing of. Counting every
+/// byte would not work: a stream holding one newline has a byte in it but no content, and treating that
+/// as "the translation can no longer read this feed" would defer the stream and pay for relearning.
 ///
 /// ASCII whitespace is safe to skip over UTF-8 without decoding, because every byte of a multi-byte
 /// sequence has its high bit set and so can never be mistaken for one.
@@ -59,6 +60,8 @@ final class ContentCountInputStream extends FilterInputStream {
         return read;
     }
 
+    /// Counts the byte if it is not ASCII whitespace.
+    ///
     /// @param b A byte that was read.
     private void count(final byte b) {
         if (b != ' ' && b != '\t' && b != '\n' && b != '\r' && b != '\f' && b != 0x0B) {

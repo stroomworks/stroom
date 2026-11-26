@@ -26,15 +26,15 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The harness runs a learned stylesheet the way a node would: the `stroom:` functions the allow-list
-/// permits work here too, and the ones it refuses do not.
+/// Tests the stand-ins for `stroom:` functions that let the stand-in XSLT runner run a learned stylesheet the way
+/// a node would: the `stroom:` functions the allow-list permits work here too, and the ones it refuses do not.
 ///
-/// This is what decision N1 means by the harness applying the same list — before it, every `stroom:` call
-/// failed in the harness and succeeded on a node, so a stylesheet could pass the scenario suite and behave
-/// differently in a pipeline, or fail the suite for using something it was entitled to use.
+/// Without the stand-ins, every `stroom:` call would fail in tests and succeed on a node, so a stylesheet could
+/// pass the scenario tests and behave differently in a pipeline, or fail them for using something it is allowed
+/// to use.
 class TestStroomStandIns {
 
-    /// 17 June 2020, 08:00 UTC: the stream's received time, from which a date with no year is completed.
+    /// The stream's received time, 17 June 2020 08:00 UTC, from which a date with no year takes its year.
     private static final long RECEIVED = DateUtil.parseNormalDateTimeString("2020-06-17T08:00:00.000Z");
 
     private static final StreamFacts FACTS = new StreamFacts(42L, "DOOR-ACCESS", "Raw Events", RECEIVED,
@@ -59,8 +59,8 @@ class TestStroomStandIns {
 
     @Test
     void aDateWithNoYearTakesItFromTheStream() {
-        // Track 1 task 3's fault, and the reason format-date is on the list at all: a syslog date carries
-        // no year, and taking it from the clock would make judging and serving disagree
+        // This is why format-date is on the list at all: a syslog date carries no year, and taking the year
+        // from the current time would make the judgement while learning disagree with what is served
         assertThat(run("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="stroom:format-date('Jun 17 09:06:02', 'MMM dd HH:mm:ss')"/></Event>
@@ -89,7 +89,7 @@ class TestStroomStandIns {
 
     @Test
     void aFunctionTheListRefusesIsNotThereToCall() {
-        // The harness agrees with the static check: a refused function is an unknown function here
+        // The runner agrees with the static check: a refused function is an unknown function here
         final StepResult result = new StandInXsltStep(FACTS).prepare(wrapping("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="stroom:lookup('USERS', 'bob')"/></Event>
@@ -101,7 +101,7 @@ class TestStroomStandIns {
 
     @Test
     void readingAFileIsStillRefusedHoweverTheCheckWent() {
-        // The harness does not lean on the static check having run: the ways out of the process are shut
+        // The runner does not rely on the static check having run, so the ways out of the process are blocked
         // here too
         final StepResult result = new StandInXsltStep(FACTS).prepare(wrapping("""
                 <xsl:template match="/records">
@@ -113,8 +113,8 @@ class TestStroomStandIns {
 
     @Test
     void withoutTheStreamAPartialDateFailsRatherThanReadingTheClock() {
-        // Assumption AS6 from the other side: a year taken from the clock would differ between judging
-        // and serving, so a run that does not know the stream says so instead
+        // A year taken from the current time would differ between judging and serving, so a run that does
+        // not know its stream fails with a diagnostic instead
         final StepResult result = new StandInXsltStep().prepare(wrapping("""
                 <xsl:template match="/records">
                   <Event><xsl:value-of select="stroom:format-date('Jun 17 09:06:02', 'MMM dd HH:mm:ss')"/></Event>
@@ -126,9 +126,9 @@ class TestStroomStandIns {
 
     @Test
     void theGapBetweenTheListAndTheHarnessIsNamedRatherThanLeftToBeFound() {
-        // These pass the static check and then fail in the harness, because no stand-in has been written
-        // for them. Nothing uses them yet; the test is here so the gap shrinks on purpose rather than
-        // being discovered by a scenario that mysteriously fails.
+        // These pass the static check but then fail in the stand-in runner, because no stand-in has been
+        // written for them. Nothing uses them yet. The test lists them so that the gap is closed deliberately,
+        // rather than found by a scenario test that fails for no obvious reason.
         assertThat(StroomStandIns.missing(AiXsltAllowList.hardCoded()))
                 .containsExactly("cidr-to-numeric-ip-range", "col-from", "col-to", "dec-to-hex",
                         "decode-url", "encode-url", "hash", "hex-to-dec", "hex-to-string", "ip-in-cidr",

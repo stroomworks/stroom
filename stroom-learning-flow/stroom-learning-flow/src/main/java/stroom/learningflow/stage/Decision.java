@@ -22,60 +22,48 @@ import stroom.util.shared.StoredError;
 
 import java.util.List;
 
-/**
- * What the stage decided about one stream, in the terms of design 02 §4.
- */
+/// What the stage decided to do with one stream: serve it, promote or keep a binding, write a draft, give
+/// up, error it, park the session, defer it, or (in a dry run) what it would have done.
 public sealed interface Decision {
 
-    /**
-     * The learner's binding served the stream: it was processed with the bound fragment, no learning.
-     */
+    /// The learner's binding served the stream: it was processed with the bound fragment, without any
+    /// learning.
     record Bound(Binding binding) implements Decision {
 
     }
 
-    /**
-     * A fragment was learned and promoted, and this binding now serves the learner with it.
-     */
+    /// A fragment was learned and promoted, and this binding now serves the learner with it.
     record Promoted(Binding binding, double score) implements Decision {
 
     }
 
-    /**
-     * A learner marked for relearning (A29) was relearned while the incumbent served the stream, and
-     * the candidate beat it: the binding is rebound to the new fragment (design 01 §7.3 rule 2) for the
-     * streams that follow. Same binding, same {@code uuid}; the regression set grows.
-     */
+    /// A learner marked for relearning was relearned while the serving binding served the stream, and the
+    /// candidate beat it. The binding is rebound to the new fragment for the streams that follow. It keeps
+    /// the same `uuid`, and its regression corpus grows.
     record Rebound(Binding incumbent, Binding binding, double score) implements Decision {
 
     }
 
-    /**
-     * A learner marked for relearning was relearned while the incumbent served the stream, and the
-     * incumbent was kept: no candidate passed, or the candidate did not beat it on this stream or on the
-     * regression set (A15, A18). Nothing was written.
-     */
+    /// A learner marked for relearning was relearned while the serving binding served the stream, and the
+    /// serving binding was kept, because no candidate passed or the candidate did not beat it on this
+    /// stream or on its regression corpus. Nothing was written.
     record Kept(Binding incumbent, String reason) implements Decision {
 
     }
 
-    /**
-     * The document is in review mode (A25): a candidate that would have been bound is written as a draft
-     * binding that serves nothing, and waits for Approve or Reject. For a learner nothing served the stream
-     * waits behind the draft, woken when it is approved; for a relearning one the incumbent served the
-     * stream and the draft waits behind it.
-     */
+    /// The document uses review promotion mode, so a candidate that would have been bound was written as
+    /// a draft binding that serves nothing until a person approves or rejects it. For a learner with no
+    /// serving binding, the stream waits for the draft and is woken when it is approved. For a relearning,
+    /// the serving binding served the stream and goes on serving until the draft is decided.
     record Drafted(Binding binding, double score) implements Decision {
 
     }
 
-    /**
-     * No fragment passed within the budget; the learner is recorded as given up. The diagnostics are the
-     * last candidate's — what the sentinel names beside the reason (design 02 §4 step 5), and what a person
-     * reads to see why the model could not.
-     */
+    /// No fragment could be learned, so the learner is recorded as given up. The diagnostics are the last
+    /// candidate's: they are reported beside the reason on the error output, and are what a person reads to
+    /// see why the model failed.
     ///
-    /// @param report Why, in parts, where the run that gave up stopped with a report; null otherwise.
+    /// @param report The reason broken into parts, if the session stopped with a report; null otherwise.
     record GivenUp(String reason, List<StoredError> diagnostics, StopReport report) implements Decision {
 
         public GivenUp {
@@ -87,21 +75,19 @@ public sealed interface Decision {
         }
     }
 
-    /**
-     * The stream was not processed and the model was not consulted: the learner has given up, or the
-     * attempt the worker carried could go no further. The stream is sentinelled — an error stream, and
-     * nothing else (A4, A131).
-     */
+    /// The stream was not processed and the model was not asked, because the learner has given up or the
+    /// session the worker was resuming could go no further. The stream is given a sentinel: an error stream
+    /// with the reason, and no other output.
     record Sentinel(String reason) implements Decision {
 
     }
 
-    /// The session stopped short of its stream clearing the bar — out of budget, or out of candidates —
-    /// and parked for a person (A65): its claim held with a lease that does not lapse, its streams
-    /// waiting, nothing baked as Unknown because money ran out.
+    /// The session stopped before its stream cleared the bar (for example because its budget ran out) and
+    /// is parked for a person. It keeps its claim on the learner with a lease that does not expire, and its
+    /// streams go on waiting. Running out of budget never makes records become marked Unknowns.
     ///
-    /// @param reason What it stopped on, in one line.
-    /// @param report Why, in parts; null where nothing worded it as a report.
+    /// @param reason Why it stopped, in one line.
+    /// @param report The reason broken into parts; null if none was produced.
     record Parked(String reason, StopReport report) implements Decision {
 
         public Parked(final String reason) {
@@ -109,25 +95,25 @@ public sealed interface Decision {
         }
     }
 
-    /// The stream waits (design 04 §3): nothing is emitted, nothing is errored, and the task that carries
-    /// it ends deferred, to be tried again when the learner's transform moves or the retry delay passes. A
-    /// deferral row says what it waits on; where a session was needed and none held the claim, one was
-    /// opened and parked for the worker.
+    /// The stream waits: nothing is emitted, nothing is errored, and its processor task ends `DEFERRED`, to
+    /// be tried again when the learner's binding changes or the retry delay passes. A deferral row records
+    /// what it is waiting on. If a session was needed and none held the learner's claim, one was opened and
+    /// left for the worker.
     ///
     /// @param reason Why it waits, in words.
     record Deferred(String reason) implements Decision {
 
     }
 
-    /// What the stage *would* have done, which is all a dry run may say (A30, design 01 §11.7).
-    /// Stepping serves and does nothing else, so a learner no binding serves is reported here
-    /// rather than learned, sentinelled or given up.
+    /// What the stage *would* have done, which is all a dry run (stepping) may report. Stepping serves and
+    /// does nothing else, so a learner with no serving binding is reported here rather than learned for,
+    /// errored or given up.
     ///
     /// @param what What would happen, in the words the stage would have used had it done it.
     record Would(String what) implements Decision {
 
-        /// The clause as a person reads it — *would learn a fragment for this learner* — so that every
-        /// surface says it the same way and only a decision that is hypothetical reads as one.
+        /// The decision as a person reads it, e.g. *Would learn a fragment for this learner*, so that every
+        /// screen words it the same way and only a hypothetical decision reads as one.
         public String said() {
             return what == null || what.isEmpty()
                     ? "Would do nothing"

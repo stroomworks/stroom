@@ -370,10 +370,10 @@ public final class AppStories {
         QueryEditorStories.addTo(registry);
         // App/Editors/ReportEditor
         ReportEditorStories.addTo(registry);
-        // App/Editors/LearningFlowEditor
+        // App/Editors/LearningFlowEditor and App/Editors/LearningFlowStopReports
         LearningFlowEditorStories.addTo(registry);
         LearningFlowStopReportStories.addTo(registry);
-        // App/Editors/PipelineAiTranslation
+        // App/Editors/PipelineAiTranslation, App/Editors/PipelineQualityAssurance, App/Editors/PipelineStructureLearned
         PipelineAiTranslationStories.addTo(registry);
         PipelineQualityStories.addTo(registry);
         // App/Editors/StatisticStoreEditor

@@ -23,12 +23,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/// The documents of A28 in memory, for a harness with no document store.
+/// An in-memory [Documents], from which the background worker reads Learning Flow documents, for tests
+/// with no document store.
 public final class InMemoryDocuments implements Documents {
 
     private final Map<String, LearningFlowDoc> documents = new LinkedHashMap<>();
 
-    /// Keep a document, as saving one does.
+    /// Stores a document, as saving one does.
     public synchronized LearningFlowDoc put(final LearningFlowDoc doc) {
         documents.put(doc.getUuid(), doc);
         return doc;
@@ -39,7 +40,7 @@ public final class InMemoryDocuments implements Documents {
         return Optional.ofNullable(documents.get(uuid));
     }
 
-    /// Forget a document, as deleting one does.
+    /// Removes a document, as deleting one does.
     public synchronized void remove(final String uuid) {
         documents.remove(uuid);
     }

@@ -32,13 +32,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/// Promotion (simplification option iii, the `PromotionService` of `simplification-options.md`): what turns
-/// a learned translation into the one that serves, and what takes one back. Drafts are written here, approved
-/// or rejected here (A25), promoted here by the one path both modes take (option A), and retracted here
-/// (A28, design 01 §11.6); a binding whose fragment was edited by hand is snapshotted afresh here (A72).
+/// Makes a learned translation the one that serves a learner, and takes one back. Drafts are written,
+/// approved and rejected here; both promotion modes (automatic and review) promote through the same
+/// [#promote] method; a serving binding is retracted here; and a binding whose fragment has been edited by
+/// hand is given a new snapshot here.
 ///
-/// Nothing here runs a pipeline or asks the model, so it needs no pipeline scope, unlike the learning and
-/// serving that call it.
+/// Nothing here runs a pipeline or asks the model, so unlike the learning and serving code that calls it, it
+/// needs no pipeline scope.
 public final class Promotion {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(Promotion.class);
@@ -55,17 +55,18 @@ public final class Promotion {
     private final Wake wake;
     private final Clock clock;
 
-    /// @param learnerBindings The bindings, drafts among them.
+    /// @param learnerBindings The bindings, including drafts.
     /// @param states          Each learner's state, which says which draft it awaits.
-    /// @param regressionSet   The records each binding was accepted on.
-    /// @param snapshots       The configuration each binding serves with (A61).
+    /// @param regressionSet   The corpus records each binding was accepted on.
+    /// @param snapshots       The configuration snapshots each binding serves with.
     /// @param outputs         What each binding produced, counted when one is retracted.
-    /// @param attempts        The runs, closed with what a person decided.
-    /// @param writer          Copies a draft's fragment into the one that serves (A58).
-    /// @param codes           Reads a fragment's documents, for its snapshot.
+    /// @param attempts        The sessions, closed with what a person decided.
+    /// @param writer          Copies a draft's fragment into the serving fragment, so that each learner keeps
+    ///                        one serving fragment.
+    /// @param codes           Reads a fragment's documents, to snapshot them.
     /// @param places          Where a learner's fragments are kept.
-    /// @param wake            Wakes a learner's pipeline once what it waited for is decided.
-    /// @param clock           When a binding was promoted.
+    /// @param wake            Wakes a learner's pipeline once what its streams waited for is decided.
+    /// @param clock           The source of the time a binding is promoted.
     public Promotion(final LearnerBindings learnerBindings,
                      final LearnerStates states,
                      final RegressionSet regressionSet,
@@ -90,28 +91,28 @@ public final class Promotion {
         this.clock = clock;
     }
 
-    /// Approve a draft (A25): the promotion, saying who approved it, which is kept beside the attempt
-    /// and shown on the Learning Status tab (Track 2 step 4).
+    /// Approves a draft, which promotes it, and records who approved it against the session that wrote it,
+    /// for the Learning Status tab to show.
     ///
     /// @param doc         The document.
-    /// @param bindingUuid The draft.
-    /// @param reviewedBy  Who approved it; null where nobody is named.
+    /// @param bindingUuid The UUID of the draft binding.
+    /// @param reviewedBy  Who approved it; null if nobody is named.
     public void approve(final LearningFlowDoc doc, final String bindingUuid, final String reviewedBy) {
         final LearnerBindings.Held held = draft(doc, bindingUuid);
         promote(doc, awaitingReview(doc, held), held.binding());
-        // The attempt that wrote the draft is no longer awaiting review (A28).
+        // The session that wrote the draft is no longer awaiting review.
         Bookkeeping.record(LOGGER, () -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.PROMOTED,
                 "Approved", reviewedBy));
     }
 
-    /// Reject a draft (A25), saying who rejected it (Track 2 step 4): the binding goes, with its records; its
-    /// documents stay, as every document does. The learner gives up with the reason, so the model is not
-    /// asked the same question again until an operator says otherwise.
+    /// Rejects a draft, recording who rejected it. The binding is removed, with its corpus records and
+    /// snapshots; its documents are left in place, as documents always are. The learner gives up with the
+    /// reason, so that the model is not asked the same question again until a person sends it back.
     ///
     /// @param doc         The document.
-    /// @param bindingUuid The draft.
-    /// @param reason      Why.
-    /// @param reviewedBy  Who rejected it; null where nobody is named.
+    /// @param bindingUuid The UUID of the draft binding.
+    /// @param reason      Why it was rejected.
+    /// @param reviewedBy  Who rejected it; null if nobody is named.
     public void reject(final LearningFlowDoc doc,
                        final String bindingUuid,
                        final String reason,
@@ -126,38 +127,40 @@ public final class Promotion {
         states.giveUp(learner, doc.getUuid(), "Rejected: " + reason);
         Bookkeeping.record(LOGGER, () -> attempts.decided(doc.getUuid(), bindingUuid, AttemptStatus.REJECTED,
                 "Rejected: " + reason, reviewedBy));
-        // The streams waiting behind the draft (design 04 §3) are woken to error, as a given-up learner's
-        // always are (A52, A80): left waiting, they would wait for a review that is no longer coming.
+        // The streams waiting for the draft are woken so that they error, as a given-up learner's streams
+        // always do. Left waiting, they would wait for a review that is no longer coming.
         wake(learner);
     }
 
-    /// Take back a binding that is serving, by hand (A28, design 01 §11.6).
+    /// Retracts a serving binding at a person's request.
     ///
-    /// A person has read what the binding is producing and decided it should not be: a reason no gate can
-    /// see. The binding goes and the learner knows nothing again. What the binding produced was
-    /// produced by a binding that has been withdrawn, and is counted rather than asked for (A129): a
-    /// person who wants it as it would be now makes a reprocess filter on the pipeline.
+    /// A person has read what the binding is producing and decided it is wrong, for a reason no gate can
+    /// detect. The binding is removed and the learner starts again from nothing. The streams the binding
+    /// produced output for are counted, not reprocessed; a person who wants them as they would be now makes
+    /// a reprocess filter on the pipeline.
     ///
-    /// Not a removal, which is what it says: a row taken out of the table. Removing a learned binding leaves the
-    /// learner thinking it is bound and leaves the streams it produced standing as though they were right.
-    /// Retracting says they were not.
+    /// This is more than a removal of the binding's row. Removing the row alone would leave the learner's
+    /// state as if it were bound and leave the streams it produced looking correct; retracting records
+    /// that they were not.
     ///
-    /// Not `reject` either, which is A25's decision about a draft that never served anything, and which
-    /// gives the learner up so it does not learn again. A retracted learner *does* learn again: its next
-    /// stream starts afresh, which is the point — the binding was wrong, the feed is not.
+    /// It is also not `reject`, which decides about a draft that never served anything, and gives the learner
+    /// up so that it does not learn again. A retracted learner *does* learn again, starting afresh from its
+    /// next stream, because the binding was wrong, not the feed.
     ///
-    /// @param reason Why, in the person's words. It goes on the attempt, so that a person reading it a week
-    ///               later knows what took the binding back.
-    /// @param by     Who retracted it, since this overrides what the gate decided.
-    /// @return How many streams the binding produced output for: what a person would reprocess, the one
-    /// consequence a person retracting a binding cannot see for themselves and the one worth telling them.
+    /// @param doc         The document the binding is under.
+    /// @param bindingUuid The UUID of the binding to retract.
+    /// @param reason      Why, in the person's words. It is recorded on the session that wrote the binding, so
+    ///                    that a person reading it later knows why the binding was retracted.
+    /// @param by          Who retracted it, since this overrides what the promotion gate decided.
+    /// @return How many streams the binding produced output for, i.e. how many a person may want to
+    ///         reprocess. It is the one consequence a person retracting a binding cannot see for themselves.
     public int retract(final LearningFlowDoc doc, final String bindingUuid, final String reason, final String by) {
         final LearnerBindings.Held held = held(doc, bindingUuid);
         final Learner learner = held.learner();
         final Binding binding = held.binding();
         if (binding.isDraft()) {
-            // A draft has served nothing, so there is nothing to take back. Deciding it is Approve or
-            // Reject (A25), and saying so beats retracting something that was never bound.
+            // A draft has served nothing, so there is nothing to retract. It must be approved or rejected
+            // instead, and saying so is clearer than retracting something that was never bound.
             throw new IllegalArgumentException("Binding " + bindingUuid + " is a draft awaiting review: approve "
                                                + "or reject it rather than retracting it");
         }
@@ -165,12 +168,12 @@ public final class Promotion {
         learnerBindings.remove(learner, binding.getUuid());
         regressionSet.discard(binding.getUuid());
         snapshots.discard(binding.getUuid());
-        // The learner knows nothing again rather than giving up: the binding was wrong, not the feed, and the
-        // next stream learns afresh — unless a draft awaits review, which is still the learner's candidate
-        // and a person's to decide.
+        // The learner starts again from nothing rather than giving up, because the binding was wrong, not
+        // the feed, and its next stream learns afresh. A draft awaiting review is kept, because it is still
+        // the learner's candidate and a person's to decide.
         resetKeepingDraft(doc, learner);
-        // By the fragment as well as the binding: a binding keeps its uuid when it is rebound (§7.3 rule 3), and
-        // what an earlier generation produced was produced correctly by what was bound then.
+        // Matched by fragment as well as binding, because a binding keeps its UUID when it is rebound, and
+        // what an earlier fragment produced was produced correctly by what was bound then.
         final List<Replayable> produced = outputs.boundBy(binding.getUuid(), binding.getPipeline() == null
                 ? null
                 : binding.getPipeline().getUuid());
@@ -178,26 +181,25 @@ public final class Promotion {
         return produced.size();
     }
 
-    /// The promotion itself: the one path both modes take (simplification option A). Where a binding
-    /// already serves the learner — the draft came of relearning — that binding is rebound to the draft's
-    /// fragment and keeps its `uuid` and its history, so that what the learner produced before and after
-    /// hangs off one binding; otherwise the draft itself goes live.
+    /// Promotes a draft; both promotion modes use this. If a binding already serves the learner (the draft
+    /// came from a relearning), that binding is rebound to the draft's fragment and keeps its `uuid` and
+    /// its history, so that everything the learner produced before and after belongs to one binding.
+    /// Otherwise the draft itself becomes the serving binding.
     ///
-    /// Either way the learner's state starts afresh and its pipeline is woken, which puts through what
-    /// waited for the review (design 04 §5.3) — all it needs, since those tasks were deferred, not
-    /// errored.
+    /// Either way the learner's state is reset and its pipeline is woken, which processes the streams that
+    /// waited. That is all they need, since their tasks were deferred, not errored.
     ///
     /// @param doc     The document.
     /// @param learner The learner the draft was learned for.
-    /// @param draft   The draft.
-    /// @return The binding that serves the learner from here on.
+    /// @param draft   The draft binding.
+    /// @return The binding that serves the learner from now on.
     Binding promote(final LearningFlowDoc doc, final Learner learner, final Binding draft) {
         final Optional<Binding> incumbent = incumbentOf(learnerBindings.forLearner(learner));
         final Binding promoted;
         if (incumbent.isPresent()) {
-            // One fragment per learner (A58): the draft is copied into the fragment that serves, which
-            // keeps its own DocRef, and the draft's documents go. The snapshot is taken afresh over the
-            // serving fragment, since the draft's was taken over documents that no longer exist.
+            // Each learner has one serving fragment, so the draft is copied into it. The serving fragment
+            // keeps its own DocRef, and the draft's documents are deleted. A new snapshot is taken of the
+            // serving fragment, because the draft's snapshot was taken of documents that no longer exist.
             final DocRef fragment = incumbent.get().getPipeline();
             writer.copyInto(fragment, draft.getPipeline(), places.of(learner).folder(), fragment.getName());
             promoted = incumbent.get().copy()
@@ -222,13 +224,14 @@ public final class Promotion {
         return promoted;
     }
 
-    /// A draft binding over a freshly written fragment, behind whatever serves the learner now (A25).
+    /// Writes a draft binding for a newly written fragment. Whatever serves the learner now goes on serving
+    /// until the draft is approved.
     ///
     /// @param doc      The document.
     /// @param learner  The learner.
     /// @param fragment The fragment the draft binds.
     /// @param score    What the candidate scored.
-    /// @param boundary What one record is, where settled.
+    /// @param boundary What one record is, if it was settled.
     /// @return The draft, as it was written.
     Binding writeDraft(final LearningFlowDoc doc,
                                final Learner learner,
@@ -242,16 +245,17 @@ public final class Promotion {
                 .draft(true)
                 .score(score)
                 .recordBoundary(boundary)
-                // The configuration it serves with, kept (A61).
+                // Snapshot the configuration it will serve with.
                 .snapshot(snapshot(doc, draftUuid, fragment))
                 .build();
         learnerBindings.append(learner, doc.getUuid(), draft);
         return draft;
     }
 
-    /// The binding as it serves now (A72): where its fragment has been edited by hand since its snapshot
-    /// was taken — the documents' versions differ — or it has no snapshot at all, having been written
-    /// before snapshots existed, a snapshot is taken and the binding points at it. A promotion by hand.
+    /// Returns the binding with a snapshot that matches its fragment as it is now. If the fragment has been
+    /// edited by hand since its snapshot was taken (the documents' versions differ), or the binding has no
+    /// snapshot because it was written before snapshots existed, a new snapshot is taken and the binding
+    /// is updated to point at it. A hand edit is in effect a promotion made by a person.
     Binding freshened(final LearningFlowDoc doc, final Learner learner, final Binding binding) {
         if (binding.getPipeline() == null) {
             return binding;
@@ -268,17 +272,17 @@ public final class Promotion {
             learnerBindings.replace(learner, doc.getUuid(), fresh);
             return fresh;
         } catch (final RuntimeException e) {
-            // A fragment whose documents cannot be read — deleted by hand — cannot be snapshotted, and is
-            // not what this is about: the binding serves as it stands and the serve says what it finds.
+            // A fragment whose documents cannot be read (e.g. deleted by hand) cannot be snapshotted. That
+            // is not this method's concern: the binding serves as it is, and serving reports what it finds.
             LOGGER.debug(() -> LogUtil.message("Binding {} could not be snapshotted: {}", binding.getUuid(),
                     e.getMessage()), e);
             return binding;
         }
     }
 
-    /// A binding of this document, with whose it is: what an action that begins from a binding rather than a
-    /// stream acts on (design 06 phase J slice 2b). A binding of another document is not this one's, whatever
-    /// its uuid, since the document is what decided the person may act on it.
+    /// Gets a binding of this document, with the learner it belongs to, for an action that starts from a
+    /// binding rather than a stream. A binding under another document is refused, whatever its UUID, because
+    /// the document is what the person's permission to act was checked against.
     LearnerBindings.Held held(final LearningFlowDoc doc, final String bindingUuid) {
         return learnerBindings.byUuid(bindingUuid)
                 .filter(row -> row.docUuid().equals(doc.getUuid()))
@@ -286,17 +290,17 @@ public final class Promotion {
                         "Binding " + bindingUuid + " is not a binding of this document"));
     }
 
-    /// The learner's state starts afresh — not given up, not marked, its rolling score forgotten — but a
-    /// draft awaiting review still awaits it: it is a person's to decide (A25), and nothing that calls this
-    /// decided it. Forgotten, it would be a draft nothing awaits, serving the learner's streams a wait that
-    /// approve and reject both refuse to end.
+    /// Resets the learner's state (not given up, not marked, rolling score cleared) but keeps any draft
+    /// awaiting review, because that is a person's to decide and nothing that calls this decided it. If it
+    /// were forgotten, the draft would still hold the learner's streams waiting, but approve and reject would
+    /// both refuse it because nothing awaits it.
     private void resetKeepingDraft(final LearningFlowDoc doc, final Learner learner) {
         final Optional<String> draft = states.draftAwaiting(learner);
         states.reset(learner);
         draft.ifPresent(bindingUuid -> states.awaitReview(learner, doc.getUuid(), bindingUuid));
     }
 
-    /// A draft of this document, with whose it is.
+    /// Gets a draft binding of this document, with the learner it belongs to.
     private LearnerBindings.Held draft(final LearningFlowDoc doc, final String bindingUuid) {
         return learnerBindings.byUuid(bindingUuid)
                 .filter(row -> row.docUuid().equals(doc.getUuid()) && row.binding().isDraft())
@@ -304,8 +308,8 @@ public final class Promotion {
                         "Binding " + bindingUuid + " is not a draft on document " + doc.getName()));
     }
 
-    /// The learner whose review the draft is: the one whose state says it awaits that draft. A draft no
-    /// learner awaits is one nothing would release on approval and nothing would give up on rejection.
+    /// Gets the learner whose state says it awaits this draft. A draft that no learner awaits is refused,
+    /// because approving it would release nothing and rejecting it would give nothing up.
     private Learner awaitingReview(final LearningFlowDoc doc, final LearnerBindings.Held draft) {
         if (!states.draftAwaiting(draft.learner()).filter(draft.binding().getUuid()::equals).isPresent()) {
             throw new IllegalStateException("Nothing awaits review under draft binding " + draft.binding().getUuid()
@@ -314,15 +318,15 @@ public final class Promotion {
         return draft.learner();
     }
 
-    /// The binding a draft would replace: the one serving the learner.
+    /// Gets the binding a draft would replace: the one serving the learner.
     private static Optional<Binding> incumbentOf(final List<Binding> table) {
         return table.stream()
                 .filter(binding -> !binding.isDraft())
                 .findFirst();
     }
 
-    /// A snapshot of a fragment as it stands, kept against a binding (A61, A70): the version the binding serves
-    /// with, stamps its deferrals with and records its outputs under.
+    /// Takes and stores a snapshot of a fragment as it is now, against a binding. Its id is the version the
+    /// binding serves with, stamps its deferrals with and records its outputs under.
     private String snapshot(final LearningFlowDoc doc, final String bindingUuid, final DocRef fragment) {
         final FragmentCodes.Codes read = codes.read(fragment);
         final String id = UUID.randomUUID().toString();
@@ -331,7 +335,7 @@ public final class Promotion {
         return id;
     }
 
-    /// What serves a learner (A124): its binding, or failing that the draft awaiting review.
+    /// Gets what serves a learner: its non-draft binding, or failing that the draft awaiting review.
     Optional<Binding> bindingFor(final Learner learner) {
         final List<Binding> bindings = learnerBindings.forLearner(learner);
         return bindings.stream()

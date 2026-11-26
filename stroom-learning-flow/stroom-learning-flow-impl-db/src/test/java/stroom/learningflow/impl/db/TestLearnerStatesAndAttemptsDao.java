@@ -69,7 +69,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// The learner state of A117 and A124, the attempts and guidance as rows.
+/// Tests [LearnerStatesDao], [AttemptsDao], [GuidanceDao], [SpendDao] and [OutputsDao] against a real
+/// database.
 class TestLearnerStatesAndAttemptsDao {
 
     private static final String DOC = "doc-" + System.nanoTime();
@@ -94,7 +95,8 @@ class TestLearnerStatesAndAttemptsDao {
         states.reset(LEARNER);
     }
 
-    /// A learner of this run's own, so that rows a failed run left behind are not this one's.
+    /// Makes a learner unique to this run, so that rows left behind by a failed earlier run do not
+    /// interfere.
     private static Learner learner(final String name) {
         return new Learner("pipeline-" + DOC + "-" + name, "learningFlow");
     }
@@ -121,7 +123,7 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void theRollingScoreIsOfWhatTheLearnerHasDoneLately() {
-        // Nothing is said until the learner has brought enough records to rest a judgement on.
+        // No score is returned until the learner has served enough records to fill its memory.
         assertThat(states.scored(LEARNER, DOC, 1.0, 4, 10)).isEmpty();
         assertThat(states.scored(LEARNER, DOC, 1.0, 4, 10)).isEmpty();
 
@@ -130,15 +132,15 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(rolling).isPresent();
         assertThat(rolling.getAsDouble()).describedAs("eight good records, then four bad, remembering ten")
                 .isEqualTo(8.0 / 12);
-        // Reset starts it afresh, as a promotion or a retraction does.
+        // A reset starts the score again, as a promotion or a retraction does.
         states.reset(LEARNER);
         assertThat(states.scored(LEARNER, DOC, 1.0, 1, 1)).hasValue(1.0);
     }
 
     @Test
     void theSkipsAreKeptBesideTheRecordsTheyBelongTo() {
-        // Nothing caps how many records a translation may declare it skipped (ruling A148), so the count
-        // has to be kept and shown. It is kept with the rolling score, over the same memory.
+        // Nothing limits how many records a translation may declare it skipped, so the count has to be
+        // kept and shown to people. It is kept with the rolling score, over the same memory.
         states.scored(LEARNER, DOC, 1.0, 10, 2, 100);
         states.scored(LEARNER, DOC, 1.0, 10, 3, 100);
 
@@ -149,8 +151,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void skipsGoWithTheRecordsTheMemoryForgets() {
-        // Or a translation that skipped badly once would look as though it still were, for as long as
-        // the learner lived
+        // Otherwise a translation that once skipped many records would go on looking as though it still
+        // did, for as long as the learner existed.
         states.scored(LEARNER, DOC, 1.0, 10, 10, 10);
         states.scored(LEARNER, DOC, 1.0, 10, 0, 10);
 
@@ -174,10 +176,11 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(states.rolling(LEARNER).orElseThrow().skips()).isZero();
     }
 
-    /// The first streams of a new learner are often served at once, and each finds no row and makes it.
-    /// Made under a shared lock, the next step's `FOR UPDATE` deadlocked them and the database killed one,
-    /// erroring its stream; made under the exclusive lock, they queue. Several new learners, each scored
-    /// by many threads together, every score counted.
+    /// The first streams of a new learner are often served at the same time, and each finds no state row
+    /// and creates it. If the row were created under a shared lock, the following `FOR UPDATE` would
+    /// deadlock and the database would abort one transaction, failing its stream; created under the
+    /// exclusive lock, they queue instead. This scores several new learners from many threads at once and
+    /// checks that every score is counted.
     @Test
     void theFirstStreamsOfANewLearnerScoredAtOnceAllCount() throws Exception {
         final int threads = 8;
@@ -208,8 +211,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void resettingALearnerLeavesTheAttemptLearningAlone() {
-        // Reset is about what was learned, not about who is learning: a promotion resets the learner while
-        // the attempt that promoted it is still open, and must not hand its claim to another node (A45).
+        // A reset clears what was learned, not who is learning. A promotion resets the learner while the
+        // attempt that promoted it is still open, and that attempt must not lose its claim to another node.
         final Learner learner = learner("reset");
         attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -222,8 +225,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void anAttemptIsCarriedOnByItsOwnNodeOrByWhoeverFindsItLapsed() {
-        // A45: taking an attempt up is taking its learner's claim. The heartbeat is what keeps a slow model
-        // call from costing a node the claim it is learning under.
+        // Resuming an attempt means taking its learner's claim. The heartbeat stops a slow model call from
+        // making a node lose the claim it is learning under.
         final Learner learner = learner("resume");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -256,8 +259,8 @@ class TestLearnerStatesAndAttemptsDao {
                 .describedAs("and taken, it is nobody's to find").doesNotContain(id);
         assertThat(attempts.byId(id).orElseThrow().attempt().node()).isEqualTo("node-1");
 
-        // What it spent on each leg is added up, not overwritten, or a resumed attempt's cost is only its
-        // last leg's (A5).
+        // What it spent on each run is added up, not overwritten; otherwise a resumed attempt's cost would
+        // only be that of its last run.
         attempts.closed(id, AttemptStatus.PROMOTED, "Promoted 1.0", "rule-3", 1.0, 700L);
         assertThat(attempts.byId(id).orElseThrow().tokensSpent()).isEqualTo(1_200L);
         assertThat(attempts.claimed(id, "node-1", now(), now() + 60_000L))
@@ -270,8 +273,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void anAttemptParkedForAPersonKeepsItsLearnerAndIsNobodysToCarry() {
-        // A65: the worker leaves it alone, no task of the learner opens another, and its lease does not
-        // lapse — until a person acts, which is not the DAO's to do.
+        // An attempt parked for a person (for example, out of budget) is left alone by the worker, no other
+        // attempt can open for its learner, and its lease never expires. Only a person can move it on,
+        // which happens outside the DAO.
         final Learner learner = learner("parked");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -300,8 +304,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void whyAnAttemptStoppedIsKeptInPartsAndClearedWhenItIsTakenUpAgain() {
-        // A stopped attempt's report is read back as it was written; a reopened attempt is no longer stopped,
-        // so it says nothing, and a failed one says why in parts too.
+        // A stopped attempt's report is read back as it was written. A reopened attempt is no longer
+        // stopped, so it has no report, and an attempt that fails also records why in parts.
         final Learner learner = learner("report");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -328,8 +332,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void aGrantIsAddedToTheAttemptAndKeptOnItsRow() {
-        // A77: what a person grants is the attempt's alone, added up as it is granted again, and read back
-        // with the row.
+        // A grant of extra budget applies to this attempt alone. Repeated grants are added together, and
+        // the total is read back with the row.
         final Learner learner = learner("grant");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -347,7 +351,7 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void theEvidenceADraftWasJudgedOnAndWhoDecidedAreKeptOnItsRow() {
-        // Track 2 step 4: what a person approving a draft is shown, and who decided and when
+        // The evidence that a person approving a draft is shown, and who decided and when.
         final Learner learner = learner("review");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.REVIEW, now() + 60_000L), now()).orElseThrow();
@@ -368,8 +372,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void aSendingToTheExhaustionStepStandsOnTheRowUntilTheAttemptCloses() {
-        // A65: a person's sending is read back with the row for the worker to take, stands through a park
-        // and the reopening that follows, and is cleared when the attempt closes.
+        // A person's request to go to the exhaustion step is read back with the row for the worker to act
+        // on. It survives a park and the reopening that follows, and is cleared when the attempt closes.
         final Learner learner = learner("exhaust");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -388,8 +392,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void whatEveryNodeSpendsIsCountedInOnePlace() {
-        // A44: a budget divided by node count is not a budget, and a feed burning spend on one node is
-        // invisible to the others.
+        // Spending is counted across the cluster: a budget split between nodes would not limit the total,
+        // and heavy spending on one node would be invisible to the others.
         final long window = 60_000L;
         assertThat(spend.spent(DOC, window).tokens()).isZero();
 
@@ -405,7 +409,7 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(spend.spent("another-document", window).tokens())
                 .describedAs("one document's spend is its own").isZero();
 
-        // A window that has run out starts the count again: what matters is what was spent lately.
+        // An expired window starts the count again, since the limit applies to recent spending.
         final Spent afresh = spend.spent(DOC, 0L);
         assertThat(afresh.tokens()).isZero();
         assertThat(spend.record(DOC, 100L, 1, 0L).tokens()).isEqualTo(100L);
@@ -413,8 +417,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void theWordsARunWasAskedWithAreRowsToo() {
-        // N9 option D extended: a parked run has to resume in the words it began in, and the node that
-        // resumes it is rarely the node that opened it, so the words are rows and not memory.
+        // A parked attempt has to resume with the same templates and instructions it began with, and the
+        // node that resumes it is rarely the node that opened it, so they are stored in the database
+        // rather than in memory.
         final AskedWith asked = new AskedWith(9,
                 Map.of(Template.CHAIN, "Pick one:${elements}", Template.SPLIT, "Cut it:${sample}"),
                 "Badge readers.", "7.13-beta.3");
@@ -430,8 +435,8 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(read.build()).isEqualTo("7.13-beta.3");
         assertThat(read.templates()).isEqualTo(asked.templates());
 
-        // Parked for the worker, which is the whole point: the node that resumes it is rarely the node
-        // that opened it, and it must find the words there.
+        // Parked for the worker, which is the case this protects: the worker that resumes it, usually on
+        // another node, must find the templates there.
         attempts.parked(id, AttemptStatus.AWAITING_MODEL, now() + 60_000L, 10L);
         assertThat(attempts.awaiting(100))
                 .filteredOn(recorded -> recorded.id() == id)
@@ -443,8 +448,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void anAttemptOpenedBeforeItsWordsWereKeptSaysSoRatherThanGuessing() {
-        // Every attempt on an instance upgraded into N9. Offering today's words as though they were the
-        // ones used would be worse than saying nothing.
+        // This is the case for every attempt made before the templates were recorded. Offering today's
+        // templates as though they were the ones used would be worse than saying they are unknown.
         final Learner learner = learner("asked-with-unknown");
         final long id = attempts.opened(new Attempt(learner, DOC, "DOOR-ACCESS", "Raw Events", 42L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -458,8 +463,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void anAttemptAndItsTurnsAreRowsThatOutliveTheNode() {
-        // A28: what was asked and answered survives the node that asked it, and the turns are readable in
-        // the order they were put.
+        // What was asked and answered survives the node that asked it, and the turns are read back in the
+        // order they were asked.
         final long id = attempts.opened(new Attempt(LEARNER, DOC, "DOOR-ACCESS", "Raw Events", 42L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
         attempts.turn(id, new Turn(1, "chain", 1, QuestionKind.CHAIN, "CHAIN: choose from [DSParser]",
@@ -489,7 +494,8 @@ class TestLearnerStatesAndAttemptsDao {
                 .isEqualTo(new TurnScore(Check.COVERAGE, 0.41, 0.8));
         assertThat(read.turns().get(0).score()).describedAs("a turn no scorer decided").isNull();
 
-        // The learner's next attempt, once this one has closed, with no stream behind it.
+        // The learner's next attempt, once this one has closed, with no stream behind it (as for an
+        // Improve run).
         final long nextId = attempts.opened(new Attempt(LEARNER, DOC, null, null, null, "node-1",
                 PromotionMode.REVIEW, now()), now()).orElseThrow();
         assertThat(attempts.byId(nextId).orElseThrow().attempt().feed()).isNull();
@@ -501,8 +507,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void oneOpenAttemptPerLearner() {
-        // A45: the attempt row is the claim. A parked attempt is still learning, and one whose expiry has
-        // passed has lapsed and is still learning too: it is resumed, not replaced (design 04 §4).
+        // The open attempt row is the learner's claim. A parked attempt is still learning, and so is one
+        // whose lease has expired: it is resumed, not replaced.
         final Learner learner = learner("claim");
         final long mine = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -533,8 +539,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void aPersonsAnswerReplacesATurnsAndWhatFollowedItGoes() {
-        // A28: *answer instead* and *edit and re-run from here*. What came after the turn answered is a
-        // consequence of an answer that has changed, and the walk derives it again.
+        // A person can answer a turn instead of the model, or edit an answer and re-run from there. The
+        // turns after the amended one followed from the old answer, so they are deleted and the walk
+        // produces them again.
         final Learner learner = learner("amend");
         final long id = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, now() + 60_000L), now()).orElseThrow();
@@ -581,9 +588,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void anAttemptIsOpenedAgainDespiteAClaimNobodyIsBehind() {
-        // A45: an attempt whose node died holds its claim, and a person may still answer it and run it
-        // again. The claim of the attempt reopened is pushed out, or a worker would find it lapsed and
-        // take it before the answer was recorded against it.
+        // An attempt whose node died still holds its claim, and a person may still answer it and run it
+        // again. Reopening it gives the claim a new expiry; otherwise a worker would find it expired and
+        // take it before the answer was recorded.
         final Learner learner = learner("lapsed");
         final long dead = attempts.opened(new Attempt(learner, DOC, "F", "T", 1L, "node-dead",
                 PromotionMode.AUTOMATIC, now() - 1), now() - 2).orElseThrow();
@@ -641,10 +648,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void whatABindingProducedIsFoundWhereverItWasProduced() {
-        // Design 01 §7.3 rule 3: retracting a binding means finding the inputs whose outputs it produced,
-        // and the node that retracts is rarely the node that produced them. The bindings are on the
-        // output stream's attributes too, where a person reads them, but a custom stream attribute is not
-        // a field stroom can query.
+        // Retracting a binding means finding the inputs it produced output for, and the node that retracts
+        // is rarely the node that produced them. The bindings are also on the output stream's attributes,
+        // where a person reads them, but Stroom cannot query a custom stream attribute.
         final DocRef fragment = PipelineDoc.buildDocRef().uuid("fragment-1").name("door-v1").build();
         outputs.emitted(1L, "pipeline-1", new Produced(DOC, "rule-1", fragment,
                 RecordBoundary.ofElement("Event").atDepth(1), 0.97));
@@ -659,8 +665,8 @@ class TestLearnerStatesAndAttemptsDao {
                 .describedAs("a stream no pipeline produced names none").containsExactly((String) null);
         assertThat(outputs.boundBy("rule-3", "fragment-1")).isEmpty();
 
-        // A binding keeps its uuid when it is rebound (§7.3 rule 3), so what an earlier generation produced
-        // is not what a retraction of this one asks for.
+        // A binding keeps its UUID when it is rebound to a new fragment, so the outputs of the earlier
+        // fragment are not included when the later one is retracted.
         final DocRef rebound = PipelineDoc.buildDocRef().uuid("fragment-2").name("door-v2").build();
         outputs.emitted(4L, "pipeline-1", new Produced(DOC, "rule-1", rebound, null, 0.99));
         assertThat(outputs.boundBy("rule-1", "fragment-2")).extracting(Replayable::inputId)
@@ -668,8 +674,8 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(outputs.boundBy("rule-1", "fragment-1")).extracting(Replayable::inputId)
                 .describedAs("and the generation before it is left alone").containsExactly(1L, 2L);
 
-        // A stream processed twice by one pipeline under one binding is one thing to replay; by two
-        // pipelines it is two outputs, and a retraction asks for both, because both are still there.
+        // A stream processed twice by one pipeline under one binding is one row to replay. Processed by two
+        // pipelines it has two outputs, and a retraction finds both, because both still exist.
         outputs.emitted(1L, "pipeline-3", new Produced(DOC, "rule-1", fragment, null, 0.99));
         assertThat(outputs.boundBy("rule-1", "fragment-1"))
                 .extracting(Replayable::inputId, Replayable::pipeline)
@@ -680,8 +686,8 @@ class TestLearnerStatesAndAttemptsDao {
                 .describedAs("and the same pipeline again is the same output, said again")
                 .hasSize(3);
 
-        // What an as-processed reprocess asks (design 01 §7.3): what was bound when this input was last
-        // processed by this pipeline, so that the fragment which produced the output produces it again.
+        // Reprocessing a stream as it was processed asks what was bound when this pipeline last processed
+        // the input, so that the fragment which produced the output produces it again.
         assertThat(outputs.asProcessed(DOC, 2L, "pipeline-2")).get()
                 .extracting(Produced::bindingUuid, bindings -> bindings.fragment().getUuid())
                 .containsExactly("rule-1", "fragment-1");
@@ -702,10 +708,10 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(outputs.asProcessed(DOC, 99L, "pipeline-1"))
                 .describedAs("an input nothing remembers cannot be processed again as it was").isEmpty();
 
-        // A pipeline may hold two supervised stages (design 01 §3), and they record what each made of
-        // the same input on the same pipeline. Whose stage is asking is what tells the two apart:
-        // without it the extraction stage would be answered with the transformation stage's fragment,
-        // which would then be run over raw bytes.
+        // A pipeline may contain two Smart Pipeline elements under different documents, each recording
+        // its own output for the same input. The document tells them apart; without it, an element that
+        // parses raw input could be given the fragment of an element that transforms XML, which would
+        // then be run over raw bytes.
         final DocRef transform = PipelineDoc.buildDocRef().uuid("fragment-t").name("transform").build();
         outputs.emitted(2L, "pipeline-2", new Produced("doc-2", "rule-t", transform, null, 0.97));
         assertThat(outputs.asProcessed(DOC, 2L, "pipeline-2")).get()
@@ -714,8 +720,8 @@ class TestLearnerStatesAndAttemptsDao {
         assertThat(outputs.asProcessed("doc-2", 2L, "pipeline-2")).get()
                 .extracting(bindings -> bindings.fragment().getUuid()).isEqualTo("fragment-t");
 
-        // Kept for as long as a node is told to keep them, and no longer: a row per output stream is a
-        // row per stream (design 01 §12 item 8).
+        // Output rows are kept only for the configured retention period, since there is a row for every
+        // stream processed.
         assertThat(outputs.prune(now() - 60_000L)).describedAs("nothing old enough yet").isZero();
         assertThat(outputs.prune(now() + 60_000L)).isGreaterThanOrEqualTo(3);
         assertThat(outputs.boundBy("rule-1", "fragment-1")).isEmpty();
@@ -723,8 +729,8 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void theSupervisorSeesEveryDocumentsAttemptsNarrowedByWhatAPersonKnows() {
-        // A28: the Supervisor is a view of every document's attempts, not a tab on one, filtered by the
-        // things a person looking for an attempt would know.
+        // The Supervisor lists the attempts of every document the person may see, not just one, filtered
+        // by things a person looking for an attempt would know.
         final String doc = "doc-" + System.nanoTime();
         final String other = "doc-" + System.nanoTime() + "-other";
         final long first = attempts.opened(new Attempt(new Learner("pipeline-" + doc, "learningFlow"), doc,
@@ -759,7 +765,7 @@ class TestLearnerStatesAndAttemptsDao {
                 List.of(AttemptStatus.PROMOTED))))
                 .describedAs("and by what it came to").containsExactly(first);
 
-        // A page, and how many there are to page through.
+        // A page, and the total number of attempts to page through.
         final Page page = attempts.found(new AttemptCriteria(new PageRequest(0, 1), null, doc, null, null,
                 null), List.of(doc, other));
         assertThat(page.attempts()).hasSize(1);
@@ -778,9 +784,9 @@ class TestLearnerStatesAndAttemptsDao {
 
     @Test
     void whatIsOverIsPrunedAndWhatIsNotIsKept() {
-        // Design 01 §12 item 8: one row per attempt and one per turn is the fastest-growing thing this
-        // feature writes. An attempt still learning, still waiting for the model, or waiting for a person
-        // to decide is never pruned however old it is: age is not what says an attempt is over.
+        // One row per attempt and one per turn grows faster than anything else this feature writes, so old
+        // attempts are pruned. An attempt still learning, waiting for the model, or waiting for a person to
+        // decide is never pruned however old it is, because age does not mean it has finished.
         final String doc = "doc-" + System.nanoTime() + "-prune";
         final long finished = attempts.opened(new Attempt(
                 new Learner("pipeline-" + doc + "-finished", "learningFlow"),
@@ -818,11 +824,10 @@ class TestLearnerStatesAndAttemptsDao {
         return System.currentTimeMillis();
     }
 
-    /// A supervisor's messages as rows (A46): kept per learner, read oldest first, and taken back by id.
+    /// Guidance is kept per learner, read back oldest first, and withdrawn by id.
     ///
-    /// Per learner and not per attempt, which is the ruling's first decision: what a person knows is
-    /// about the feed, so a hint outlives the attempt that first used it and the relearning of A29 months
-    /// later carries it too.
+    /// It is kept per learner rather than per attempt because what a person knows is about the feed, so a
+    /// message outlives the attempt that first used it, and a relearning months later uses it too.
     @Test
     void whatASupervisorSaysIsKeptAgainstTheLearner() {
         final long first = guidance.given(LEARNER, DOC, "Timestamps are local, not UTC.", "jo");

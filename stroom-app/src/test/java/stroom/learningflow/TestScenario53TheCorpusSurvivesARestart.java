@@ -81,19 +81,22 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 53 at Tier 2 — design 04 §7, phase 3's exit: **the corpus is durable.**
+/// Tests that a learner's corpus is durable, so that it still holds a later session to its standard after
+/// a restart.
 ///
-/// A binding is learned in a processor task on a real feed, and what it was accepted on is written where a
-/// node keeps it: a stream on the source feed, of the corpus's own type, one entry per segment, with a
-/// row per entry in the database naming the stream and the segment. Nothing of it is held in memory by
-/// anything — the stored set reads the rows and the stream every time it is asked — so a stage built
-/// afresh, as the Supervisor builds one for every request, finds the corpus as the task left it. That is
-/// what a restart between the session that filled it and the one it refuses comes to in a test that
-/// cannot restart a node: no object survives from the one to the other but the rows and the stream.
+/// A binding is learned in a processor task on a real feed. The records it was accepted on are written
+/// where a node keeps them: a stream of the corpus type on the source feed, with one entry per segment,
+/// and a database row per entry naming the stream and segment. Nothing is held in memory, because the
+/// stored corpus reads the rows and the stream each time it is asked. A Learning Flow stage created
+/// afresh, as the Supervisor creates one for every request, therefore finds the corpus as the task left
+/// it. A test cannot restart a node, so this is how it simulates one: nothing but the rows and the stream
+/// survives from one session to the next.
 ///
-/// The later sessions are improvements (A46), as scenario 53's are at Tier 1: a candidate that turns an
-/// admission into a translation is accepted and the corpus grows by a second stream; one that would turn
-/// a translated record back into an Unknown is refused, and the refusal names the entry (A66).
+/// The later sessions are improvements requested by a person, as in the module's
+/// `TestScenario53TheCorpusHoldsACandidateToNoWorse`. A candidate that translates a record that was
+/// previously admitted as a marked Unknown is accepted, and the corpus grows by a second stream. A candidate
+/// that would turn a translated record back into an Unknown is rejected, and the rejection names the corpus
+/// entry.
 class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegrationTest {
 
     private static final String FEED = DemoContentPack.FEEDS.get(0);
@@ -102,7 +105,7 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
     private static final String TRANSLATES_BOTH = Scenarios.resource("csv-logon.xsl");
     private static final String ADMITS_LOGOFF = Scenarios.resource("csv-logon-unknown.xsl");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -144,7 +147,8 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         final DocRef document = document();
         filter(pipeline(document));
 
-        // Learned in a task: the stylesheet admits a logoff rather than translating it.
+        // Learn in a task, with a stylesheet that admits a logoff as a marked Unknown rather than
+        // translating it.
         advisor.set(script(CSV.configuration(), ADMITS_LOGOFF));
         rawStream(MIXED);
         processOne();
@@ -153,7 +157,7 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         assertThat(result.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR)).isZero();
         final Binding binding = learnerBindings.forLearner(learner).get(0);
 
-        // Where a node keeps it: one stream of the corpus's type on the source feed, a line per entry.
+        // The corpus is one stream of the corpus type on the source feed, with one line per entry.
         final List<Meta> corpusStreams = corpusStreams();
         assertThat(corpusStreams).hasSize(1);
         assertThat(corpusStreams.get(0).getFeedName()).isEqualTo(FEED);
@@ -171,8 +175,9 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
             assertThat(entry.attemptId()).describedAs("the attempt that accepted it").isNotNull();
         });
 
-        // A session after a restart: a stage built afresh, as the Supervisor builds one, learning from the
-        // corpus put back together. The candidate translates what was admitted, and is accepted.
+        // A session after a simulated restart, from a stage created afresh as the Supervisor creates one,
+        // using the corpus read back from storage. The candidate translates what was admitted as Unknown,
+        // and is accepted.
         final String better = improve(document, binding, TRANSLATES_BOTH);
         assertThat(better).describedAs(better).startsWith("Rebound");
         assertThat(corpusStreams()).describedAs("a second promotion, a second stream").hasSize(2);
@@ -184,8 +189,8 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         assertThat(grown).hasSize(12);
         assertThat(grown.subList(6, 12)).extracting(Accepted::kind).containsOnly(Kind.TRANSLATION);
 
-        // And one more, that would turn a record that now translates back into an admission: refused by
-        // the corpus, naming the entry, and the binding serves on as it was.
+        // One more candidate would turn a record that now translates back into an Unknown. The corpus
+        // rejects it, naming the entry, and the existing binding continues to serve.
         final Binding rebound = learnerBindings.forLearner(learner).get(0);
         final String worse = improve(document, rebound, ADMITS_LOGOFF);
         assertThat(worse).describedAs(worse)
@@ -196,10 +201,11 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
         assertThat(corpusStreams()).hasSize(2);
     }
 
-    /// A person's *Improve*, asked and then carried on by the worker (A46): the ask opens an attempt and
-    /// parks it at its first question, and the Deferred Learning job is what puts them. So what the
-    /// improvement came to is read back from the attempt, in the words the one switch that describes
-    /// every decision puts it, rather than returned from the call that asked.
+    /// Runs a person's *Improve* request and returns the decision it reached.
+    ///
+    /// The request opens an attempt that waits at its first question, and the Deferred Learning job asks
+    /// the model. The outcome is therefore read back from the attempt's recorded decision text, rather
+    /// than returned by the call that made the request.
     private String improve(final DocRef document, final Binding binding, final String stylesheet) {
         final Script script = script(CSV.configuration(), stylesheet);
         advisor.set(script);
@@ -218,16 +224,17 @@ class TestScenario53TheCorpusSurvivesARestart extends AbstractProcessIntegration
                 .toList();
     }
 
-    /// The demo document, allowing Unknown in EventDetail so that an admission clears the bar, and holding
-    /// nothing out so that the sample is the whole six-record stream. The model is left off: the script
-    /// answers.
+    /// Creates a document configured as the demo document is, with two changes. The extraction quality
+    /// check allows Unknown in `EventDetail`, so that an admitted record clears the bar, and nothing is held
+    /// out, so that the sample is the whole six-record stream. There is no model, because the scripted
+    /// advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName());
         final LearningFlowDoc configured = DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .heldOutFraction(0.0)
                 .build();

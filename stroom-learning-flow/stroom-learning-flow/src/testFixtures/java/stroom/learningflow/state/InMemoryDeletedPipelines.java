@@ -24,9 +24,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/// The deleted pipelines as a map of uuid to when each was marked: what scenarios inspect, node-local and
-/// gone on restart. Every pipeline is taken to keep some learning, since a scenario marks only one that
-/// does. Every method is synchronised: one node's tasks share it.
+/// An in-memory [DeletedPipelines], held as a map from pipeline UUID to when it was marked deleted, which
+/// scenarios can inspect. It is local to one node and lost on restart. Unlike the database implementation,
+/// it marks every pipeline it is told about, since a scenario only deletes pipelines that have learned
+/// something. Every method is synchronised, because one node's tasks share it.
 public final class InMemoryDeletedPipelines implements DeletedPipelines {
 
     private final Map<String, Long> marks = new HashMap<>();

@@ -44,13 +44,19 @@ import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 
-/// A Smart Pipeline's **Quality Assurance** tab, for a QA person judging one pipeline's translated output on its
-/// own: which of its Smart Pipeline elements, where it has more than one; the overall figures its translation is
-/// judged by ([QualityFigures]), each with what it rests on and coloured where it calls for attention; its
-/// **volume** day by day, as a chart ([VolumeChart]) and, folded, a table; **what its records became** (its
-/// cardinality); **samples** of those records beside what they became; and each learning run's score, newest
-/// first. Where there is nothing to judge, a sentence says why.
-/// [QualityTabController] fills it.
+/// A pipeline's Quality Assurance tab, for a person checking the quality of one Smart Pipeline's translated
+/// output.
+///
+/// It shows, in order:
+/// - a choice of Smart Pipeline element, if the pipeline has more than one;
+/// - the headline figures the translation is judged by ([QualityFigures]), each with the basis for it and
+///   coloured when it needs attention;
+/// - the volume of data day by day, as a chart ([VolumeChart]) and in a collapsible table;
+/// - what the records were translated into (the cardinality);
+/// - samples of the records, each beside its translated output;
+/// - the score of each learning run, newest first.
+///
+/// When there is nothing to show, a message says why. [QualityTabController] fills it.
 public class QualityTab extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -134,19 +140,19 @@ public class QualityTab extends Component {
                 300);
     }
 
-    /// @param dates Says when a run started, as the user likes dates, from its time in milliseconds.
+    /// @param dates Formats a time in milliseconds as a date and time in the user's preferred format.
     public void setDateFormat(final LongFunction<String> dates) {
         this.dates = dates;
     }
 
-    /// @param dayLabels Names a day (UTC) from its start in milliseconds, e.g. "17 Nov".
+    /// @param dayLabels Formats the start of a day (UTC) in milliseconds as a short label, e.g. "17 Nov".
     public void setDayFormat(final LongFunction<String> dayLabels) {
         this.dayLabels = dayLabels;
     }
 
-    /// Shows the volume and what the records of the translation in use became.
+    /// Shows the daily volume and the cardinality of the translation in use.
     ///
-    /// @param report The pipeline's report.
+    /// @param report The quality report for the chosen element.
     public void showReport(final QualityReport report) {
         final List<VolumeDay> window = report.getDays() == null
                 ? List.of()
@@ -166,7 +172,7 @@ public class QualityTab extends Component {
         cardinality.setVisible(cardinality.getWidgetCount() > 0);
     }
 
-    /// Shows records the translation in use was learned and checked on, beside what they became.
+    /// Shows sample records that the translation in use was learned and checked on, each beside its output.
     ///
     /// @param shown The samples, newest first.
     public void showSamples(final List<QualitySample> shown) {
@@ -180,19 +186,20 @@ public class QualityTab extends Component {
                 : PlainWords.count(shown.size(), "record") + ", newest first.");
     }
 
-    /// Says why no samples are shown, e.g. that the person may not view the data.
+    /// Shows a message in place of the samples, e.g. that the user is not permitted to view the data.
     ///
-    /// @param why What to say.
+    /// @param why The message.
     public void showSamplesNote(final String why) {
         samples.clear();
         samples.setVisible(false);
         samplesNote.setText(why);
     }
 
-    /// The pipeline's Smart Pipeline elements: the choice of them is offered only where there is more than one.
+    /// Sets the pipeline's Smart Pipeline elements. The choice of element is shown only if there is more than
+    /// one.
     ///
-    /// @param elements Its Smart Pipeline elements.
-    /// @param chosen   The one shown.
+    /// @param elements The pipeline's Smart Pipeline elements.
+    /// @param chosen   The element to show.
     public void setElements(final List<PipelineAiElement> elements, final PipelineAiElement chosen) {
         element.clear();
         element.addItems(elements);
@@ -200,10 +207,10 @@ public class QualityTab extends Component {
         chooser.setVisible(elements.size() > 1);
     }
 
-    /// Shows the figures of the element chosen, and its learning runs.
+    /// Shows the headline figures and the learning runs of the chosen element.
     ///
-    /// @param shown       Its figures.
-    /// @param learnedRuns Its learning runs, newest first.
+    /// @param shown       The element's figures.
+    /// @param learnedRuns The element's learning runs, newest first.
     public void showQuality(final QualityFigures shown, final List<SupervisorAttempt> learnedRuns) {
         nothing.setVisible(false);
         content.setVisible(true);
@@ -219,21 +226,23 @@ public class QualityTab extends Component {
         runs.setRowCount(learnedRuns.size(), true);
     }
 
-    /// Says why there is nothing to judge for the element chosen, e.g. that it hasn't learned anything yet.
+    /// Shows a message, in place of the tab's content, explaining why there is nothing to show for the chosen
+    /// element, e.g. that it has not learned anything yet.
     ///
-    /// @param why What to say.
+    /// @param why The message.
     public void showNothing(final String why) {
         nothing.setText(why);
         nothing.setVisible(true);
         content.setVisible(false);
     }
 
-    /// @param onElement Told the element the user chooses.
+    /// @param onElement Called with the element the user chooses.
     public void setOnElement(final Consumer<PipelineAiElement> onElement) {
         this.onElement = onElement;
     }
 
-    // A record beside what it became: what it is and scored, then the record as received and its output
+    // Builds one sample: a heading with the record's kind, target, score and acceptance date, then the record
+    // as received beside its output
     private AriaPanel sample(final QualitySample sample) {
         final AriaPanel item = new AriaPanel();
         item.setRole("listitem");
@@ -278,7 +287,7 @@ public class QualityTab extends Component {
         return side;
     }
 
-    // One figure: what it is, its value, and what it rests on, coloured by its tone
+    // Builds one figure: its label, its value and its note, coloured according to its tone
     private static AriaPanel figure(final Figure figure) {
         final AriaPanel item = new AriaPanel();
         item.setRole("listitem");

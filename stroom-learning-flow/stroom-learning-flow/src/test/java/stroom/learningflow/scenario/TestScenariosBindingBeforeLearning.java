@@ -63,18 +63,17 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Design 02 §5, scenarios 14 and 29, and the draft-binding sentinel of 22: what the stage does
- * with a stream before — or instead of — asking the model. Every scenario here runs with an empty
- * script: a question asked is the failure.
- */
+/// Tests what the stage does with a stream before, or instead of, asking the model.
+///
+/// This covers learning being disabled, too few records to promote automatically, a draft binding awaiting
+/// review, another node already learning for the learner, and how attempts are recorded and resumed. Most
+/// tests check the model is not asked at all, using an empty script, so any question asked is a failure.
 class TestScenariosBindingBeforeLearning {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// The document every scenario here runs: learning automatically, keyed as every document now is on
-    /// feed and type (design 06 phase J slice 2a).
+    /// Builds the document every test here uses, learning automatically.
     private static LearningFlowDoc doorAccess() {
         return Scenarios.document()
                 .uuid("doc-1")
@@ -98,8 +97,10 @@ class TestScenariosBindingBeforeLearning {
                 .build();
     }
 
-    /// Another node already learning for this learner, as the claim of A45 has it: the row that a stage meeting
-    /// the learner finds instead of taking it.
+    /// Opens an attempt for the learner on another node, so that a stage meeting the learner finds it already
+    /// claimed instead of claiming it.
+    ///
+    /// @return The ID of the other node's attempt.
     private static long heldByAnotherNode(final Scenarios scenarios, final long untilMs) {
         return scenarios.attempts.opened(new Attempt(Scenarios.LEARNER, "doc-1", "DOOR-ACCESS",
                 "Raw Events", 99L,
@@ -111,9 +112,7 @@ class TestScenariosBindingBeforeLearning {
         return new Input(1L, "DOOR-ACCESS", "Raw Events", Map.of("Format", format), CSV.input());
     }
 
-    /**
-     * Learns a CSV stream (Format=CSV) with a scripted model, so that the learner is bound.
-     */
+    /// Learns a CSV stream (Format=CSV) with a scripted model, so that the learner is bound.
     private static StageRun learnDoorAccess(final Scenarios scenarios, final LearningFlowDoc doc) {
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -125,23 +124,20 @@ class TestScenariosBindingBeforeLearning {
         return run;
     }
 
-    // Scenarios 25 and 26 are retired with routing (design 06 phase J slice 2a): a learner is one element in
-    // one pipeline, so there is no neighbouring learner for an existing binding to fit, and no binding to
-    // reserve one.
+    // There are no tests of one learner's binding serving or reserving another learner's streams: a learner
+    // is one element in one pipeline, so no other learner can share its binding.
 
-    // Scenario 38 (read a record back by the span the parser recorded) is retired with the record spans
-    // themselves (simplification option F, Track 2 step 1): the column was written for every learned
-    // stream and read by nothing but its own test. What the scenario was for — putting a fault back to
-    // the model with the record that made it — is the regression corpus's job, and it keeps the record's
-    // own text (A56).
+    // There is no test of reading a record back from the span the parser recorded, because record spans are
+    // not stored. Showing the model the record that caused a fault is done through the regression corpus,
+    // which keeps each record's own text.
 
     @Test
     void scenario29DisabledLearnsNothingAndTheStreamWaits() {
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc disabled = doorAccess().copy().learningMode(LearningMode.DISABLED).build();
 
-        // A stream nothing serves waits for a person (design 04 §3, the kill switch): no session opens and
-        // the model is never asked.
+        // With learning disabled, a stream nothing serves waits for a person: no session opens and the model
+        // is never asked.
         final Script silent = Script.of();
         final StageRun waiting = scenarios.process(silent, disabled, stream("CSV")).learned();
         assertThat(waiting.decision()).isInstanceOf(Deferred.class);
@@ -152,10 +148,9 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void scenario14TooFewRecordsDraftsForAPersonEvenOnAnAutomaticFlow() {
-        // SIM-3 option E: a first result learned from too few records for a held-out judgement (A14) is
-        // never approved by the system. There is no provisional state any more; even on an automatic
-        // Learning Flow the result is a draft, and a person approves it or a later session learns from
-        // more data. "When in doubt, it is a draft."
+        // A first result learned from too few records to be judged on records the model never saw is never
+        // approved automatically. Even with automatic promotion the result is a draft, and either a person
+        // approves it or a later session learns from more data.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doorAccess().copy().minRecordsToLearn(10).build();
         assertThat(doc.getPromotionMode()).isEqualTo(PromotionMode.AUTOMATIC);
@@ -164,8 +159,8 @@ class TestScenariosBindingBeforeLearning {
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
 
-        // Seven lines — six records and a header — against a minimum of ten: the candidate clears the
-        // floor, but there are not enough records to judge it on, so it waits for a person.
+        // Seven lines (six records and a header) against a minimum of ten: the candidate passes its checks,
+        // but there are not enough records to judge it on, so it waits for a person.
         final StageRun first = scenarios.process(script, doc, stream("CSV")).learned();
         script.verifyExhausted();
         assertThat(first.decision()).isInstanceOf(Drafted.class);
@@ -186,7 +181,8 @@ class TestScenariosBindingBeforeLearning {
                 .startsWith("Awaiting review: draft binding " + draft.getUuid());
         assertThat(silent.asked()).isEmpty();
 
-        // A person approves it: it goes live, with the records it was learned from behind it, and serves.
+        // A person approves it, and it goes live with the records it was learned from in its corpus, and
+        // serves.
         scenarios.promotion().approve(first.doc(), draft.getUuid(), null);
         final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(live.getUuid()).isEqualTo(draft.getUuid());
@@ -200,8 +196,8 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void aDraftBindingIsNotBoundAndItsLearnerWaits() {
-        // The serving half of scenario 22 (A25; design 04 §3): a draft serves nothing; a stream of
-        // its learner waits behind it, naming it, and the model is not asked again.
+        // As in TestScenario22ReviewMode, a draft serves nothing: a stream of its learner waits behind it,
+        // naming it, and the model is not asked again.
         final Scenarios scenarios = new Scenarios();
         final StageRun learned = learnDoorAccess(scenarios, doorAccess());
         final Binding live = ((Promoted) learned.decision()).binding();
@@ -220,9 +216,9 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void aSecondNodeMeetingTheSameLearnerWaitsWithoutHoldingAThread() {
-        // A42, A45; design 04 §3: one attempt per learner across the cluster, and the open attempt is what
-        // says so. The loser's task does not block — that would hold a processing thread for the length of
-        // an attempt — it defers, on a row, and the winner's promotion wakes it.
+        // There is one attempt per learner across the cluster, and the open attempt is what records it. The
+        // task on the node that did not get the claim does not block, which would hold a processing thread
+        // for the length of an attempt. It defers instead, and the other node's promotion wakes it.
         final Scenarios scenarios = new Scenarios();
         final long held = heldByAnotherNode(scenarios, Long.MAX_VALUE);
 
@@ -239,7 +235,7 @@ class TestScenariosBindingBeforeLearning {
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 1L)).isPresent();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
 
-        // That attempt over, the next stream of the learner learns, and the stream that waited is woken.
+        // Once that attempt is over, the learner's next stream learns, and the stream that waited is woken.
         scenarios.attempts.closed(held, AttemptStatus.ABANDONED, "The other node gave up", null, null, 0L);
         final StageRun learned = learnDoorAccess(scenarios, doorAccess());
 
@@ -249,9 +245,10 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void twoStagesSharingTheStateAreOneLearner() {
-        // Not a lease planted by hand: two stages over one state, as two nodes are, each taking the lease
-        // for itself. The first holds it until its binding is written — a second node that took it in between
-        // would find no binding for the learner, learn again, and append a second binding for one learner.
+        // Rather than a lease set up by hand, this uses two stages sharing one state, as two nodes do, each
+        // taking the lease for itself. The first must hold it until its binding is written; a second node
+        // that took it in between would find no binding for the learner, learn again, and append a second
+        // binding for the same learner.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doorAccess();
         final Script watching = Script.of();
@@ -263,8 +260,9 @@ class TestScenariosBindingBeforeLearning {
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        // The other node arrives at the moment the binding is written: the model has been asked and answered,
-        // so a lease released when the conversation ended would be free, and it would learn for the learner again.
+        // The other node arrives at the moment the binding is written. The model has been asked and has
+        // answered, so if the lease were released when the conversation ended, the other node would learn
+        // for the learner again.
         final LearnerBindings watched = new LearnerBindings() {
             @Override
             public List<Binding> forLearner(final Learner learner) {
@@ -307,9 +305,10 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void aClaimThatHasLapsedStillHoldsTheLearner() {
-        // The holder died mid-attempt: its claim has run out, and the learner is still its — the session is
-        // carried on from its recorded turns by the next worker to find it (design 04 §4, scenario 58),
-        // not learned again from nothing by the next stream.
+        // The holder died mid-attempt and its claim has expired, but the learner still belongs to that
+        // attempt. The session is resumed from its recorded turns by the next worker to find it (as in
+        // TestScenario58ASessionWhoseNodeDiesIsCarriedOnByAnother), not learned again from scratch by the
+        // next stream.
         final Scenarios scenarios = new Scenarios();
         final long held = heldByAnotherNode(scenarios, Scenarios.NOW.toEpochMilli() - 1);
         final Script silent = Script.of();
@@ -324,9 +323,8 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void everyAttemptIsRecordedWithItsTurnsAndWhatItCameTo() {
-        // A28: the record outlives the node that made it, and is the same record whichever mode produced
-        // it. What it does not carry is the rendered prompt, which holds the stream's own text and waits
-        // for redaction (A17, A38).
+        // The attempt record outlives the node that made it. It does not store the rendered prompt, because
+        // that holds the stream's own text, which may need redacting.
         final Scenarios scenarios = new Scenarios();
 
         final StageRun learned = learnDoorAccess(scenarios, doorAccess());
@@ -358,7 +356,8 @@ class TestScenariosBindingBeforeLearning {
     @Test
     void anAttemptThatBoundNothingSaysSoAndOneWhoseLearnerIsTakenOpensNone() {
         final Scenarios scenarios = new Scenarios();
-        // Nothing to learn with: the attempt is opened, abandoned and recorded as abandoned.
+        // The document allows nothing the stage can learn a translation with, so the attempt is opened and
+        // then recorded as abandoned.
         final LearningFlowDoc nothingRunnable = doorAccess().copy()
                 .allowedElements(List.of("JSONParser"))
                 .build();
@@ -370,7 +369,7 @@ class TestScenariosBindingBeforeLearning {
         assertThat(recorded.get(0).status()).isEqualTo(AttemptStatus.ABANDONED);
         assertThat(recorded.get(0).bindingUuid()).isNull();
 
-        // A node that does not take the learner opens no attempt of its own: it did not learn anything.
+        // A node that cannot claim the learner opens no attempt of its own, since it learns nothing.
         heldByAnotherNode(scenarios, Long.MAX_VALUE);
         scenarios.process(Script.of(), doorAccess(), stream("CSV")).learned();
 
@@ -381,14 +380,14 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void whatAnAttemptSpentIsCountedFromOneAdvisor() {
-        // The node's Advisors makes a new advisor per call, each counting its own tokens, so an attempt
-        // that asked one and read another would record nothing spent — which is what it did.
+        // The node's `Advisors` makes a new advisor per call, each counting its own tokens. An attempt that
+        // asked one advisor and read the count from another would record nothing spent.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
-        // A fresh advisor per call, as the node's does, each charging as it is asked.
+        // A new advisor per call, as the node's `Advisors` makes, each charging as it is asked.
         final Advisors fresh = document -> new CountingAdvisor(script);
 
         final StageRun run = scenarios.process(fresh, scenarios.learnerBindings, null, doorAccess(), stream("CSV"))
@@ -407,7 +406,7 @@ class TestScenariosBindingBeforeLearning {
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(() -> {
-                    // Mid-attempt: the chain question is already a row, answered and judged.
+                    // Mid-attempt, the chain question is already recorded, answered and judged.
                     final Recorded far = scenarios.attempts.forDocument("doc-1", 10).get(0);
                     assertThat(far.status()).isEqualTo(AttemptStatus.IN_PROGRESS);
                     assertThat(far.turns()).isNotEmpty();
@@ -430,15 +429,15 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void anAttemptThatStopsAtAQuestionIsCarriedOnFromWhatItWasAnswered() {
-        // A28 and A45: an attempt parked at a question keeps its claim on the learner, and the answers it
-        // already has are not asked again. The conversation keeps no state of its own — it is re-walked with
-        // those answers, which re-derives what they produced.
+        // An attempt waiting at a question keeps its claim on the learner, and the questions it already has
+        // answers for are not asked again. The conversation keeps no state of its own: it is replayed with
+        // those answers, which recreates what they produced.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doorAccess();
         scenarios.documents.put(doc);
         scenarios.inputs.put(stream("CSV"));
 
-        // The task opens the session and parks it at its first question (design 04 §3).
+        // The task opens the session and leaves it waiting at its first question.
         final StageRun parked = scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER, stream("CSV"));
         assertThat(parked.decision()).describedAs(parked.decision().toString()).isInstanceOf(Deferred.class);
         final Recorded waiting = scenarios.attempts.forDocument("doc-1", 10).get(0);
@@ -448,15 +447,15 @@ class TestScenariosBindingBeforeLearning {
                 .describedAs("which nobody has answered, so a person can (A28)").isNull();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
 
-        // While it waits it holds the learner: another stream of it learns nothing beside it.
+        // While it waits it holds the learner, so another stream of the learner learns nothing alongside it.
         final Script other = Script.of();
         assertThat(scenarios.process(other, doc, new Input(2L, "DOOR-ACCESS", "Raw Events",
                 Map.of("Format", "CSV"), CSV.input())).learned().decision()).isInstanceOf(Deferred.class);
         assertThat(other.asked()).isEmpty();
         assertThat(scenarios.attempts.forDocument("doc-1", 10)).hasSize(1);
 
-        // A person answers the chain, and the worker carries it on: the chain is answered from the
-        // record, so the model is asked only what the attempt had not reached.
+        // A person answers the chain question, and the attempt is resumed: the chain is answered from the
+        // record, so the model is asked only the questions the attempt had not reached.
         scenarios.supervisorActions().amend(doc, waiting.id(), waiting.turns().get(0).number(),
                 "DSParser -> XSLTFilter", "a person");
         final Script carrying = scenarios.script(CSV.configuration(), XSLT)
@@ -479,9 +478,9 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void anAttemptIsOnlyCarriedOnByWhoeverHoldsIt() {
-        // A45: carrying an attempt on is taking its learner's claim. A parked attempt is nobody's — no
-        // thread is behind it — so any node's worker may take it; one that is *running* on another node,
-        // or one that has finished, would learn beside the node that is learning.
+        // Resuming an attempt means claiming its learner. A waiting attempt has no thread working on it, so
+        // any node's worker may claim it. An attempt running on another node must not be resumed, or two
+        // nodes would learn at once, and nor must one that has finished.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doorAccess();
         final Script started = scenarios.script(CSV.configuration(), XSLT)
@@ -489,7 +488,7 @@ class TestScenariosBindingBeforeLearning {
         scenarios.process(new StoppingAdvisor(started, 1), doc, stream("CSV")).learned();
         final Recorded waiting = scenarios.attempts.forDocument("doc-1", 10).get(0);
 
-        // Running on another node, whose claim holds.
+        // The attempt is running on another node, whose claim is still in force.
         final long until = Scenarios.NOW.toEpochMilli() + 60_000L;
         assertThat(scenarios.attempts.claimed(waiting.id(), "node-1", Scenarios.NOW.toEpochMilli(), until))
                 .describedAs("a parked attempt is anyone's to take, which is how the worker takes it")
@@ -503,7 +502,7 @@ class TestScenariosBindingBeforeLearning {
         assertThat(elsewhere.asked()).isEmpty();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).isEmpty();
 
-        // Finished, and not carried on either.
+        // A finished attempt is not resumed either.
         scenarios.node = "node-1";
         final Stage stage = scenarios.stage(Script.of());
         scenarios.attempts.closed(waiting.id(), AttemptStatus.ABANDONED, "Given up", null, null, 0L);
@@ -513,9 +512,9 @@ class TestScenariosBindingBeforeLearning {
 
     @Test
     void aReplayThatNoLongerFitsTheRecordIsRefusedRatherThanMisfed() {
-        // A45: the replay is a check, not an assumption. A document edited while its attempt waited puts
-        // different questions, and answering those from the record would judge, configure and possibly
-        // bind an answer given to something else.
+        // The replay checks that each question matches the record rather than assuming it does. A document
+        // edited while its attempt waited asks different questions, and answering those from the record
+        // would judge, configure and possibly bind an answer that was given to a different question.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doorAccess();
         final Script started = scenarios.script(CSV.configuration(), XSLT)
@@ -548,8 +547,8 @@ class TestScenariosBindingBeforeLearning {
     // --------------------------------------------------------------------------------
 
 
-    /// An advisor that answers so many questions and then stops, as a deferred attempt does when its
-    /// budget says to wait for the worker (A5, A28).
+    /// An advisor that answers a given number of questions and then stops, leaving the attempt waiting for
+    /// the worker, as an attempt opened by a processing task does.
     private static final class StoppingAdvisor implements Advisor {
 
         private final Advisor delegate;
@@ -574,7 +573,7 @@ class TestScenariosBindingBeforeLearning {
     // --------------------------------------------------------------------------------
 
 
-    /// An advisor that charges for what it is asked, as the node's does.
+    /// An advisor that charges 100 tokens for each question it is asked, as the node's advisor charges.
     private static final class CountingAdvisor implements Advisor {
 
         private final Advisor delegate;

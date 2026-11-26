@@ -18,18 +18,16 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * The texts of the flow's questions a document may override (design 01 §10.2): the system text, the four questions, and
- * the three passages of rules the questions share. Each names the variables it may use; the built-in text and
- * the rendering are the server's ({@code QuestionText}).
- */
+/// The prompt texts a Learning Flow document may override: the system text, the question for each kind of
+/// step, and the shared passages of rules and target description that the questions include. Each names the
+/// variables it may use. The built-in text and the rendering are on the server (`QuestionText`).
 public enum Template implements HasDisplayValue {
     SYSTEM("System text", "instructions", "demands"),
     CHAIN("Chain question", "headers", "elements", "sample", "feedback"),
     SPLIT("Split question", "headers", "elementType", "documentType", "splitRules", "sample", "feedback"),
     SPLIT_XML("Split question, XML input", "headers", "sample", "feedback"),
     SPLIT_JSON("Split question, JSON input", "headers", "sample", "feedback"),
-    /// Task 7: `targetRecord` is the element one record becomes, e.g. `<Event>`.
+    /// `targetRecord` is the element one record becomes, e.g. `<Event>`.
     TARGET("Target question", "headers", "kind", "total", "transformationRules", "record", "feedback",
             "targetRecord"),
     CONFIGURATION("Configuration question", "headers", "elementType", "documentType", "rules", "input", "split",
@@ -38,17 +36,16 @@ public enum Template implements HasDisplayValue {
             "targets", "previous", "feedback", "marker", "admitted"),
     SPLIT_RULES("Split rules"),
     EXTRACTION_RULES("Extraction rules"),
-    /// Task 7: the schema a translation must write is a setting on the Learning Flow, so the namespace,
-    /// the `xsi:schemaLocation`, the version and the root element are variables here rather than words, and
-    /// so are the element one record becomes, with its article (`aTargetRecord`, e.g. "an Event"), and the
-    /// rule against event-logging's untyped `Data` and `Unknown` (`untypedRule`), which is empty for any
-    /// other schema.
+    /// The target schema is a setting on the Learning Flow document, so its namespace, `xsi:schemaLocation`,
+    /// version and root element are variables here rather than fixed text. So are the element one record
+    /// becomes, with its article (`aTargetRecord`, e.g. "an Event"), and the rule against event-logging's
+    /// untyped `Data` and `Unknown` (`untypedRule`), which is empty for any other schema.
     TRANSFORMATION_RULES("Transformation rules",
             "targetNamespace", "targetSchemaLocation", "targetVersion", "targetRoot", "targetStructure",
             "aTargetRecord", "untypedRule"),
-    /// What the target schema says a document of it holds (task 7, decision D2 option G). Its built-in
-    /// text is event-logging's, written by hand; for any other schema it is generated from the XSD. A
-    /// Learning Flow that overrides it says what it wants for its own schema, whichever that is.
+    /// A description of what a document in the target schema contains. The built-in text, written by hand,
+    /// describes event-logging; for any other schema the description is generated from the XSD. A Learning
+    /// Flow document can override it to describe its own schema in its own words.
     TARGET_STRUCTURE("Target structure");
 
     private final String displayValue;
@@ -64,9 +61,7 @@ public enum Template implements HasDisplayValue {
         return displayValue;
     }
 
-    /**
-     * The names a {@code ${name}} slot in this template may carry.
-     */
+    /// @return The variable names that may appear in this template as `${name}` placeholders.
     public String[] getVariables() {
         return variables;
     }

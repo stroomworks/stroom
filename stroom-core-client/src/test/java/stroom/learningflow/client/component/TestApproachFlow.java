@@ -102,7 +102,7 @@ class TestApproachFlow {
 
     @Test
     void deletingAStepTakesTheRulesThatWentToIt() {
-        // Escalating: the parser goes back to split on yield-short
+        // In the Escalating flow, the parser step has a rule going back to the split step on yield-short
         final int split = indexOf(ESCALATING, QuestionKind.SPLIT);
         final List<FlowStep> deleted = ApproachFlow.delete(ESCALATING, split);
         assertThat(deleted).hasSize(ESCALATING.size() - 1);
@@ -131,15 +131,15 @@ class TestApproachFlow {
                 StepOutcome.PRESERVATION_SHORT, null);
         assertThat(parserConditions).doesNotContain(StepOutcome.CONFORMANCE_SHORT,
                 StepOutcome.PERMITTED_SHORT);
-        // Running out of tries is last
+        // Running out of tries (null) is always the last condition
         assertThat(parserConditions.get(parserConditions.size() - 1)).isNull();
 
         final FlowStep transform = DIRECT.get(2);
         assertThat(ApproachFlow.conditions(transform)).contains(StepOutcome.CONFORMANCE_SHORT,
                 StepOutcome.FIDELITY_SHORT).doesNotContain(StepOutcome.COVERAGE_SHORT);
 
-        // A step no longer names checks of its own: its kind's are always offered, and an outcome a rule
-        // names is offered with them, so that nothing a flow says disappears from the menu
+        // The conditions are those of the checks for the step's kind, plus any outcome an existing rule
+        // already uses, so that no rule's condition disappears from its menu
         final FlowStep named = ApproachFlow.withRules(transform,
                 List.of(new Transition(StepOutcome.RUN_FAILED, "parser")));
         assertThat(ApproachFlow.conditions(named)).contains(StepOutcome.CONFORMANCE_SHORT,
@@ -149,7 +149,7 @@ class TestApproachFlow {
     @Test
     void aStepsChecksAreItsKindsWhateverTheStepSays() {
         // A check applies to every step it can measure: a parser step is judged on its records, a transform
-        // step on the events it makes, and a Configure step that does both on either
+        // step on the events it makes, and a Configure step that writes both on either
         assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.SPLIT)))
                 .containsExactly(Check.COVERAGE, Check.YIELD, Check.WHOLENESS);
         assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.TARGET)))
@@ -157,10 +157,10 @@ class TestApproachFlow {
         assertThat(ApproachFlow.checksFor(DIRECT.get(2)))
                 .contains(Check.CONFORMANCE, Check.FIDELITY)
                 .doesNotContain(Check.COVERAGE);
-        // Choosing the elements isn't judged by a quality check
+        // The step that chooses the elements is not judged by any quality check
         assertThat(ApproachFlow.checksFor(FlowStep.of(QuestionKind.CHAIN))).isEmpty();
 
-        // A step cannot name checks of its own at all now: its kind's are all there is
+        // A step's checks depend only on its kind, even if a rule names another check's outcome
         final FlowStep rules = new FlowStep(null, QuestionKind.SPLIT, null, null, null, null,
                 List.of(new Transition(StepOutcome.RULES_SHORT, Transition.END)));
         assertThat(ApproachFlow.checksFor(rules))
@@ -204,7 +204,8 @@ class TestApproachFlow {
         final Transition rule = parser.getTransitions().get(1);
         assertThat(rule.getOn()).isEqualTo(StepOutcome.COVERAGE_SHORT);
         assertThat(rule.getGoTo()).isEqualTo("split");
-        // Its first rule's condition is no longer free
+        // Conditions used by either rule are not offered to a new rule, but each rule's own condition is
+        // still offered to that rule
         assertThat(ApproachFlow.unusedConditions(parser, null)).doesNotContain(StepOutcome.YIELD_SHORT,
                 StepOutcome.COVERAGE_SHORT);
         assertThat(ApproachFlow.unusedConditions(parser, parser.getTransitions().get(0)))
@@ -223,7 +224,8 @@ class TestApproachFlow {
     void theUsualBehaviourIsSaid() {
         assertThat(ApproachFlow.usual(DIRECT, 1)).contains("If it passes, it goes on to the next step.",
                 "If it runs out of tries, it will stop learning.");
-        // The transform says where it goes on running out of tries, and is the last before the fallback
+        // The transform step has its own rule for running out of tries, and is the last step before the
+        // fallback, so passing finishes the run
         assertThat(ApproachFlow.usual(DIRECT, 2)).contains("If it passes, the run finishes.")
                 .noneMatch(line -> line.startsWith("If it runs out"));
         assertThat(ApproachFlow.usual(DIRECT, 0)).hasSize(1);
@@ -235,10 +237,10 @@ class TestApproachFlow {
         assertThat(ApproachFlow.elements(FlowStep.LEARNABLE_ELEMENTS)).isEmpty();
         assertThat(ApproachFlow.elements(List.of("XSLTFilter", "XMLFragmentParser", "JSONParser", "DSParser")))
                 .isEmpty();
-        // In the order they are shown, whatever order they were ticked in
+        // Elements are written in the order they are shown, whatever order they were ticked in
         assertThat(ApproachFlow.elements(List.of("XSLTFilter", "DSParser")))
                 .containsExactly("DSParser", "XSLTFilter");
-        // Nothing the AI can't learn is written
+        // Elements the AI cannot learn are not written
         assertThat(ApproachFlow.elements(List.of("XMLParser", "XSLTFilter"))).containsExactly("XSLTFilter");
     }
 
@@ -264,7 +266,7 @@ class TestApproachFlow {
         final FlowStep chain = FlowStep.of(QuestionKind.CHAIN).withElements(List.of("XMLParser"));
         assertThat(ApproachFlow.tickedElements(chain)).isEmpty();
         assertThat(ApproachFlow.unlearnableElements(chain)).containsExactly("XMLParser");
-        // Removing it leaves every learnable one
+        // Removing it writes no elements, which means every learnable element
         assertThat(ApproachFlow.elements(ApproachFlow.tickedElements(chain))).isEmpty();
     }
 

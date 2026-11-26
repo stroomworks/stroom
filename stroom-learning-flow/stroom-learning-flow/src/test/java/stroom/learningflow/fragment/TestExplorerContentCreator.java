@@ -33,10 +33,12 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Learned content made through the explorer. A stage makes sure of a learner's folder each time it would
-/// open a session, so a folder found once is not looked for again; creating a document still makes sure
-/// of its folder, so one a person deletes afterwards is made again. A folder that has a twin of the same
-/// name, which tasks making it side by side can leave, is not a folder that cannot be found.
+/// Tests how learned content is created in the explorer tree.
+///
+/// The stage makes sure a learner's folder exists each time it might open a session, so a folder found once is
+/// remembered and not looked up again. Creating a document still looks its folder up, so a folder a person has
+/// since deleted is created again. Two tasks creating the same folder at once can leave two folders with the
+/// same name; that must not stop the folder being found.
 class TestExplorerContentCreator {
 
     private static final DocPath FOLDER = DocPath.fromParts("Feeds", "DOOR-ACCESS");
@@ -67,7 +69,7 @@ class TestExplorerContentCreator {
         Mockito.verify(nodes, Mockito.times(1)).getNodesByNameAndType(FEEDS, "DOOR-ACCESS",
                 ExplorerConstants.FOLDER_TYPE);
 
-        // Creating a document walks to its folder again, and makes it again where it has gone.
+        // Creating a document looks its folder up again, so that a deleted folder would be created again.
         Mockito.when(explorer.create(PipelineDoc.TYPE, "Door", made, PermissionInheritance.DESTINATION))
                 .thenReturn(ExplorerNode.builder().docRef(new DocRef(PipelineDoc.TYPE, "p-1", "Door")).build());
 

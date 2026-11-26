@@ -62,38 +62,33 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The live smoke of design 02 §6.1: the scenarios' machinery driven by a real model in place of a
- * script, to learn what no script can say — whether the questions as put draw replies the grammar
- * accepts, whether the feedback steers a second candidate to a passing one within the candidate limit,
- * and what an attempt costs. The results are a report, not a verdict: this test fails only if the
- * harness itself breaks. It runs only when the environment names an endpoint (see {@link LiveAdvisor}),
- * and writes each run's transcript under {@code build/live/<flow>} for the write-up.
- */
+/// A live smoke test that runs the scenario machinery against a real model instead of a scripted one.
+///
+/// It finds out what a script cannot: whether the questions draw replies that can be parsed, whether the
+/// feedback steers the model to a passing candidate within the candidate limit, and what an attempt costs.
+/// The results are a report, not a pass or fail: the test fails only if the harness itself breaks. It runs
+/// only when the environment names a model endpoint (see [LiveAdvisor]), and writes each run's transcript and
+/// a summary report under `build/live/<flow>`.
 @EnabledIfEnvironmentVariable(named = LiveAdvisor.BASE_URL, matches = ".+")
 class TestLiveScenarios {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TestLiveScenarios.class);
-    /**
-     * The candidate limit for the run, to measure how many attempts a strict schema costs a model; the
-     * document's default when unset.
-     */
+    /// The environment variable that sets the candidate limit for the run, to measure how many attempts a
+    /// strict schema costs a model. The document's default is used when it is unset.
     private static final String MAX_ATTEMPTS = "LEARNING_FLOW_LIVE_MAX_ATTEMPTS";
-    /**
-     * The example flow the run's documents carry as their steps — {@code DIRECT} (A21), {@code TARGET_FIRST}
-     * (A31) or {@code ESCALATING} (A37) — so that flows can be compared on the same model and feeds; a new
-     * document's when unset.
-     */
+    /// The environment variable naming the example flow the run's documents use: `DIRECT` (the chain, then
+    /// each element's configuration), `TARGET_FIRST` (proposed target events first) or `ESCALATING`. It lets
+    /// flows be compared on the same model and feeds. `DIRECT` is used when it is unset.
     private static final String FLOW = "LEARNING_FLOW_LIVE_FLOW";
-    /**
-     * Which rows to run, as a regular expression over the row names ({@code 0[89]|1[0-4]} for the phase B
-     * formats); every row when unset. A row not run is not in the report.
-     */
+    /// The environment variable that selects which runs to do, as a regular expression over the run names
+    /// (e.g. `0[89]|1[0-4]` for the syslog, auditd, Windows, JSON, fixed-width and multi-line CSV formats).
+    /// Every run is done when it is unset. A run that is not selected is left out of the report.
     private static final String ROWS = "LEARNING_FLOW_LIVE_ROWS";
     private static final Pattern ROWS_UNDER_TEST = Pattern.compile(Optional.ofNullable(System.getenv(ROWS))
             .filter(rows -> !rows.isBlank())
             .orElse(".*"));
-    // The variable's name before A81 is still read, so that an env file written then still names the flow.
+    // The variable's earlier name, from when a flow was called a plan, is still read so that an env file
+    // written then still selects the flow.
     private static final FlowExample FLOW_UNDER_TEST = Optional.ofNullable(System.getenv(FLOW))
             .or(() -> Optional.ofNullable(System.getenv("LEARNING_FLOW_LIVE_PLAN")))
             .map(FlowExample::valueOf)
@@ -115,10 +110,8 @@ class TestLiveScenarios {
             they did, when. Events should name the person as the user and the reader's location as \
             the device.""";
 
-    /**
-     * The document as an operator would set it up for a feed like this: the full scorer set, the fields the
-     * business needs, and the floor at its default.
-     */
+    /// Builds the document as an operator would set it up for a feed like this: the full set of scorers, the
+    /// fields the business needs, and the default score threshold.
     private static LearningFlowDoc doc(final String name, final double coverageThreshold) {
         final LearningFlowDoc.Builder builder = Scenarios.document()
                 .uuid("live-" + name)
@@ -152,10 +145,8 @@ class TestLiveScenarios {
                 .build();
     }
 
-    /**
-     * The checks with the yield setting replaced: a feed whose record spans several lines says so by its
-     * expected yield per line (design 02 scenario 44).
-     */
+    /// Returns the checks with the yield setting replaced. A feed whose records span several lines declares
+    /// this through its expected yield per line.
     private static List<CheckSetting> withYield(final List<CheckSetting> checks,
                                                 final YieldBasis basis,
                                                 final double expected,
@@ -168,9 +159,7 @@ class TestLiveScenarios {
                 .toList();
     }
 
-    /**
-     * The checks with one more business rule beside the standing one.
-     */
+    /// Returns the checks with one more business rule added to the existing one.
     private static List<CheckSetting> withRule(final List<CheckSetting> checks, final XPathAssertion rule) {
         return checks.stream()
                 .map(setting -> setting.getCheck() == Check.RULES
@@ -191,27 +180,28 @@ class TestLiveScenarios {
         Files.createDirectories(OUT);
         final List<Outcome> outcomes = new ArrayList<>();
 
-        // Scenario 1: the corpus's CSV with its header line, the default key.
+        // The corpus's CSV with its header line.
         run("01-csv-with-header", advisor -> {
             final Scenarios scenarios = new Scenarios();
             return List.of(scenarios.process(advisor, doc("csv-with-header", 0.8), stream(1, CSV.input())).learned());
         }).ifPresent(outcomes::add);
 
-        // A headerless CSV against the full scorer set: does a first candidate mean something, or does
-        // it fall into the degeneracy trap and get steered out of it?
+        // A CSV without a header against the full set of scorers. This shows whether the first candidate
+        // extracts real meaning, or produces events that validate but extract nothing and has to be steered
+        // away from that by the extraction quality check.
         run("02-csv-meaning", advisor -> {
             final Scenarios scenarios = new Scenarios();
             return List.of(scenarios.process(advisor, doc("csv-meaning", 0.9), stream(1, CsvLines.lines(7))).learned());
         }).ifPresent(outcomes::add);
 
-        // Two record kinds in one stream, coverage at 0.9: the splitter must take both.
+        // Two kinds of record in one stream, with a coverage threshold of 0.9, so the splitter must handle both.
         run("03-two-record-kinds", advisor -> {
             final Scenarios scenarios = new Scenarios();
             return List.of(scenarios.process(advisor, doc("two-kinds", 0.9),
                     stream(1, CsvLines.lines(20, "user", 3))).learned());
         }).ifPresent(outcomes::add);
 
-        // Scenario 27 live: learn the plain feed, watch the score fall when alarms appear, relearn.
+        // Learn the plain feed, then see the score fall when a second kind of record appears, and relearn.
         run("04-relearn", advisor -> {
             final Scenarios scenarios = new Scenarios();
             final LearningFlowDoc doc = doc("relearn", 0.9).copy().relearnThreshold(0.8).build();
@@ -233,8 +223,8 @@ class TestLiveScenarios {
                     new Input(1, "SYSLOG-LIKE", "Raw Events", Map.of(), REGEX.input())).learned());
         }).ifPresent(outcomes::add);
 
-        // The feeds A31 was designed for (design 02 §6.3): records of several lines, where a splitter can lose
-        // fields before the model sees them; and nested XML, where the record is already a tree.
+        // Feeds that learning against target events is meant for: records of several lines, where a splitter
+        // can lose fields before the model sees them, and nested XML, where the record is already a tree.
         run("06-multiline-audit", advisor -> {
             final Scenarios scenarios = new Scenarios();
             final LearningFlowDoc doc = doc("multiline-audit", 0.9).copy()
@@ -258,7 +248,7 @@ class TestLiveScenarios {
                     new Input(1, "DOCVAULT-AUDIT", "Raw Events", Map.of("Format", "XML"), NESTED_XML)).learned());
         }).ifPresent(outcomes::add);
 
-        // Phase B (design 03 §3): syslog in both forms on one feed, two senders.
+        // Syslog in both its forms on one feed, from two senders.
         run("08-syslog", advisor -> {
             final Scenarios scenarios = new Scenarios();
             final LearningFlowDoc doc = doc("syslog", 0.9).copy()
@@ -323,7 +313,8 @@ class TestLiveScenarios {
                     new Input(1, "API-GATEWAY-DOC", "Raw Events", Map.of("Format", "JSON"), JSON_DOCUMENT)).learned());
         }).ifPresent(outcomes::add);
 
-        // Fixed-width: nothing to split on, and a column dropped is caught by preservation, not coverage.
+        // Fixed-width columns have no delimiter to split on, and a dropped column is caught by the preservation
+        // check, not by coverage.
         run("13-fixed-width", advisor -> {
             final Scenarios scenarios = new Scenarios();
             final LearningFlowDoc doc = doc("fixed-width", 0.9).copy()
@@ -377,14 +368,15 @@ class TestLiveScenarios {
             LOGGER.info("Live run {} not selected by {}", name, ROWS);
             return Optional.empty();
         }
-        // The advisor speaks for a document like the scenarios': the same instructions and scorer demands.
+        // The advisor is set up for a document like the ones the runs use, with the same instructions and
+        // scorers.
         final LiveAdvisor advisor = LiveAdvisor.fromEnvironment(doc(name, 0.9)).orElseThrow();
         List<StageRun> runs = List.of();
         String failure = "";
         try {
             runs = scenario.apply(advisor);
         } catch (final RuntimeException e) {
-            // The harness's own failure is the finding: recorded, and the other runs go on.
+            // A failure here is itself a finding, so it is recorded and the other runs carry on.
             failure = e.getClass().getSimpleName() + ": " + e.getMessage();
             LOGGER.warn("Live run {} failed", name, e);
         }

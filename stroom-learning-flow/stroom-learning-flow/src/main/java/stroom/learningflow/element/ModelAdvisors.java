@@ -29,11 +29,10 @@ import stroom.openai.shared.OpenAIModelDoc;
 
 import jakarta.inject.Inject;
 
-/**
- * A node's advisors: the model the document names, through {@code stroom-ai} — which resolves the key
- * through the credentials service, guards the base URL against SSRF and applies the HTTP client
- * configuration — or, for a document that names none, an advisor that fails the stream loudly.
- */
+/// The default [Advisors] binding on a node. It creates a [ModelAdvisor] for the model a Learning Flow
+/// document names, through `stroom-ai`, which resolves the API key through the credentials service,
+/// guards the base URL against SSRF and applies the HTTP client configuration. For a document that names
+/// no model, it returns a [NoModelAdvisor], which fails the attempt with a clear reason.
 public class ModelAdvisors implements Advisors {
 
     private final AiService aiService;
@@ -65,7 +64,7 @@ public class ModelAdvisors implements Advisors {
                                             + doc.getModel() + ", which cannot be read");
         }
         return new ModelAdvisor(aiService.getChatModel(modelDoc), modelDoc.getName(), DocRefUtil.create(doc),
-                // Task 7: the questions name the schema this document's translations must write
+                // The questions name the schema this document's translations must conform to.
                 QuestionText.of(doc, askedWith, targetSchemas.of(doc).orElse(null)), eventLog);
     }
 }

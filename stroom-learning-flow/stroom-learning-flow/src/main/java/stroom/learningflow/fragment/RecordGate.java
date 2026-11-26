@@ -37,16 +37,19 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
-/// The bar at the chain's tail (design 04 §3): each record of the output is judged as it is produced and
-/// handed on only if it clears, and the first that does not stops the run. A record is one child of the
-/// output's root; it is held — a few events — until its verdict, and nothing larger than a record is ever
-/// held. The root's opening is replayed before the first record that passes, so that a run whose first
-/// record falls short hands the downstream nothing at all.
+/// Applies the bar at the end of a fragment's chain during a serving run. Each record of the output is
+/// judged as it is produced and passed downstream only if it clears the bar. With a judge that stops (as
+/// a processing task's does), the first record that falls short stops the run by throwing a
+/// [RecordShortfall]. A record is one child of the output's root element. Its events are held until it
+/// has been judged, and nothing larger than a record is ever held. The root's opening is sent downstream
+/// just before the first record that passes, so a run whose first record falls short sends nothing at all.
 ///
-/// A fragment that splits its input gives its transform one record at a time, and the tail then emits
-/// one document per record — each with the root around it. The gate reads them as one document: the
-/// root is taken from the first and the records from all of them, and the root is closed once, when the
-/// run is [#finish]ed.
+/// A fragment that splits its input gives its transform one record at a time, so the end of the chain
+/// emits one document per record, each wrapped in the root element. The gate treats them as one
+/// document: the root is taken from the first, the records from all of them, and the root is closed
+/// once, when [#finish] is called.
+///
+/// Declared skips ([DeclaredSkips]) are counted and dropped here, so nothing downstream sees them.
 public final class RecordGate implements ContentHandler {
 
     private final RecordJudge judge;
@@ -61,7 +64,7 @@ public final class RecordGate implements ContentHandler {
     private int records;
     private int skips;
     private final List<String> skipReasons = new ArrayList<>();
-    /// How deep inside a declared skip the run is, or zero where it is not in one.
+    /// How many elements deep inside a declared skip marker the run is, or zero where it is not in one.
     private int skipping;
     private double totals;
     private String rootUri;
@@ -69,10 +72,10 @@ public final class RecordGate implements ContentHandler {
     private String rootQName;
     private final List<String> prefixes = new ArrayList<>();
 
-    /// @param judge      The bar.
-    /// @param downstream Where records that clear it go; null where nothing is to be handed on.
-    /// @param parsedAt   The record as the parser cut it, by the output record's index, for the judge to
-    ///                   ask for; empty where the runner cannot say.
+    /// @param judge      Applies the bar to each record.
+    /// @param downstream Where records that clear the bar go; null where nothing is to be passed on.
+    /// @param parsedAt   Gets the parser's version of a record from the output record's index, for the
+    ///                   judge to ask for; returns empty where the runner cannot provide it.
     public RecordGate(final RecordJudge judge,
                       final ContentHandler downstream,
                       final IntFunction<Optional<String>> parsedAt) {
@@ -81,19 +84,19 @@ public final class RecordGate implements ContentHandler {
         this.parsedAt = parsedAt;
     }
 
-    /// How many records were judged, the short one included.
+    /// How many records were judged, including the one that fell short.
     public int records() {
         return records;
     }
 
     /// How many records the translation declared it deliberately skipped ([DeclaredSkips]). A skip is not
-    /// an event and is not judged; it is counted so that completeness can add it to the events, and shown
-    /// so that a person can see how much of a stream was skipped rather than translated.
+    /// an event and is not judged. It is counted so that the completeness check can add it to the events,
+    /// and shown so that a person can see how much of a stream was skipped rather than translated.
     public int skips() {
         return skips;
     }
 
-    /// Why the translation said it skipped each record it skipped, leaving out the markers that gave no
+    /// The reasons the translation gave for each record it skipped, leaving out markers that gave no
     /// reason.
     public List<String> skipReasons() {
         return List.copyOf(skipReasons);
@@ -108,7 +111,7 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void setDocumentLocator(final Locator locator) {
-        // The locator is the fragment's, not the downstream's: not passed on.
+        // The locator belongs to the fragment, not the downstream, so it is not passed on.
     }
 
     @Override
@@ -120,11 +123,14 @@ public final class RecordGate implements ContentHandler {
 
     @Override
     public void endDocument() {
-        // One document per record is how a split fragment emits; the one document the downstream gets
-        // ends when the run does.
+        // A split fragment emits one document per record, so this is ignored; the single document the
+        // downstream receives is ended by finish().
     }
 
-    /// The run is over: the root is closed for the downstream, where anything was handed on.
+    /// Called when the run is over. It closes the root element and the document downstream, if anything
+    /// was passed on.
+    ///
+    /// @throws SAXException If the downstream fails.
     public void finish() throws SAXException {
         if (opened) {
             downstream.endElement(rootUri, rootLocalName, rootQName);
@@ -138,7 +144,7 @@ public final class RecordGate implements ContentHandler {
     @Override
     public void startPrefixMapping(final String prefix, final String uri) throws SAXException {
         if (skipping > 0 || DeclaredSkips.NAMESPACE.equals(uri)) {
-            // The marker's own namespace is never declared on the output the downstream gets
+            // The skip marker's namespace is never declared on the output the downstream receives.
             return;
         }
         if (record != null) {
@@ -154,7 +160,7 @@ public final class RecordGate implements ContentHandler {
         if (record != null && skipping == 0) {
             record.endPrefixMapping(prefix);
         }
-        // The root's own mappings end with the root, at the end of the document.
+        // The root's own mappings are ended with the root, in finish().
     }
 
     @Override
@@ -170,7 +176,7 @@ public final class RecordGate implements ContentHandler {
                 seenRoot = true;
             }
         } else if (skipping > 0) {
-            // Inside a declared skip: nothing of it is kept, judged or handed on
+            // Inside a declared skip: none of it is kept, judged or passed on.
             skipping++;
         } else if (depth == 2 && DeclaredSkips.isMarker(uri, localName)) {
             skipping = 1;
@@ -207,7 +213,8 @@ public final class RecordGate implements ContentHandler {
         if (record != null && skipping == 0) {
             record.characters(ch, start, length);
         }
-        // Text between records — the whitespace of an indented document — is nobody's.
+        // Text between records (e.g. the whitespace of an indented document) belongs to no record and is
+        // dropped.
     }
 
     @Override
@@ -231,7 +238,8 @@ public final class RecordGate implements ContentHandler {
         }
     }
 
-    /// One record complete: judged as a document of its own, then handed on or the run stopped.
+    /// Judges a completed record as a document of its own, then either passes it downstream or, where it
+    /// falls short and the judge stops, stops the run.
     private void judged(final List<Event> events) throws SAXException {
         final int index = records;
         final String document = alone(events);
@@ -242,7 +250,7 @@ public final class RecordGate implements ContentHandler {
             if (judge.stops()) {
                 throw new RecordShortfall(index, verdict, document);
             }
-            // A full pass goes on: the record is not handed on, and the judge has kept what it needs.
+            // A full pass carries on: the record is not passed on, and the judge has kept what it needs.
             return;
         }
         if (downstream != null) {
@@ -256,7 +264,8 @@ public final class RecordGate implements ContentHandler {
         }
     }
 
-    /// The record as a document of its own: the output's opening, the record, and the root closed.
+    /// Serialises the record as a document of its own: the output's opening, the record, and the root
+    /// closed.
     private String alone(final List<Event> events) throws SAXException {
         try {
             final TransformerHandler handler = XMLUtil.createTransformerHandler(false);

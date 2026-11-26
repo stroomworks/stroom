@@ -27,19 +27,20 @@ import stroom.util.shared.StoredError;
 import java.util.List;
 import java.util.Optional;
 
-/// Completeness (UM-2, a gate by default): **records in = events out + declared skips**.
+/// The completeness scorer, a gate by default. It checks that **records in = events out + declared
+/// skips**.
 ///
-/// It is the check for the fault in `docs/learning-flow-parser-drift-not-detected.md`. A record the
-/// translation cannot handle produces no event, so nothing judges it, and the stream is recorded as
-/// clean — the loss is visible only to someone reading the Error stream. Every other check judges what
-/// came out; this one is the only one that asks whether anything went missing on the way.
+/// It catches translations that silently lose records. A record the translation cannot handle produces
+/// no event, so no other check judges it, and the stream would be recorded as clean, with the loss
+/// visible only to someone reading the error stream. Every other check judges what came out; this is the
+/// only one that asks whether anything went missing on the way.
 ///
-/// A record that is deliberately not an event — a header line, a column banner, a heartbeat — is declared
-/// with a marker ([DeclaredSkips]), which counts towards the sum without being an event. Without that, the
-/// check would fail every feed that has such lines, and a check people switch off protects nobody.
+/// A record that is deliberately not an event (e.g. a header line, a column banner or a heartbeat) is
+/// declared with a marker ([DeclaredSkips]), which counts towards the sum without being an event. Without
+/// that, the check would fail every feed that has such lines, and people would switch it off.
 ///
-/// Applies to a step that turned records into records. A parser's records **are** the input's shape, so
-/// there is nothing to count them against; input coverage (A11) judges that step instead.
+/// It applies to a step that turned records into records. A parser's records simply follow the input's
+/// structure, so there is nothing to count them against; the input coverage check judges that step instead.
 public final class CompletenessScorer implements Scorer {
 
     private static final ElementId COMPLETENESS = new ElementId("Completeness");
@@ -62,14 +63,14 @@ public final class CompletenessScorer implements Scorer {
         }
         final int in = Records.parsed(step.input(), step.boundary());
         if (in <= 0) {
-            // Nothing went in, or the input is not a document the records can be counted in: there is no
-            // sum to do, and a step is not failed for a question that cannot be asked
+            // Nothing went in, or the records in the input cannot be counted, so there is nothing to
+            // compare and the step is not failed for it.
             return Optional.empty();
         }
         final int out = Math.max(0, Records.parsed(output, step.boundary()));
         final int skipped = Records.skips(output);
         if (out + skipped >= in) {
-            // More out than in is yield's business, not completeness': nothing was lost
+            // More out than in is for the yield check to judge; for completeness, nothing was lost.
             return Optional.of(new Score(type(), 1.0, skipped == 0
                     ? List.of()
                     : List.of(new StoredError(Severity.INFO, null, COMPLETENESS, declared(out, skipped, in)))));
@@ -78,9 +79,9 @@ public final class CompletenessScorer implements Scorer {
                 new StoredError(Severity.ERROR, null, COMPLETENESS, shortfall(in, out, skipped)))));
     }
 
-    /// What a passing run still has to say: how much of the stream the translation declared it skipped
-    /// rather than translated. There is no cap on that by decision, so this notice is the whole of what
-    /// puts it in front of a person.
+    /// The notice for a passing run that declared skips: how much of the stream the translation said it
+    /// skipped rather than translated. There is deliberately no limit on skips, so this notice is the only
+    /// thing that brings them to a person's attention.
     ///
     /// @param out     The events that came out.
     /// @param skipped The records declared skipped.
@@ -91,9 +92,9 @@ public final class CompletenessScorer implements Scorer {
                + " record(s) declared skipped by the translation.";
     }
 
-    /// What is missing, and what to do about it. The message names the marker, because the two right
-    /// answers are to translate the record or to say why it is not an event, and a model that is only
-    /// told a count will guess at which.
+    /// The failure message: what is missing, and what to do about it. The message names the skip marker,
+    /// because the two correct responses are to translate the record or to declare why it is not an event,
+    /// and a model that is only told a count would have to guess which.
     ///
     /// @param in      The records that went in.
     /// @param out     The events that came out.

@@ -43,26 +43,26 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 60: **a parse that cannot be learned errors its streams** (A52, A54; design 04
-/// §4 and its §8 scenario 5) — the one terminal failure.
+/// Tests the one failure that ends learning for good: a parser that cannot be learned.
 ///
-/// The parser's candidates are spent short of the document's coverage gate. Nothing can be scored or
-/// served: the session gives the learner up, the streams waiting on it are woken, and each errors with the
-/// reason — no session opens again for the learner.
+/// The parser's candidates are spent without passing the document's yield gate. Without a parser nothing
+/// can be scored or served, so the session gives the learner up, the streams waiting on it are woken, and
+/// each errors with the reason. No session opens for the learner again.
 class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
 
     private static final String DOC = "doc-1";
     private static final String FEED = "DOOR-ACCESS";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
-    /// A splitter that cuts one record per separator-delimited block: over a CSV with no separators, one
-    /// record for the whole stream, which is a yield far short of the gate.
+    /// A splitter that makes one record per separator-delimited block. Over a CSV with no separators it makes
+    /// one record for the whole stream, a yield far short of the gate.
     private static final String ONE_BLOCK = Scenarios.resource("block-split.ds3.xml");
 
     @Test
     void theParsersCandidatesSpentShortOfTheGatesGiveTheLearnerUpAndErrorEveryWaitingStream() {
         final Scenarios scenarios = new Scenarios();
-        // The demo document with its yield counted per line, which is the gate a parser that cuts a CSV as
-        // one record fails; the demo's own yield is per record, which says nothing of a parser over text.
+        // The demo document with its yield counted per line, which is the gate that a parser treating a CSV
+        // as one record fails. The demo's own yield is counted per record, which cannot catch such a parser
+        // over text.
         final List<CheckSetting> checks = DemoDocument.checks().stream()
                 .map(setting -> setting.getCheck() == Check.YIELD
                         ? new CheckSetting(Check.YIELD, CheckState.GATE, 0.5,
@@ -86,8 +86,8 @@ class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
         assertThat(scenarios.stage(silent).decide(doc, Scenarios.LEARNER,
                 input(2L)).decision()).isInstanceOf(Deferred.class);
 
-        // The one parser candidate cuts the whole stream as one record: yield short of the gate (A54), and
-        // nothing else to try.
+        // The one parser candidate makes the whole stream one record, so its yield is short of the gate and
+        // there is nothing else to try.
         final Script script = scenarios.script(CSV.configuration(), null)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(ONE_BLOCK));
@@ -102,7 +102,7 @@ class TestScenario60AParseThatCannotBeLearnedErrorsItsStreams {
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
                 .describedAs("every waiting stream is woken to error").contains(1L, 2L);
 
-        // Each woken task errors with the reason, its row goes, and no session opens again.
+        // Each woken task errors with the reason, its deferral row is removed, and no session opens again.
         for (final long id : List.of(1L, 2L)) {
             final StageRun run = scenarios.stage(silent).decide(doc, Scenarios.LEARNER, input(id));
             assertThat(run.decision()).isInstanceOf(Sentinel.class);

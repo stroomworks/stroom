@@ -6,7 +6,8 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     version="2.0">
 
-  <!-- The least transform that yields one event per record: for scenarios about structure, not meaning -->
+  <!-- The simplest translation that produces one event per record, for scenarios about structure rather
+       than meaning -->
   <xsl:template match="records">
     <Events xsi:schemaLocation="event-logging:3 file://event-logging-v3.0.0.xsd" Version="3.0.0">
       <xsl:apply-templates/>

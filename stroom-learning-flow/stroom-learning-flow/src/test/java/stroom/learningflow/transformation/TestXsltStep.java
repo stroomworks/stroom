@@ -38,7 +38,8 @@ class TestXsltStep {
 
     @Test
     void isNotRunItself() {
-        // A node runs a stylesheet in a pipeline, wrapping this description; nothing runs it directly.
+        // A node runs a stylesheet in a real pipeline built from this description, so nothing runs it
+        // directly.
         assertThatThrownBy(() -> new XsltStep().run("<xsl:stylesheet/>", "<in/>"))
                 .isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() -> new XsltStep().prepare("<xsl:stylesheet/>").run("<in/>"))

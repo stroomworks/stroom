@@ -16,19 +16,20 @@
 
 package stroom.learningflow.transformation;
 
-/// What a learned stylesheet may use (decision N1, option C): an allow-list over every function and
-/// instruction, never a list of banned names, so that a route nobody thought of is refused rather than
-/// allowed.
+/// The XSLT instructions and functions a stylesheet written by the model may use. [LearnedStylesheetCheck]
+/// checks every candidate stylesheet against it.
 ///
-/// A learned stylesheet runs in the real `XSLTFilter`, where Saxon has no resolver stopping it reading the
-/// node's files, listing directories, making outbound requests or writing files — and several `stroom:`
-/// functions call out, read other feeds' data, drop records or give a different answer each run. On an
-/// automatic Learning Flow nobody reads the stylesheet before it runs, so the only guard is this list,
+/// It is an allow-list over every function and instruction, never a list of banned names, so that a route
+/// nobody thought of is refused rather than allowed.
+///
+/// A learned stylesheet runs in the real `XSLTFilter`, where Saxon has no resolver stopping it from reading
+/// the node's files, listing directories, making outbound requests or writing files, and several `stroom:`
+/// functions call out, read other feeds' data, drop records or give a different answer on each run. On an
+/// automatic Learning Flow nobody reads the stylesheet before it runs, so this list is the only guard. It is
 /// applied when a candidate is judged and again when it is promoted.
 ///
-/// The list is in code to begin with ([#hardCoded()]). Track 2 step 6 pulls in the egress branch and moves
-/// it onto the Egress Policy screen, where an administrator maintains it and it is enforced at run time as
-/// well; this interface is what lets that happen without touching the callers.
+/// For now the list is in code ([#hardCoded()]). It is an interface so that the list can later be
+/// maintained by an administrator, and enforced at run time as well, without changing the callers.
 public interface AiXsltAllowList {
 
     /// The XSLT namespace, whose elements are instructions and declarations rather than output.
@@ -43,7 +44,7 @@ public interface AiXsltAllowList {
     /// The XML Schema namespace, whose names are the constructor functions `xs:integer(…)` and the like.
     String SCHEMA_NAMESPACE = "http://www.w3.org/2001/XMLSchema";
 
-    /// @return The list as this release has it, in code.
+    /// @return The list built into this release.
     static AiXsltAllowList hardCoded() {
         return HardCodedXsltAllowList.INSTANCE;
     }
@@ -61,7 +62,7 @@ public interface AiXsltAllowList {
     /// @return Whether it is allowed.
     boolean allowsFunction(String namespaceUri, String localName);
 
-    /// Why a name is not allowed, for the reason fed back to the model.
+    /// Explains why a name is not allowed, for the reason given back to the model.
     ///
     /// @param namespaceUri The namespace, or null for an instruction.
     /// @param localName    The local name.

@@ -30,17 +30,17 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/// The built-in default setups, as JSON beside this class (Track 2 step 1c): the steps of `Direct`,
-/// `Target first` and `Escalating`, read with the same Jackson mapper a stored document is read with,
-/// so a built-in setup and a saved Learning Flow are one format.
+/// The built-in learning flow setups (`Direct`, `Target first` and `Escalating`), which a new Learning Flow
+/// document starts from. Their steps are JSON files beside this class, read with the same Jackson mapper as a
+/// stored document, so a built-in setup and a saved Learning Flow have the same format.
 ///
-/// They live on the server rather than in [FlowExample] because the enum is compiled to JavaScript for
-/// the client, which has neither classpath resources nor Jackson. The client is given them by
-/// `LearningFlowResource.flowExamples()`, as it is given the built-in question templates; a document
-/// it opens already carries its own steps, so it needs these only to name which setup a document matches
-/// and to start a new one from.
+/// They are held on the server rather than in [FlowExample] because that enum is compiled to JavaScript for
+/// the client, which has neither classpath resources nor Jackson. The client gets them from
+/// `LearningFlowResource.flowExamples()`, as it gets the built-in question templates. A document it opens
+/// already has its own steps, so the client needs these only to show which setup a document matches and to
+/// start a new one.
 ///
-/// The flow DSL that used to spell these out is gone: this is the one place a built-in setup is defined.
+/// This is the only place a built-in setup is defined.
 public final class FlowExamples {
 
     private static final String PATH = "flow/";
@@ -49,12 +49,14 @@ public final class FlowExamples {
             FlowExample.TARGET_FIRST, "target-first.json",
             FlowExample.ESCALATING, "escalating.json"));
 
-    /// Read once: the files are on the classpath and never change while a node runs.
+    /// Read once, because the files are on the classpath and never change while a node runs.
     private static final Map<FlowExample, List<FlowStep>> STEPS = read();
 
     private FlowExamples() {
     }
 
+    /// Returns the steps of a built-in setup.
+    ///
     /// @param example The setup.
     /// @return Its steps, in order.
     public static List<FlowStep> steps(final FlowExample example) {
@@ -65,7 +67,7 @@ public final class FlowExamples {
         return steps;
     }
 
-    /// One built-in setup as a flow, for a new document and for a test that wants a working one.
+    /// Returns one built-in setup as a flow, for a new document or for a test that needs a working one.
     ///
     /// @param example The setup.
     /// @return A flow of its steps, with no template overrides.
@@ -73,9 +75,9 @@ public final class FlowExamples {
         return new LearningFlow(steps(example), null, null);
     }
 
-    /// Every built-in setup with its steps, for the client.
+    /// Returns every built-in setup with its steps, for the client.
     ///
-    /// @return Them, in the order the enum declares.
+    /// @return The setups, in the order [FlowExample] declares them.
     public static List<BuiltInFlow> all() {
         return java.util.Arrays.stream(FlowExample.values())
                 .map(example -> new BuiltInFlow(example, example.getDisplayValue(), steps(example)))
@@ -93,8 +95,8 @@ public final class FlowExamples {
             if (in == null) {
                 throw new IllegalStateException("The built-in setup " + file + " is not on the classpath");
             }
-            // A built-in setup that cannot be read is a broken build, not a run-time condition: every
-            // new document starts from one, so failing here is better than a document with no steps.
+            // A built-in setup that cannot be read means the build is broken. Every new document starts
+            // from one, so failing here is better than creating a document with no steps.
             return List.of(JsonUtil.getMapper().readValue(
                     new String(in.readAllBytes(), StandardCharsets.UTF_8), FlowStep[].class));
         } catch (final IOException e) {

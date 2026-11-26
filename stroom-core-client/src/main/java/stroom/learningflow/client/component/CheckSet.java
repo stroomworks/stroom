@@ -23,15 +23,16 @@ import stroom.learningflow.shared.CheckSettings;
 import java.util.ArrayList;
 import java.util.List;
 
-/// A Learning Flow's checks as the Setup tab holds them while they are edited (the one model of checks):
-/// one setting for every check, in the order of [Check], found and replaced by its check.
+/// Holds a Learning Flow's check settings while the Setup tab edits them. It always has exactly one setting
+/// for every check, in the order of [Check], and a setting is looked up and replaced by its check.
 public final class CheckSet {
 
     private final List<CheckSetting> settings = new ArrayList<>();
 
-    /// Replaces the set.
+    /// Replaces all the settings with a Learning Flow's.
     ///
-    /// @param settings The Learning Flow's checks; any it doesn't name have their defaults; null for none.
+    /// @param settings The Learning Flow's check settings, or null for none. A check they don't name is given
+    ///                 its default setting.
     public void read(final List<CheckSetting> settings) {
         this.settings.clear();
         this.settings.addAll(CheckSettings.complete(settings));
@@ -42,14 +43,14 @@ public final class CheckSet {
         return new ArrayList<>(settings);
     }
 
-    /// @return The settings a person can change: every one, in the order of [Check].
+    /// @return The settings to show for a person to change, which is all of them, in the order of [Check].
     public List<CheckSetting> shown() {
         return write();
     }
 
-    /// Replaces a check's setting, where it was.
+    /// Replaces a check's setting, keeping its position. Does nothing if the check has no setting.
     ///
-    /// @param setting The new setting, whose check says which it replaces.
+    /// @param setting The new setting. Its check says which setting it replaces.
     public void replace(final CheckSetting setting) {
         for (int i = 0; i < settings.size(); i++) {
             if (settings.get(i).getCheck() == setting.getCheck()) {
@@ -59,8 +60,8 @@ public final class CheckSet {
         }
     }
 
-    /// @param check A check.
-    /// @return Its setting.
+    /// @param check The check to look up.
+    /// @return The check's current setting.
     public CheckSetting find(final Check check) {
         return CheckSettings.of(settings, check);
     }

@@ -20,11 +20,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * A person's answer in place of a turn's (A28): <em>answer instead</em>, for the question an attempt
- * stopped at, and <em>edit and re-run from here</em>, for one it had already been answered. Who answered
- * is the user making the request and is not theirs to say.
- */
+/// A person's answer given in place of the model's for one turn of a session. It serves both "answer
+/// instead", for the question a session stopped at, and "edit and re-run from here", for a turn that had
+/// already been answered. Who answered is taken from the user making the request, so it is not a field here.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class AmendTurnRequest {
 

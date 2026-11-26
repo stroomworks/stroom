@@ -28,7 +28,8 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
-/// A downstream for a scenario: what a served stream hands on, as text.
+/// A SAX content handler for scenarios that captures what a served stream passes downstream, as text, and
+/// counts the records.
 public final class TextSink implements ContentHandler {
 
     private final StringWriter text = new StringWriter();
@@ -44,12 +45,12 @@ public final class TextSink implements ContentHandler {
         }
     }
 
-    /// What was handed on, as XML; empty where nothing was.
+    /// Returns what was passed downstream, as XML; empty if nothing was.
     public String text() {
         return text.toString();
     }
 
-    /// How many records — children of the root — were handed on.
+    /// Returns how many records (children of the root element) were passed downstream.
     public int records() {
         return records;
     }

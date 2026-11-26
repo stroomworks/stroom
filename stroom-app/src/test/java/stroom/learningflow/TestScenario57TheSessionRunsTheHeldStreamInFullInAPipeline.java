@@ -94,16 +94,16 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 57 at Tier 2 — **the session runs the held stream in full** (A64, A73) against
-/// real processor tasks, a real database and the fragment run as a pipeline.
+/// Tests that a learning session runs its held stream in full before it ends, using real processor tasks,
+/// a real database, and the fragment run as a pipeline.
 ///
-/// A stream larger than the prefix a task reads as text: the logons fill the first sixty-four kibibytes
-/// and the logoffs lie beyond them, where neither the sample the model is shown
-/// nor the judgement of the first candidate reaches. The first candidate translates logons alone and is
-/// promoted on the prefix; the worker's full pass over the stream — the fragment run through the pipeline
-/// with the parser tapped — finds the logoffs, as the parser cut them, and the next question carries
-/// them; the second candidate translates both; the session ends with one attempt and the stream is woken
-/// and served in full, logoffs among its events.
+/// The stream is larger than the prefix a task reads as text. The logons fill the first 64 KiB and the
+/// logoffs come after them, beyond both the sample the model is shown and the records the first candidate
+/// is judged on. The first candidate translates only logons and passes on the prefix. The worker's full
+/// pass over the stream, running the fragment as a pipeline with a tap on the parser, then finds the
+/// logoffs as the parser produced them, and the next question includes them. The second candidate
+/// translates both. The session ends with a single attempt, and the stream is woken and served in full,
+/// including the logoffs.
 class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends AbstractCoreIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -113,7 +113,7 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
     private static final Pattern LOGOFF = Pattern.compile("<Action>Logoff</Action>");
     private static final int LOGONS = 1_800;
     private static final int LOGOFFS = 4;
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -182,8 +182,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         final List<Recorded> open = attempts.forDocument(document.getUuid(), 10);
         assertThat(open).hasSize(1);
 
-        // One pass of the worker: round one from the sample, the full pass, round two with the logoffs in
-        // front of the model.
+        // In one run of the worker: round one learns from the sample, the full pass runs, and round two
+        // shows the logoffs to the model.
         final Script script = script(CSV.configuration(), LOGON_ONLY)
                 .expect(QuestionMatcher.chain()
                         .withFeedbackMentioning("of the held stream fell short of the bar")
@@ -195,8 +195,9 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         advisor.set(script);
         deferredLearning.exec();
         script.verifyExhausted();
-        // The evidence is the record that fell short, as the parser cut it — not its neighbour: the tap
-        // is read while the parser is still inside the record whose output is being judged.
+        // The evidence must be the record that fell short, as the parser produced it, and not a
+        // neighbouring record. This relies on the tap being read while the parser is still inside the
+        // record whose output is being judged.
         final List<String> evidence = script.asked().stream()
                 .flatMap(question -> question.feedback().stream())
                 .map(StoredError::getMessage)
@@ -234,7 +235,8 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         assertThat(deferrals.forDocument(document.getUuid())).isEmpty();
     }
 
-    /// The header, the logons, then the logoffs: more than the prefix of them before the first logoff.
+    /// Builds a CSV stream of a header, then the logons, then the logoffs, with enough logons that the first
+    /// logoff lies beyond the prefix a task reads.
     private static String stream() {
         final StringBuilder text = new StringBuilder("dt,who,where,what\n");
         for (int i = 0; i < LOGONS + LOGOFFS; i++) {
@@ -246,7 +248,7 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         return text.toString();
     }
 
-    /// Create what tasks there are to create and hand out `count` of them.
+    /// Creates and queues any tasks due, assigns them, and checks that exactly `count` were assigned.
     private List<ProcessorTask> tasks(final int count) {
         processorTaskAvailability.clear();
         processorTaskTestHelper.createAndQueueTasks();
@@ -275,14 +277,15 @@ class TestScenario57TheSessionRunsTheHeldStreamInFullInAPipeline extends Abstrac
         }
     }
 
-    /// The pack's document with the model left off: the script answers.
+    /// Creates a document configured like the demo content pack's, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName() + " " + feed);
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .build());
         return docRef;

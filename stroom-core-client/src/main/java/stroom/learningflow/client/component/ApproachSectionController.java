@@ -61,23 +61,26 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/// How a new feed is learned: the learning flow of a Learning Flow document (design 05, design 07), its
-/// steps chosen one at a time on the Setup tab's route map and shown in [ApproachSection]. The first step
-/// chooses from the parsers and filters the AI can learn ([FlowStep#LEARNABLE_ELEMENTS]). A starting point
-/// replaces the steps with an example's (A34, [#startFrom]); the step chosen ([#select]) is edited in place on
-/// its card, every choice from a menu ([ApproachFlow]), with the question text it is asked with beneath
-/// (A85, A86). The flow is not shown or edited as text. What is wrong with a step is said on its card, and
-/// what is wrong with the whole flow ([#flowProblem()]) under Learning steps (A88); the store refuses to save
-/// a flow with problems.
+/// Edits the learning flow of a Learning Flow document: the steps it takes to learn how to translate a new
+/// feed. The steps are selected one at a time on the Setup tab's route map and the selected one is shown in
+/// [ApproachSection]. The first step chooses from the parsers and filters the AI can learn
+/// ([FlowStep#LEARNABLE_ELEMENTS]).
 ///
-/// Its owner ([SetupTabController]) holds the rest of the document and draws the route map from the steps
-/// ([#getSteps()], [#getSelected()], [#stepProblems()]): the tries a step has where it doesn't say
-/// ([#setDefaultTries]), and the fallback, chosen under Approving new translations ([#setFallback]). It is
-/// told of every change ([#setOnChange]), the step chosen included where the change chose another.
+/// Loading a default setup replaces the steps with a copy of that setup's ([#startFrom]); the document owns
+/// its steps, so later changes to a default setup do not affect it. The selected step ([#select]) is edited in
+/// place on its card, with every choice made from a menu ([ApproachFlow]), and the question texts it is asked
+/// with are shown beneath. What is wrong with a step is shown on its card, and what is wrong with the whole
+/// flow ([#flowProblem()]) is shown under Learning steps; the server refuses to save a flow with problems.
 ///
-/// The card is made again when another step is chosen or the steps change shape (added, moved, copied,
-/// deleted, a starting point, the fallback); an edit within the card changes it where it is, so that what has
-/// the focus keeps it.
+/// The owning controller ([SetupTabController]) holds the rest of the document and draws the route map from
+/// the steps ([#getSteps()], [#getSelected()], [#stepProblems()]). It supplies the number of tries a step has
+/// when the step doesn't set its own ([#setDefaultTries]), and switches the fallback on or off from the
+/// Approving new translations section ([#setFallback]). It is told of every change ([#setOnChange]),
+/// including a change of selected step caused by an edit.
+///
+/// The card is rebuilt when another step is selected or the list of steps changes (a step added, moved,
+/// copied or deleted, a default setup loaded, or the fallback switched). An edit within the card updates it in
+/// place, so that the focus stays where it is.
 public class ApproachSectionController extends Controller {
 
     private static final LearningFlowResource RESOURCE = GWT.create(LearningFlowResource.class);
@@ -86,30 +89,30 @@ public class ApproachSectionController extends Controller {
     private final FlowExamplesCache flowExamples;
     private final Provider<BuiltInTextController> builtInTextProvider;
     private ApproachSection view;
-    /// The card of the step chosen; null where it has none (the fallback).
+    /// The card of the selected step, or null if it has none (the fallback step).
     private StepCard card;
-    /// This document's own question texts, by template; the built-ins are shown where it has none.
+    /// This document's own question texts, by template. Where it has none, the built-in text is used.
     private final Map<Template, String> overrides = new HashMap<>();
     private Map<Template, String> builtIns = new HashMap<>();
     private Integer builtInVersion;
     private boolean builtInsRequested;
     private List<FlowStep> steps = new ArrayList<>();
-    /// The flow as read, for what the steps don't hold: the built-in version its texts were saved
-    /// against. Its own steps are never read — [#steps] holds those — so until a document is read this
-    /// is empty rather than a default setup's: the setups are the server's now (Track 2 step 1c), and
-    /// a placeholder that pretended to be one of them would be the last thing in the client still
-    /// claiming to know what they are.
+    /// The flow as last read, kept only for the built-in version its texts were saved against. Its steps are
+    /// never used ([#steps] holds those). Until a document is read it is an empty flow rather than one of the
+    /// default setups, because the default setups are defined on the server and the client does not hold a
+    /// copy of them.
     private LearningFlow flow = new LearningFlow(List.of(), Map.of(), null);
-    /// The step chosen, whose card and question text are shown.
+    /// The index of the selected step, whose card and question texts are shown.
     private int selected;
-    /// The steps whose "Fine-tune this step" is unfolded, by index; folded again when the steps change shape.
+    /// The indexes of the steps whose "Fine-tune this step" section is expanded. All are collapsed again when
+    /// the list of steps changes.
     private final Set<Integer> tuned = new HashSet<>();
-    /// The tries a step has where it doesn't say, which its card shows as its placeholder.
+    /// The number of tries a step has when it doesn't set its own, which its card shows as a placeholder.
     private int defaultTries;
-    /// What is wrong with each step, by index, and with the flow as a whole, as last checked.
+    /// What is wrong with each step, by index, as last checked.
     private Map<Integer, String> stepProblems = new HashMap<>();
-    /// The Learning Flow's checks, so that a rule firing on one that is off can be warned about; the Setup
-    /// tab keeps them up to date as its Quality checks are edited.
+    /// The Learning Flow's quality checks, so that a warning can be given for a rule that depends on a check
+    /// that is switched off. The Setup tab keeps them up to date as its Quality checks are edited.
     private List<CheckSetting> checks = new ArrayList<>();
     private String flowProblem;
     private Runnable onChange = () -> {
@@ -117,11 +120,12 @@ public class ApproachSectionController extends Controller {
     private Texts texts = Texts.STEP;
     private boolean readOnly = true;
 
-    /// Made by GIN; [#attach(ApproachSection)] gives it its section.
+    /// Created by GIN; [#attach(ApproachSection)] then gives it its section.
     ///
     /// @param eventBus            The application's event bus.
-    /// @param builtInTextProvider Makes the dialog that loads a built-in text.
-    /// @param restFactory         Fetches the built-in texts.
+    /// @param builtInTextProvider Creates the dialog that loads a built-in text.
+    /// @param restFactory         Creates the REST request that fetches the built-in texts.
+    /// @param flowExamples        Fetches and caches the default setups from the server.
     @Inject
     public ApproachSectionController(final EventBus eventBus,
                                      final Provider<BuiltInTextController> builtInTextProvider,
@@ -133,10 +137,10 @@ public class ApproachSectionController extends Controller {
         this.flowExamples = flowExamples;
     }
 
-    /// Attaches it to its section, declared in its owner's template.
+    /// Attaches this controller to its section, which is declared in the owning screen's template.
     ///
     /// @param view The section.
-    /// @return This.
+    /// @return This controller.
     public ApproachSectionController attach(final ApproachSection view) {
         this.view = Objects.requireNonNull(view, "view");
         initWidget(view);
@@ -157,8 +161,9 @@ public class ApproachSectionController extends Controller {
         return this;
     }
 
-    /// Shows a document's approach, with its first step chosen; or, where the steps are those shown (the
-    /// document read back after a save), with the step chosen and the steps unfolded as they were.
+    /// Shows a document's learning flow with its first step selected. If the steps are the same as those
+    /// already shown (e.g. the document read back after a save), the selected step and the expanded sections
+    /// are kept as they were.
     ///
     /// @param docRef The document.
     /// @param doc    Its content.
@@ -181,31 +186,33 @@ public class ApproachSectionController extends Controller {
     }
 
     /// @param doc The document.
-    /// @return A copy of it with the approach shown. The tries a step has where it doesn't say are its
-    ///         owner's to write.
+    /// @return A copy of it with the flow as edited here. The default number of tries is not written here;
+    ///         the owning controller writes it.
     public LearningFlowDoc write(final LearningFlowDoc doc) {
         return doc.copy()
                 .flow(new LearningFlow(new ArrayList<>(steps), new HashMap<>(overrides), flow.getBuiltInVersion()))
                 .build();
     }
 
-    /// The Learning Flow's checks, so that a step's card can warn that a rule fires on one that is off.
-    /// The Setup tab tells the approach whenever its Quality checks change, since both are edited together.
+    /// Sets the Learning Flow's quality checks, so that a step's card can warn about a rule that depends on a
+    /// check that is switched off. The Setup tab calls this whenever its Quality checks change, since both are
+    /// edited together.
     ///
-    /// @param checks The checks, as the Setup tab has them now.
+    /// @param checks The checks, as currently edited in the Setup tab.
     public void setChecks(final List<CheckSetting> checks) {
         this.checks = new ArrayList<>(checks);
         refresh();
     }
 
-    /// @param onChange Run after the user changes the approach, once the document is marked changed.
+    /// @param onChange Run after the user changes the flow, once the document has been marked as changed.
     public void setOnChange(final Runnable onChange) {
         this.onChange = onChange;
     }
 
-    /// The tries a step has where it doesn't say, as its owner shows them: each card's placeholder.
+    /// Sets the number of tries a step has when it doesn't set its own, which each card shows as a
+    /// placeholder. The owning controller edits this setting.
     ///
-    /// @param tries The tries.
+    /// @param tries The default number of tries.
     public void setDefaultTries(final int tries) {
         if (tries != defaultTries) {
             defaultTries = tries;
@@ -213,13 +220,13 @@ public class ApproachSectionController extends Controller {
         }
     }
 
-    /// @return Whether the flow has the fallback, which serves marked Unknowns when the transform can't be
-    ///         finished.
+    /// @return Whether the flow has the fallback step, which writes marked Unknown events for the records the
+    ///         transform still can't translate when it runs out of tries.
     public boolean hasFallback() {
         return ApproachFlow.hasFallback(steps);
     }
 
-    /// @return The fallback's index in the flow, or -1 where it has none.
+    /// @return The fallback step's index in the flow, or -1 if it has none.
     public int fallbackIndex() {
         for (int i = 0; i < steps.size(); i++) {
             if (steps.get(i).getKind() == QuestionKind.ADMIT) {
@@ -229,45 +236,45 @@ public class ApproachSectionController extends Controller {
         return -1;
     }
 
-    /// @return The flow's steps, as shown.
+    /// @return A copy of the flow's steps, as currently edited.
     public List<FlowStep> getSteps() {
         return new ArrayList<>(steps);
     }
 
-    /// @return The index of the step chosen.
+    /// @return The index of the selected step.
     public int getSelected() {
         return selected;
     }
 
-    /// @return What is wrong with each step, by index; a step that is fine has nothing.
+    /// @return What is wrong with each step, by index; a step with no problems has no entry.
     public Map<Integer, String> stepProblems() {
         return new HashMap<>(stepProblems);
     }
 
-    /// @return What is wrong with the flow as a whole, or null for nothing.
+    /// @return What is wrong with the flow as a whole, or null if nothing is.
     public String flowProblem() {
         return flowProblem;
     }
 
-    /// @return The default setup the steps are exactly, or null where they are the document's own.
+    /// @return The default setup whose steps exactly match the current steps, or null if they match none.
     public FlowExample example() {
         return ApproachFlow.example(flowExamples.known(), steps);
     }
 
-    /// Switches the fallback on or off, as chosen under Approving new translations
+    /// Switches the fallback step on or off, as chosen under Approving new translations
     /// ([ApproachFlow#withFallback]).
     ///
-    /// @param on Whether to have it.
+    /// @param on Whether the flow should have the fallback step.
     public void setFallback(final boolean on) {
         if (on != hasFallback()) {
             reshape(ApproachFlow.withFallback(steps, on), selected);
         }
     }
 
-    /// Chooses a step, whose card and question text are then shown. The question text every step shares
-    /// stays shown where it was.
+    /// Selects a step, whose card and question texts are then shown. If the texts every step shares are
+    /// shown, they stay shown.
     ///
-    /// @param index The step's index.
+    /// @param index The step's index. An index out of range is ignored.
     public void select(final int index) {
         if (index < 0 || index >= steps.size()) {
             return;
@@ -280,7 +287,7 @@ public class ApproachSectionController extends Controller {
 
     // ---- The card ----
 
-    /// Makes the card of the step chosen again, and everything that follows the steps.
+    /// Rebuilds the selected step's card, and everything else that depends on the steps.
     private void rebuild() {
         if (selected >= steps.size()) {
             selected = Math.max(0, steps.size() - 1);
@@ -299,8 +306,9 @@ public class ApproachSectionController extends Controller {
         showTexts(texts);
     }
 
-    /// Everything that follows an edit within the card: the card's problem, usual lines and tags, and what
-    /// is wrong with each step and with the flow as a whole.
+    /// Updates everything that depends on an edit within the card: the card's problem and warning, the
+    /// description of what the step usually does, its tags and elements, and what is wrong with each step and
+    /// with the flow as a whole.
     private void refresh() {
         final List<FlowProblem> problems = check();
         stepProblems = new HashMap<>();
@@ -366,7 +374,8 @@ public class ApproachSectionController extends Controller {
                 steps.get(index).withElements(ApproachFlow.elements(ticked))));
         card.setOnRuleCondition((rule, condition) -> {
             final Transition was = steps.get(index).getTransitions().get(rule);
-            // The fallback may be gone to only on running out of tries
+            // A rule may go to the fallback only on running out of tries, so if the condition changes to
+            // anything else, the rule goes back to the step's usual exit
             final boolean toFallback = was.getGoTo() != null && isFallback(was.getGoTo());
             final String goTo = toFallback && condition.getOutcome() != null
                     ? null
@@ -427,8 +436,8 @@ public class ApproachSectionController extends Controller {
         }
     }
 
-    /// A step nothing goes to is deleted at once; one that rules go to is asked about first, since those
-    /// rules go too.
+    /// Deletes a step. A step that no rule goes to is deleted at once. If other steps' rules go to it, the
+    /// user is asked to confirm first, since those rules are removed as well.
     private void deleteStep(final int index) {
         final FlowStep step = steps.get(index);
         final List<String> pointing = new ArrayList<>();
@@ -448,14 +457,15 @@ public class ApproachSectionController extends Controller {
                 "Delete '" + FlowWords.stepName(steps, index) + "'? Rules on " + PlainWords.list(pointing)
                 + " go to it; they will be removed, and those steps will do what they usually do.",
                 ok -> {
-                    // Only if the flow is as it was when this was asked
+                    // Only delete if the flow hasn't changed since the user was asked
                     if (ok && !isDisposed() && steps == before) {
                         reshape(ApproachFlow.delete(steps, index), index);
                     }
                 });
     }
 
-    // The steps changed shape: the card is made again, the given step chosen, before the owner is told
+    // Replaces the list of steps after a structural change: selects the given step and rebuilds the card,
+    // then tells the owner
     private void reshape(final List<FlowStep> changed, final int select) {
         if (readOnly) {
             return;
@@ -467,7 +477,7 @@ public class ApproachSectionController extends Controller {
         changed();
     }
 
-    // One step changed within its card
+    // Applies an edit made to one step within its card
     private void edit(final int index, final FlowStep step) {
         if (readOnly || Objects.equals(steps.get(index), step)) {
             return;
@@ -476,7 +486,8 @@ public class ApproachSectionController extends Controller {
         refresh();
         changed();
         if (index == selected && texts == Texts.STEP) {
-            // A Find records step's guard decides which of its texts it is asked with
+            // A split step's guard decides which of its question texts it is asked with, so the texts shown
+            // may need to change
             final List<Template> now = LearnFlow.textsOf(step);
             if (!now.equals(view.getTexts())) {
                 showTexts(Texts.STEP);
@@ -484,7 +495,8 @@ public class ApproachSectionController extends Controller {
         }
     }
 
-    // A step's rules changed: its rules are made again, and the focus put back where it was
+    // Applies a change to a step's rules: the rules are rebuilt on the card, and the focus put back where it
+    // was
     private void editRules(final int index, final List<FlowStep> changed, final int rule, final boolean onDestination) {
         if (readOnly) {
             return;
@@ -498,18 +510,18 @@ public class ApproachSectionController extends Controller {
         changed();
     }
 
-    // The document is changed, and the owner told
+    // Marks the document as changed and tells the owner
     private void changed() {
         markChanged();
         onChange.run();
     }
 
-    // ---- Starting points, adding, the text ----
+    // ---- Default setups and adding steps ----
 
-    /// The default setups (the example flows) as a menu below the Load default setup button, each with what it
-    /// does; the one in use is greyed.
+    /// Shows the default setups as a menu below the Load default setup button, each with a description as its
+    /// tooltip. The one that matches the current steps is disabled.
     ///
-    /// @param opener The button.
+    /// @param opener The button's element.
     public void showDefaultsMenu(final Element opener) {
         if (readOnly) {
             return;
@@ -529,10 +541,10 @@ public class ApproachSectionController extends Controller {
         showMenu("Default setups", items, opener);
     }
 
-    /// Whether a step may be added after the step chosen: not after the fallback, which comes last, nor where
-    /// no kind of step may be added.
+    /// Whether a step may be added after the selected step. It may not after the fallback, which must come
+    /// last, nor when no kind of step may be added.
     ///
-    /// @return Whether the route map offers Add step under it.
+    /// @return Whether the route map should offer Add step under the selected step.
     public boolean canAddAfterSelected() {
         if (readOnly || steps.isEmpty() || steps.get(selected).getKind() == QuestionKind.ADMIT) {
             return false;
@@ -545,24 +557,24 @@ public class ApproachSectionController extends Controller {
         return false;
     }
 
-    /// The kinds of step that may be added after the step chosen, as a menu below the route map's Add step
-    /// button.
+    /// Shows the kinds of step that may be added after the selected step, as a menu below the route map's Add
+    /// step button.
     ///
-    /// @param opener The button.
+    /// @param opener The button's element.
     public void addAfterSelected(final Element opener) {
         showAddMenu(selected + 1, opener);
     }
 
-    /// An example chosen as the starting point: its steps replace the flow's, once the user says yes (A34).
-    /// Its first step is then chosen.
+    /// Loads a default setup: once the user confirms, its steps replace the flow's, and its first step is
+    /// selected. The document gets its own copy of the steps.
     ///
-    /// @param example The example.
+    /// @param example The default setup.
     public void startFrom(final FlowExample example) {
         if (readOnly) {
             return;
         }
-        // The setups are the server's now (Track 2 step 1c), so this asks for them rather than reading
-        // a constant; where they are already in hand it answers at once and nothing is seen to wait.
+        // The default setups are defined on the server, so they are fetched rather than read from a constant.
+        // If they have already been fetched, the cache answers at once.
         flowExamples.get(examples -> {
             if (isDisposed()) {
                 return;
@@ -584,8 +596,8 @@ public class ApproachSectionController extends Controller {
         }, taskMonitor());
     }
 
-    /// The kinds of step that may be added, as a menu below the place: those that can't be added are shown
-    /// greyed, with why.
+    /// Shows the kinds of step that may be added at a position, as a menu below the opener. Those that can't
+    /// be added are disabled, with the reason as a tooltip.
     private void showAddMenu(final int at, final Element opener) {
         if (readOnly) {
             return;
@@ -604,7 +616,8 @@ public class ApproachSectionController extends Controller {
         showMenu("Add a step", items, opener);
     }
 
-    // A menu below its opener, placed by the opener's box, which an SVG element of the route map has too
+    // Shows a menu below its opener. It is positioned using the opener's bounding box, which works for the
+    // route map's SVG elements as well as for HTML ones
     private void showMenu(final String name, final List<Item> items, final Element opener) {
         ShowMenuEvent
                 .builder()
@@ -618,11 +631,9 @@ public class ApproachSectionController extends Controller {
 
     // ---- Question texts ----
 
-    // The built-in text of every template, so that an override is edited from the words it replaces;
-    // fetched once, when the tab is first read
-    /// The default setups, which the approach is named against (Track 2 step 1c). Fetched as the
-    /// built-in texts beside them are, and the section drawn again when they land, so that a document
-    /// that is one of them says so rather than reading as its own for the moment the fetch takes.
+    /// Fetches the default setups, so that the flow can be named after the one it matches. The section is
+    /// rebuilt when they arrive, so that a document that matches one says so rather than briefly appearing to
+    /// have a setup of its own.
     private void fetchFlowExamples() {
         flowExamples.get(examples -> {
             if (!isDisposed()) {
@@ -631,11 +642,13 @@ public class ApproachSectionController extends Controller {
         }, taskMonitor());
     }
 
-    /// @return The default setups in hand, for an owner that names the approach too.
+    /// @return The default setups fetched so far, for the owning controller, which also names the flow.
     public List<BuiltInFlow> flowExamples() {
         return flowExamples.known();
     }
 
+    // Fetches the built-in text of every template, so that the document's own text is edited starting from the
+    // words it replaces. They are fetched once, when the tab is first read
     private void fetchBuiltIns() {
         if (builtInsRequested) {
             return;
@@ -654,7 +667,7 @@ public class ApproachSectionController extends Controller {
                 .exec();
     }
 
-    /// Shows the question texts of the step chosen, or those every question shares.
+    /// Shows the question texts of the selected step, or the texts every step shares.
     private void showTexts(final Texts which) {
         texts = which;
         if (which == Texts.SHARED) {
@@ -671,7 +684,7 @@ public class ApproachSectionController extends Controller {
         showWords();
     }
 
-    /// Every text shown as this document uses it, and where its words come from.
+    /// Shows the words of every text shown, as this document uses them, and where they come from.
     private void showWords() {
         for (final Template template : view.getTexts()) {
             final String override = overrides.get(template);
@@ -684,8 +697,9 @@ public class ApproachSectionController extends Controller {
         }
     }
 
-    /// One text edited in place, or loaded from a built-in: words equal to the built-in are no change, and
-    /// the document goes on following the built-in.
+    /// Sets a text edited in place, or loaded from a built-in text. Words equal to the built-in text are not
+    /// stored as the document's own, so the document keeps using the built-in text and follows later changes
+    /// to it.
     private void setText(final Template template, final String words) {
         if (words == null || words.equals(builtIns.get(template))) {
             overrides.remove(template);
@@ -696,8 +710,8 @@ public class ApproachSectionController extends Controller {
         changed();
     }
 
-    /// A built-in text loaded into one of the texts, from a dialog that lists the built-ins whose variables
-    /// the text allows, with the words shown before they are loaded.
+    /// Opens the dialog that loads a built-in text into one of the texts. It lists the built-in texts whose
+    /// variables the text allows, and previews the words before they are loaded.
     private void loadBuiltIn(final Template slot) {
         if (readOnly) {
             return;
@@ -708,8 +722,8 @@ public class ApproachSectionController extends Controller {
 
     // ---- Helpers ----
 
-    /// The flow's own check, the one the store runs, asked of the steps, with the warnings the Learning
-    /// Flow's checks raise.
+    /// Checks the steps with the same check the server runs when saving, plus the warnings that depend on the
+    /// Learning Flow's quality checks.
     private List<FlowProblem> check() {
         return new LearningFlow(new ArrayList<>(steps), null, null).check(checks);
     }
@@ -724,9 +738,9 @@ public class ApproachSectionController extends Controller {
 
     /// Which question texts are shown beneath the step.
     private enum Texts {
-        /// The step chosen's.
+        /// The selected step's texts.
         STEP,
-        /// Those every question shares.
+        /// The texts every step shares.
         SHARED
     }
 }

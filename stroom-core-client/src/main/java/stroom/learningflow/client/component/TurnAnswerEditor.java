@@ -24,9 +24,11 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Widget;
 
-/// The content of the dialog in which a person answers a turn instead, or edits its answer (A28): the
-/// answer in a code editor, drawn as a control, as the editor is the whole of the dialog.
-/// [TurnAnswerEditorController] shows it.
+/// The content of the dialog in which a person answers a turn of a learning run in place of the model, or
+/// edits the answer a turn already has.
+///
+/// The dialog holds only a code editor for the answer, styled as a form control. [TurnAnswerEditorController]
+/// shows it.
 public class TurnAnswerEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);

@@ -18,15 +18,13 @@ package stroom.learningflow.learning;
 
 import stroom.learningflow.scoring.Verdict;
 
-/**
- * One element of a learned chain, with the configuration that passed, what it produced, and how it was
- * scored.
- *
- * @param runner        The element, as the thing that ran it.
- * @param configuration The configuration text that passed, or null for a run-only element.
- * @param result        What the element produced over its input.
- * @param verdict       The scorecard's verdict on that output.
- */
+/// One element of a chain a learning session has learned, with the configuration that passed, what it
+/// produced, and how it was scored. A [Outcome.Learned] holds one per element of the chain.
+///
+/// @param runner        The step runner for the element.
+/// @param configuration The configuration text that passed, or null for a run-only element.
+/// @param result        What the element produced from its input.
+/// @param verdict       The scorecard's verdict on that output.
 public record LearnedStep(StepRunner runner, String configuration, StepResult result, Verdict verdict) {
 
     public String elementType() {

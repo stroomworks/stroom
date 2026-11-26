@@ -108,16 +108,17 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 04 §8.1, **test B — many streams, many threads**: the same feed and fixtures as test A, with
-/// enough streams arriving at once that the race is real, processed by several task threads on one node
-/// in worker-claim mode while the learning job runs beside them.
+/// Tests many streams processed by many threads: the same feed and fixtures as
+/// `TestScenarioAFromNothingToServed`, but with enough streams arriving at once that races really happen.
+/// Several task threads on one node process them while the learning job runs beside them.
 ///
-/// What has to be safe across nodes — the task claim, the attempt lease, the deferral rows, the wake —
-/// is contended here through the one database exactly as a second node would contend for it. It asserts,
-/// after the backlog has drained: one session per learning event; every stream processed exactly once;
-/// no partial output; no error that should not exist; and no task, attempt or row left behind — and it
-/// samples the invariants while it runs, since a partial output that is later completed, or an output
-/// that is later deleted, is a failure the final state would hide.
+/// The things that must be safe across nodes (the task claim, the attempt lease, the deferral rows and the
+/// wake) are contended here through the one database, exactly as a second node would contend for them.
+/// After the backlog has drained, the test asserts that there was one session per learning event, every
+/// stream was processed exactly once, there was no partial output and no unexpected error, and no task,
+/// attempt or deferral row was left behind. It also samples the invariants while it runs, because a
+/// partial output that is later completed, or an output that is later deleted, is a failure the final
+/// state would hide.
 class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -136,7 +137,7 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
     private static final int THREADS = 4;
     private static final Duration PATIENCE = Duration.ofMinutes(4);
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -191,8 +192,9 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
 
     @Test
     void manyStreamsOnManyThreadsAreEachServedOnceWithOneSessionPerLearningEvent() throws Exception {
-        // The scripted model answers two learning events: the first wave learns logons alone; the second
-        // wave, carrying logoffs, is held and learned again for them. Nothing else may ask.
+        // The scripted model answers two learning events. The first wave teaches a transform for logons
+        // only. The second wave contains logoffs, so it is deferred and the learner relearns for them.
+        // Any other question would fail the script.
         final Script script = script(CSV.configuration(), LOGON_ONLY)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -213,8 +215,8 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         running.add(threads.submit(() -> learnUntil(stop, violations)));
         running.add(threads.submit(() -> sampleUntil(stop, violations)));
         try {
-            // The second wave arrives while the first is still draining — as soon as the promotion has
-            // served any of it — carrying a kind the transform has not met, on every stream of it at once.
+            // The second wave arrives while the first is still draining, as soon as the promotion has
+            // served any of it. Every stream in it holds a kind of record the transform has not met.
             awaitAnyComplete(first);
             final List<Meta> second = new ArrayList<>();
             for (int i = 0; i < SECOND_WAVE; i++) {
@@ -270,8 +272,8 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         assertThat(attempts.awaiting(10)).isEmpty();
     }
 
-    /// A task thread: what there is to do, claimed under the lock the harness needs and processed outside
-    /// it, until told to stop.
+    /// Runs as a task thread until told to stop. Tasks are created and claimed while holding a lock,
+    /// because the test helper is not thread-safe, and processed outside the lock.
     private void processUntil(final AtomicBoolean stop, final Violations violations) {
         while (!stop.get()) {
             final List<ProcessorTask> claimed;
@@ -297,7 +299,8 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// The learning job, as a node schedules it: a pass whenever the last has finished.
+    /// Runs the deferred learning job as a node schedules it, starting a new pass whenever the last has
+    /// finished, until told to stop.
     private void learnUntil(final AtomicBoolean stop, final Violations violations) {
         while (!stop.get()) {
             try {
@@ -309,7 +312,8 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// The invariants, sampled while it runs: a stream whose task is deferred has no visible output.
+    /// Samples the invariants while the test runs: a stream whose task is deferred must have no visible
+    /// output.
     private void sampleUntil(final AtomicBoolean stop, final Violations violations) {
         while (!stop.get()) {
             try {
@@ -324,7 +328,7 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
                     }
                 }
             } catch (final RuntimeException e) {
-                // A row read while it moves: the next sample reads it settled.
+                // A row can change while it is being read. The next sample will read it once settled.
             }
             pause();
         }
@@ -368,11 +372,11 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// What the sampling found, from any thread.
+    /// The violations found by any thread, and the streams seen deferred.
     private static final class Violations {
 
         private final List<String> found = new CopyOnWriteArrayList<>();
-        /// The streams seen waiting: what says the race was real.
+        /// The streams seen deferred, which shows that the race really happened.
         private final Set<Long> deferred = ConcurrentHashMap.newKeySet();
 
         void add(final String violation) {
@@ -400,17 +404,18 @@ class TestScenarioBManyStreamsManyThreads extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// The pack's document with the model left off: the script answers.
+    /// Creates a document configured like the demo content pack's, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName() + " " + feed);
-        // The pack's settings under a flow whose transform has one candidate before the exhaustion step
-        // (design 04 §4), so that the scripted model's one refusal of the unseen kind is what sends the
-        // session there.
+        // The pack's settings, but with the same flow as `TestScenarioAStepsFourToSix`: the transform step
+        // has one candidate before the exhaustion (Admit) step. Here every scripted candidate passes, so
+        // the Admit step is not reached.
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .flow(new LearningFlow(List.of(
                         FlowStep.of(QuestionKind.CHAIN),

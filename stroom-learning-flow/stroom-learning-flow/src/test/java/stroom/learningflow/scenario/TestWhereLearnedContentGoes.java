@@ -39,8 +39,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A113 and A132: what a learner learns is named as its element says — which a person
-/// sets from its patterns — and a second fragment it learns takes the first free number after the name.
+/// Tests where learned content is written and what it is named.
+///
+/// A learner's fragment is named and placed as its element's settings say, which a person sets from
+/// patterns. A second fragment for the same learner takes the name followed by the first free number.
 class TestWhereLearnedContentGoes {
 
     private static final String DOC = "doc-1";
@@ -60,7 +62,7 @@ class TestWhereLearnedContentGoes {
         final Binding binding = ((Promoted) first.decision()).binding();
         assertThat(binding.getPipeline().getName()).isEqualTo("DOOR-ACCESS Raw Events");
 
-        // Taken back, and learned again: a new fragment (design 01 §7.3 rule 1), beside the first.
+        // Retracted and learned again: a first learning writes a new fragment, beside the first one.
         scenarios.promotion().retract(doc(), binding.getUuid(), "The timestamps are wrong.", "jo");
         final StageRun second = scenarios.process(script(scenarios), doc(), stream(2L)).learned();
 
@@ -70,10 +72,10 @@ class TestWhereLearnedContentGoes {
                 .isEqualTo("DOOR-ACCESS Raw Events 2");
     }
 
-    /// A folder the explorer cannot make — a factory pattern substituted with a feed name it refuses — is
-    /// found out before a session opens, not after the model has been paid: once it had learned, the
-    /// session would close in error, and the learner's next stream would open another. The stream waits,
-    /// saying why, until a person sets the folder to something that can be made.
+    /// A folder that cannot be created (for example a factory pattern filled in with a feed name the explorer
+    /// rejects) is detected before a session opens, not after the model has been paid. Otherwise the session
+    /// would fail once it had learned, and the learner's next stream would open another. The stream waits,
+    /// saying why, until a person sets the folder to something that can be created.
     @Test
     void aFolderThatCannotBeMadeIsFoundOutBeforeAnythingIsAsked() {
         final Scenarios scenarios = new Scenarios();
@@ -90,7 +92,7 @@ class TestWhereLearnedContentGoes {
         assertThat(scenarios.attempts.forDocument(DOC, 10)).describedAs("and no session opened").isEmpty();
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 1L)).describedAs("the stream waits").isPresent();
 
-        // Set right, the next try learns.
+        // Once the folder is corrected, the next try learns.
         scenarios.places.put(Scenarios.LEARNER, new Place(DocPath.fromParts("Feeds", "DOOR-ACCESS"), "Door"));
         final StageRun learned = scenarios.process(script(scenarios), doc(), stream(1L)).learned();
 

@@ -53,17 +53,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// Design 02 §5, scenario 54: **the task decision** (design 04 §3; §8's scenarios 1, 2, 3, 7 and 9 at
-/// Tier 1; phase 4's first slice).
+/// Tests the decision a processing task makes for each stream: serve it, defer it, or error it.
 ///
-/// A task does one cheap thing — find its learner, consult what is known, emit, defer or error — and
-/// never learns. A stream of a learner that has learned nothing waits, with a session opened on it and parked
-/// for the worker; a second stream of the learner waits on that session; nothing is sentinelled to make
-/// either wait. The worker carries the session, the promotion wakes what waited, and the next decision
-/// on each stream emits it. A stream a binding serves with a record short of the bar waits too, against the
-/// transform in force, and is not scored again while that transform stands; a stream of the same learner
-/// whose records all clear flows meanwhile. What errors is what nothing will ever learn: a learner given
-/// up.
+/// A task does only cheap work (find its learner, check what is known, then serve, defer or error) and
+/// never learns. A stream of a learner that has learned nothing is deferred, with a session opened on it
+/// and left for the worker, and a second stream of that learner waits on the same session. Neither is
+/// errored to make it wait. The worker runs the session, the promotion wakes the waiting streams, and the
+/// next decision on each serves it. A stream with a record short of the bar under the current binding is
+/// also deferred, recording the snapshot it failed against, and is not scored again until that binding
+/// changes; meanwhile, a stream of the same learner whose records all clear is served. Only a stream that
+/// will never be learned is errored, which means a learner that has been given up.
 class TestScenario54TheTaskDecision {
 
     private static final String DOC = "doc-1";
@@ -74,7 +73,8 @@ class TestScenario54TheTaskDecision {
     private static final String TRANSLATES_BOTH = Scenarios.resource("csv-logon.xsl");
     private static final String LOGON_ONLY = Scenarios.resource("csv-logon-only.xsl");
 
-    /// §8 scenarios 1, 7 and 9, at the decision: unseen, held, learned, woken, served.
+    /// A stream of a new learner is deferred, the worker learns from it, the promotion wakes it, and it is
+    /// then served.
     @Test
     void aStreamOfANewLearnerWaitsOnASessionAndIsServedWhenItPromotes() {
         final Scenarios scenarios = new Scenarios();
@@ -98,25 +98,25 @@ class TestScenario54TheTaskDecision {
                 .extracting(Deferral::inputId, Deferral::failedAgainst)
                 .containsExactly(tuple(1L, null));
 
-        // A second stream of the learner while the session is open: waits on it, opens nothing.
+        // A second stream of the learner while the session is open waits on it and opens no new session.
         final StageRun second = task(scenarios, silent, null).decide(doc, Scenarios.LEARNER, stream(2L, MIXED));
         assertThat(second.decision()).isInstanceOf(Deferred.class);
         assertThat(scenarios.attempts.forDocument(DOC, 10)).describedAs("one session for one learner").hasSize(1);
         assertThat(scenarios.deferrals.forDocument(DOC)).extracting(Deferral::inputId).containsExactly(1L, 2L);
 
-        // The worker carries the session on the stream it was raised on; the promotion wakes both.
+        // The worker runs the session on the stream that opened it, and the promotion wakes both streams.
         final Script script = script(scenarios, TRANSLATES_BOTH);
         assertThat(scenarios.worker(script).advance(10)).isEqualTo(1);
         script.verifyExhausted();
         assertThat(scenarios.attempts.byId(attempts.get(0).id()).orElseThrow().status())
                 .isEqualTo(AttemptStatus.PROMOTED);
-        // Twice over: the promotion's wake, and the same pass's sweep for streams it could not reach
-        // (A130, W7-4). A deferral goes when its stream is served, not when it is woken, so a row the
-        // wake did reach is swept again — an update of no rows.
+        // Each is woken twice: by the promotion, and by the same pass's sweep for streams a wake could not
+        // reach. A deferral is removed when its stream is served, not when it is woken, so a row the wake
+        // did reach is swept again, which updates no rows.
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
                 .containsExactly(1L, 2L, 1L, 2L);
 
-        // Tried again, each is bound and served as it is read, and its row goes.
+        // When tried again, each stream is bound and served as it is read, and its deferral row is removed.
         for (final long id : List.of(1L, 2L)) {
             final StageRun bound = task(scenarios, silent, null).decide(doc, Scenarios.LEARNER, stream(id, MIXED));
             assertThat(bound.decision()).describedAs(bound.decision().toString()).isInstanceOf(Bound.class);
@@ -131,8 +131,8 @@ class TestScenario54TheTaskDecision {
         assertThat(silent.asked()).isEmpty();
     }
 
-    /// §8 scenarios 2, 3 and 9: a record short of the bar holds the stream, against the transform in
-    /// force; a stream whose records all clear flows meanwhile; the stream is scored once per transform.
+    /// A record short of the bar defers the stream against the current binding's snapshot, a stream whose
+    /// records all clear is served meanwhile, and the deferred stream is scored only once per binding.
     @Test
     void aStreamWithARecordShortOfTheBarWaitsAndIsNotScoredAgainUntilTheTransformMoves() {
         final Scenarios scenarios = new Scenarios();
@@ -168,14 +168,15 @@ class TestScenario54TheTaskDecision {
                 .extracting(Recorded::status)
                 .containsExactlyInAnyOrder(AttemptStatus.AWAITING_MODEL, AttemptStatus.PROMOTED);
 
-        // Tried again before the transform moves: deferred by the stamp, without a run.
+        // Tried again before the binding changes, it is deferred because of the recorded snapshot, without
+        // being run.
         final StageRun again = task(scenarios, silent, counting).decide(doc, Scenarios.LEARNER, stream(2L, MIXED));
         assertThat(again.decision()).isInstanceOf(Deferred.class);
         assertThat(runs.get()).describedAs("not read again (§8.3)").isEqualTo(1);
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 2L).orElseThrow().attempts()).isEqualTo(2);
         assertThat(scenarios.attempts.forDocument(DOC, 10)).describedAs("no second session").hasSize(2);
 
-        // A stream of the learner whose records all clear flows while the session runs (§8.2).
+        // A stream of the learner whose records all clear is served while the session runs.
         final StageRun flowing = task(scenarios, silent, counting).decide(doc, Scenarios.LEARNER, stream(3L,
                 CSV.input()));
         assertThat(flowing.decision()).describedAs(flowing.decision().toString()).isInstanceOf(Bound.class);
@@ -184,7 +185,7 @@ class TestScenario54TheTaskDecision {
                 .clear()).isTrue();
         assertThat(scenarios.deferrals.forDocument(DOC)).extracting(Deferral::inputId).containsExactly(2L);
 
-        // The worker relearns on the held stream; the rebinding wakes it; it is served under the new
+        // The worker relearns on the held stream, the rebinding wakes it, and it is served by the new
         // transform.
         final Script script = script(scenarios, TRANSLATES_BOTH);
         assertThat(scenarios.worker(script).advance(10)).isEqualTo(1);
@@ -220,7 +221,7 @@ class TestScenario54TheTaskDecision {
         assertThat(scenarios.attempts.forDocument(DOC, 10)).isEmpty();
     }
 
-    /// A task's stage: silent, since a task never asks.
+    /// Builds the stage as a task uses it, with a silent script, since a task never asks the model.
     private static Stage task(final Scenarios scenarios, final Script silent, final FragmentRunner runner) {
         return scenarios.stage(document -> silent, scenarios.learnerBindings, runner);
     }
@@ -259,7 +260,8 @@ class TestScenario54TheTaskDecision {
         assertThat(scenarios.deferrals.forDocument(DOC)).isEmpty();
     }
 
-    /// A stream tried again while its session is still open says so, and its row says only why it waits.
+    /// A stream tried again while its session is still open says so in its decision, but its deferral row
+    /// keeps only the reason it waits.
     @Test
     void aStreamTriedAgainWhileItsSessionIsOpenKeepsOneReason() {
         final Scenarios scenarios = new Scenarios();
@@ -297,7 +299,7 @@ class TestScenario54TheTaskDecision {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(xslt));
     }
 
-    /// The harness's runner, counting how many times a fragment is run over a stream.
+    /// Wraps the test harness's fragment runner to count how many times a fragment is run over a stream.
     private static FragmentRunner counting(final Scenarios scenarios, final AtomicInteger runs) {
         final FragmentRunner standIn = new StandInFragmentRunner(scenarios.stores.pipelines,
                 scenarios.stores.stackLoader, scenarios.stores.textConverters, scenarios.stores.xslts,

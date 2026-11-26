@@ -32,28 +32,29 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
-/**
- * Extraction quality, the anti-degeneracy scorer of design 01 §8.3 (ruling A16): how much of the output
- * means something. Three measures over the records, averaged — the proportion of elements that are typed
- * rather than {@code Data}; the proportion of records whose {@code EventDetail} names a real branch
- * rather than {@code Unknown} — a learned admission, an {@code Unknown} carrying the marker of A62, being
- * neither (A53) — unless the document allows {@code Unknown}; and the proportion of records
- * carrying each field the document requires. A transform that emits the mandatory skeleton, puts
- * {@code Unknown} where a decision was due and dumps every field into {@code Data} validates perfectly
- * and scores here as the nothing it extracted. Applies to a step that transformed records into records.
- *
- * <p>{@code Data} and {@code Unknown} are event-logging's, so the first two measures are taken only where
- * the target is event-logging, or none (task 7, W1-4): another schema may have an element called
- * {@code Data} that means something. For another schema only the required fields are measured, and where
- * none is required there is nothing to measure and the check doesn't run.
- */
+/// The extraction quality scorer, which guards against degenerate translations by measuring how much of
+/// the output means something. It averages three measures over the records:
+///
+/// - the proportion of elements that are typed rather than `Data`;
+/// - unless the document allows `Unknown`, the proportion of records whose `EventDetail` names a real
+///   branch rather than a bare `Unknown` (a learned admission, i.e. an `Unknown` carrying the
+///   [stroom.learningflow.shared.LearnedUnknown] marker, is not counted against a record);
+/// - for each field the document requires, the proportion of records that have it.
+///
+/// A transform that emits the mandatory skeleton, puts `Unknown` where a decision was due and dumps every
+/// field into `Data` validates perfectly against the schema, but scores low here. It applies only to a
+/// step that transformed records into records.
+///
+/// `Data` and `Unknown` are event-logging elements, so the first two measures are taken only where the
+/// target is event-logging, or there is no target: another schema may have an element called `Data` that
+/// means something. For another schema only the required fields are measured, and where none is required
+/// there is nothing to measure and the check does not run.
 public final class ExtractionQualityScorer implements Scorer {
 
     private static final ElementId QUALITY = new ElementId("ExtractionQuality");
     private static final String ALL_ELEMENTS = "descendant-or-self::*";
-    // A learned admission (A53, A62) is not counted: an Unknown carrying the marker is what an exhausted
-    // session was allowed to say, and the marker item is not untyped data. A bare Unknown is refused as it
-    // always was.
+    // A learned admission is not counted: an Unknown carrying the marker is what an exhausted session was
+    // allowed to write, and the marker item is not untyped data. A bare Unknown is still refused.
     private static final String DATA_ELEMENTS = Admission.DATA_BUT_MARKER;
     private static final String UNKNOWN_DETAIL = Admission.BARE_UNKNOWN;
 
@@ -87,9 +88,9 @@ public final class ExtractionQualityScorer implements Scorer {
         final List<StoredError> diagnostics = new ArrayList<>();
         final List<Double> measures = new ArrayList<>();
 
-        // Which records fell short, one by one (design 04 §3): a record that names Unknown where the
-        // document does not allow it, or that lacks a required field. The typed-element ratio is a
-        // measure of the whole and lays nothing at a record.
+        // The records that fell short individually: a record that names Unknown where the document does
+        // not allow it, or that lacks a required field. The typed-element ratio measures the output as a
+        // whole and does not fail individual records.
         final Set<Integer> failingRecords = new TreeSet<>();
         if (eventLogging) {
             measureEventLogging(quality, output, records, diagnostics, measures, failingRecords);
@@ -114,8 +115,8 @@ public final class ExtractionQualityScorer implements Scorer {
         return Optional.of(new Score(type(), value, diagnostics, failingRecords));
     }
 
-    // The typed-element ratio and, unless the document allows Unknown, the share of records naming a real
-    // branch: both event-logging's
+    // Measures the typed-element ratio and, unless the document allows Unknown, the share of records
+    // naming a real branch. Both are specific to event-logging.
     private static void measureEventLogging(final ExtractionQualityParameters quality,
                                             final OutputRecords output,
                                             final List<XdmNode> records,

@@ -22,11 +22,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * §12 item 25: the documents a fragment's {@code SplitFilter} hands its transform — one per record, with
- * the parent element structure replicated above it. Driven by stroom's own filter, so that what is
- * scored is what will run.
- */
+/// Tests `RecordSplit`, which produces the documents a fragment's `SplitFilter` hands its transform: one per
+/// record, with the parent element structure replicated above it.
+///
+/// It uses Stroom's own `SplitFilter`, so that what learning scores is what will run in production.
 class TestRecordSplit {
 
     private static final String RECORDS = """
@@ -69,10 +68,10 @@ class TestRecordSplit {
 
     @Test
     void nothingAtThatDepthIsNoRecordsAtAll() {
-        // The filter itself emits the structure above the records whether it found any or not, so a depth
-        // nothing sits at comes back as one empty envelope. That is not a record: handing it on as one
-        // would run the chain over an empty document, and taking it for "one record" would make a stream
-        // that carries a single record indistinguishable from one that carries none.
+        // The filter emits the structure above the records whether it found any or not, so a depth with
+        // nothing at it comes back as one empty envelope. That is not a record. Handing it on as one would run
+        // the chain over an empty document, and treating it as "one record" would make a stream that carries a
+        // single record indistinguishable from one that carries none.
         assertThat(RecordSplit.split(RECORDS, 9)).isEmpty();
 
         assertThat(RecordSplit.split("this is not xml", 1))
@@ -82,9 +81,9 @@ class TestRecordSplit {
 
     @Test
     void oneRecordIsOneRecordAndNotTheWholeDocument() {
-        // The case that defeats the whole of item 25 if it is confused with "no records": a stream
-        // carrying a single record is still run one record at a time, and that record is still stripped
-        // of everything around it — which is exactly what the pipeline will give the transform.
+        // Each element at the split depth becomes its own document, stripped of its siblings, which is exactly
+        // what the pipeline will give the transform. If a lone record were confused with "no records" and the
+        // whole document passed on instead, a transform could read content it never sees in production.
         final String one = """
                 <records xmlns="records:2">
                   <envelope>keep me out of it</envelope>

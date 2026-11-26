@@ -40,20 +40,20 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 53: **the corpus holds a candidate to no worse** (design 04 §4.1, A56, A66;
-/// phase 3's exit at Tier 1).
+/// Tests that a binding's regression corpus stops a later candidate from doing worse on any record the
+/// binding was accepted on.
 ///
-/// The corpus is per record (A56): a binding learned from six records holds six entries, each the record as
-/// the parser cut it with the output it was accepted with and what that output is — a translation, an
-/// admission, nothing. A later session is held to every entry, to no worse (A66): its output for each
-/// must clear the bar, and a record once translated may never become an Unknown. Output may otherwise
-/// change, and a marked Unknown may become a real translation without anybody agreeing, since that is the
-/// corpus getting better.
+/// The corpus holds one entry per record: a binding learned from six records holds six entries, each holding
+/// the record as the parser split it, the output it was accepted with, and what kind of output that is (a
+/// translation or an admitted Unknown). A later candidate is checked against every entry: its output for
+/// each must clear the bar, and a record that was once translated may never become an Unknown. Output may
+/// otherwise change, and a marked Unknown may become a real translation without anyone approving it, since
+/// that makes the corpus better.
 ///
-/// The later session here is an improvement asked for by hand (A46), which is a session with no stream
-/// of its own: it learns from the corpus put back together, and is the cleanest way to put a second
-/// candidate to the gate. The document allows Unknown in `EventDetail`, so that an admission clears the
-/// bar and what refuses the candidate is the corpus and not the floor.
+/// The later candidate here comes from an improvement requested by hand, which is a session with no stream
+/// of its own that learns from the records in the corpus. It is the simplest way to put a second candidate
+/// through the gate. The document allows Unknown in `EventDetail`, so that an admitted Unknown clears the
+/// bar and it is the corpus, not the score threshold, that refuses the candidate.
 class TestScenario53TheCorpusHoldsACandidateToNoWorse {
 
     private static final String DOC = "doc-1";
@@ -159,7 +159,7 @@ class TestScenario53TheCorpusHoldsACandidateToNoWorse {
                                     final Binding binding,
                                     final String xslt) {
         final Script script = script(scenarios, xslt);
-        // Asked, then carried on as the worker carries it (A46): an improvement is not run in the web
+        // The improvement is requested and then resumed by the worker, because it is not run in the web
         // request that asks for it.
         final StageRun improved = scenarios.improved(document -> script, doc, binding.getUuid(), null, "jo");
         script.verifyExhausted();
@@ -173,8 +173,8 @@ class TestScenario53TheCorpusHoldsACandidateToNoWorse {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(xslt));
     }
 
-    /// The demo document, allowing Unknown in EventDetail so that an admission clears the bar, and holding
-    /// nothing out, so that the sample the model is shown is the whole of the six-record stream.
+    /// Builds the demo document, allowing Unknown in EventDetail so that an admitted Unknown clears the bar,
+    /// and holding no records out, so that the sample the model is shown is the whole six-record stream.
     private static LearningFlowDoc doc() {
         final LearningFlowDoc demo = DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door").build();
         return demo.copy()

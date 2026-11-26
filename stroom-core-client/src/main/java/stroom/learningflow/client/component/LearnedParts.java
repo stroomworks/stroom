@@ -35,11 +35,14 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 
-/// What a Smart Pipeline element has learned, as its pipeline's Structure tab shows it unfolded: the elements
-/// of its learned translation (the fragment pipeline), in the order a record passes through them, each with the
-/// documents it uses (e.g. a parser's text converter, a filter's XSLT), which open from there. The fragment's
-/// own source is left out: it is where the Smart Pipeline hands its records on, not something learned. A plain
-/// class, so that it is tested without a browser.
+/// Lists the elements of a Smart Pipeline element's learned translation (its fragment pipeline), for the
+/// "What it learned" section of the pipeline's Structure tab. The elements are given in the order a record
+/// passes through them, each with the documents it uses (e.g. a parser's text converter, a filter's XSLT),
+/// which can be opened from there.
+///
+/// The fragment's own Source element is left out, because it is only where the Smart Pipeline passes its
+/// records in, not something that was learned. It is a plain class so that it can be tested without a
+/// browser.
 public final class LearnedParts {
 
     private static final String SOURCE = "Source";
@@ -48,13 +51,14 @@ public final class LearnedParts {
         // Static utility
     }
 
-    /// The parts of a learned translation.
+    /// Lists the parts of a learned translation.
     ///
     /// @param layers   The fragment pipeline's layers, its ancestors' first, as the pipeline resource gives
     ///                 them.
-    /// @param typeName An element's type as people see it, e.g. "XSLT Filter".
-    /// @return Its elements in the order records pass through them (branches by element id), then any not
-    ///         reached; empty for none.
+    /// @param typeName Gives an element's type as people see it, e.g. "XSLT Filter", or null to use the raw
+    ///                 type.
+    /// @return The elements in the order records pass through them (branches in order of element id), then any
+    ///         not reached that way; empty if there are none.
     public static List<Part> of(final List<PipelineLayer> layers, final Function<PipelineElement, String> typeName) {
         if (NullSafe.isEmptyCollection(layers)) {
             return List.of();
@@ -66,7 +70,7 @@ public final class LearnedParts {
         for (final String root : roots(elements, links)) {
             follow(root, links, ordered);
         }
-        // Any a walk didn't reach, e.g. in a loop, by id
+        // Add any elements the walk didn't reach, e.g. because they are in a loop, in order of id
         ordered.addAll(new TreeMap<>(elements).keySet());
 
         final List<Part> parts = new ArrayList<>();
@@ -83,7 +87,7 @@ public final class LearnedParts {
         return parts;
     }
 
-    // The elements nothing links to, by id
+    // Returns the elements that nothing links to, in order of id
     private static List<String> roots(final Map<String, PipelineElement> elements,
                                       final Map<String, List<PipelineLink>> links) {
         final Set<String> targets = new HashSet<>();
@@ -108,7 +112,7 @@ public final class LearnedParts {
         }
     }
 
-    // The documents an element's properties name, by property name
+    // Returns the documents an element's properties refer to, in order of property name
     private static List<DocRef> documents(final Map<String, PipelineProperty> properties) {
         if (properties == null) {
             return List.of();
@@ -147,19 +151,19 @@ public final class LearnedParts {
             return id;
         }
 
-        /// @return Its type as people see it, e.g. "XSLT Filter".
+        /// @return The element's type as people see it, e.g. "XSLT Filter".
         public String getType() {
             return type;
         }
 
-        /// @return Its name in the fragment, or its id where it has none.
+        /// @return The element's name in the fragment, or its id if it has no name.
         public String getName() {
             return name == null || name.isEmpty()
                     ? id
                     : name;
         }
 
-        /// @return The documents it uses, e.g. its XSLT; empty for none.
+        /// @return The documents the element uses, e.g. its XSLT; empty if none.
         public List<DocRef> getDocuments() {
             return documents;
         }

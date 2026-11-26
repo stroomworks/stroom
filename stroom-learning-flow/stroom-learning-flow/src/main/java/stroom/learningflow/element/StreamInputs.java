@@ -43,12 +43,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 
-/// The streams of A28 in a node: the stream store, read by meta id. This is how the worker
-/// gets back the sample an attempt was learning from — the attempt keeps the id and the store keeps the
-/// stream, so nothing is copied and nothing is held.
+/// The node's implementation of [Inputs], which reads a stream from the stream store by meta id. This is
+/// how the background worker gets back the stream an attempt is learning from: the attempt keeps only the
+/// id and the store keeps the stream, so nothing is copied or held.
 ///
-/// The first part only, as the supervisor element sees it: a stream of several parts is served part by
-/// part and it is the first that raised the attempt (design 02 §7).
+/// Only the first part is read, as the Smart Pipeline element sees it: a stream of several parts is
+/// served part by part, and it is the first part that opened the attempt.
 @Singleton
 public class StreamInputs implements Inputs {
 
@@ -78,12 +78,12 @@ public class StreamInputs implements Inputs {
         }
         try (final Source source = store.openSource(metaId)) {
             final Map<String, String> attributes = attributeMapFactory.getAttributes(metaId);
-            // Read as far as the prefix (design 04 §3): what a session samples from is bounded by the
-            // document far below this, and the whole of a stream of any size is read only by a fragment
-            // running over it, through the opener, which opens the stream again.
+            // Read only the prefix: the sample a session takes is limited by the document to far less
+            // than this, and the whole of a large stream is read only by a fragment running over it,
+            // through the opener, which opens the stream again.
             final Prefix prefix = prefix(source, encodingOf(meta));
-            // When the stream was received, which is what a timestamp with no year takes its year from
-            // and what the times check measures an event against (Track 1 task 3)
+            // When the stream was received, which a timestamp with no year takes its year from, and which
+            // the times check measures an event against.
             final Long receivedMs = meta.getCreateMs();
             return Optional.of((prefix.complete()
                     ? new Input(metaId, meta.getFeedName(), meta.getTypeName(), attributes == null
@@ -94,20 +94,20 @@ public class StreamInputs implements Inputs {
                             : attributes, prefix.text(), null, () -> open(metaId)))
                     .receivedAt(receivedMs));
         } catch (final Exception e) {
-            // Deleted, on a volume this node cannot reach, or unreadable — and the close of the source
-            // throws a checked exception besides. The attempt that was learning from it is abandoned by
-            // the caller rather than left waiting for a stream that will not come.
+            // The stream was deleted, is on a volume this node cannot reach, or is unreadable (and closing
+            // the source can also throw a checked exception). The caller abandons the attempt that was
+            // learning from it rather than leaving it waiting for a stream that will never come.
             LOGGER.warn(() -> LogUtil.message("Stream {} could not be read: {}", metaId, e.getMessage()), e);
             return Optional.empty();
         }
     }
 
-    /// The first [Input#PREFIX_BYTES] of the stream as text, and whether that was all of it. A prefix that
-    /// is not the whole stream ends at the last line break within it: a line cut in the middle is not a
-    /// record of the stream, and judged as one it would fail a candidate that every whole record clears.
+    /// Reads the first [Input#PREFIX_BYTES] of the stream as text, and whether that was all of it. A prefix
+    /// that is not the whole stream is cut at its last line break, because a line cut in the middle is
+    /// not a real record, and judging it as one would fail a candidate that every whole record passes.
     ///
     /// @param source   The stream.
-    /// @param encoding What the feed says its data is written in.
+    /// @param encoding The character encoding the feed says its data uses.
     private static Prefix prefix(final Source source, final Charset encoding) throws IOException {
         try (final InputStreamProvider provider = source.get(0)) {
             final InputStream in = provider.get();
@@ -120,16 +120,15 @@ public class StreamInputs implements Inputs {
         }
     }
 
-    /// What the feed says its data is written in (audit finding S3).
+    /// Gets the character encoding the feed says its data uses.
     ///
-    /// Learning happens in the worker (A60), which read every stream as UTF-8 whatever the feed said,
-    /// while the task path has always honoured the feed's encoding
-    /// (`Supervision` through `InputSource.getEncoding()`). So a feed in UTF-16 or windows-1252 was
-    /// learned from wrongly decoded text and then served correctly decoded — the parser learned against
-    /// characters the stream does not contain.
+    /// The processing task path decodes a stream using the feed's encoding (`Supervision`, through
+    /// `InputSource.getEncoding()`), so the background worker must do the same. Otherwise a feed in UTF-16
+    /// or windows-1252 would be learned from wrongly decoded text and then served correctly decoded, so
+    /// the parser would have learned from characters the stream does not contain.
     ///
-    /// An encoding the node cannot name is a reason to go on in UTF-8 rather than to abandon the stream:
-    /// the same thing the pipeline does with an unreadable encoding, and most feeds are UTF-8 anyway.
+    /// An encoding the node does not recognise falls back to UTF-8 rather than abandoning the stream,
+    /// which is what the pipeline does with an unreadable encoding, and most feeds are UTF-8 anyway.
     ///
     /// @param meta The stream's meta.
     /// @return The charset.
@@ -155,7 +154,7 @@ public class StreamInputs implements Inputs {
                 : text.substring(0, lastBreak + 1);
     }
 
-    /// The whole stream, opened afresh, closing its source with it.
+    /// Opens the whole stream again, returning a stream that closes its source when it is closed.
     private InputStream open(final long metaId) {
         try {
             final Source source = store.openSource(metaId);

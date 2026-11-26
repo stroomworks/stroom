@@ -30,8 +30,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// The deferral rows of design 04 §6: one per stream and document, brought up to date rather than
-/// duplicated when the stream is put back again, and gone when it is released.
+/// Tests [DeferralsDao]: there is one row per learner and stream, which is updated rather than duplicated
+/// when the stream is deferred again, and deleted when the stream is released.
 class TestDeferralsDao {
 
     private static final String DOC = "doc-" + System.nanoTime();
@@ -75,7 +75,7 @@ class TestDeferralsDao {
 
         final Deferral row = deferrals.forDocument(DOC).getFirst();
 
-        // The pipeline is the learner's, so it is never missing (A114).
+        // The pipeline is part of the learner's key, so it is never missing.
         assertThat(row.learner()).isEqualTo(LEARNER);
         assertThat(row.pipeline()).isEqualTo(LEARNER.pipelineUuid());
         assertThat(row.failedAgainst()).isNull();
@@ -106,9 +106,10 @@ class TestDeferralsDao {
         assertThat(deferrals.forDocument(OTHER_DOC)).extracting(Deferral::inputId).containsExactly(7L);
     }
 
-    /// What the learning job sweeps (A130): each learner and the transform its streams wait against, once
-    /// however many streams wait on it; a stream that waits on no transform is not named. The table is
-    /// shared with whatever else has run against the database, so only these two learners are looked at.
+    /// Tests what the learning job sweeps for streams a promotion's wake did not reach: each learner and
+    /// the transform its streams failed against, once however many streams there are, including a null
+    /// transform for streams waiting for a first learning. The table is shared with whatever else has run
+    /// against the database, so only these two learners are checked.
     @Test
     void eachLearnerAndTransformWaitedAgainstIsNamedOnce() {
         deferrals.deferred(LEARNER, DOC, 7L, "DOOR-ACCESS", "Raw Events", "frag:1", "short", 2);
@@ -116,8 +117,8 @@ class TestDeferralsDao {
         deferrals.deferred(LEARNER, DOC, 9L, "LIFT", "Raw Events", null, "no binding", 0);
         deferrals.deferred(OTHER_LEARNER, OTHER_DOC, 7L, "DOOR-ACCESS", "Raw Events", "frag:9", "short", 1);
 
-        // Including the row with no stamp (audit finding W7-4): a stream waiting for a *first* learning
-        // fell short of nothing, and leaving it out of this sweep left it to the five-minute retry even
+        // This includes the row with no stamp. A stream waiting for a first learning failed against no
+        // transform, and if it were left out of this sweep it would wait for the full retry delay even
         // after a translation existed to serve it.
         assertThat(deferrals.stampsWaiting())
                 .filteredOn(stamp -> stamp.learner().equals(LEARNER) || stamp.learner().equals(OTHER_LEARNER))

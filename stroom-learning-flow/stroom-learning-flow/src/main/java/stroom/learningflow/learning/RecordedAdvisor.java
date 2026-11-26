@@ -24,36 +24,34 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-/// An advisor that answers from what an attempt was already answered (A28): the turns a previous run
-/// recorded, in the order they were put, and then the model — or nothing, where the attempt is to stop
-/// and wait.
+/// An advisor used to resume an attempt. It answers questions from the turns a previous run recorded, in
+/// the order they were asked, and once those run out it passes questions to another advisor: the model, or
+/// [#awaiting()] where the attempt is to stop and wait.
 ///
-/// This is how an attempt resumes. The conversation is not a state machine that saves its own workings: it is
-/// re-walked from the start with the answers it was given, which re-derives everything those answers
-/// produced — the chain, the boundary, the records, the targets, each element's configuration and output
-/// — because all of it follows from the sample and the answers, both of which are kept. What the model
-/// said is a record; what running produced is a consequence, and consequences are cheaper to re-derive
-/// than to store, being the stream's own text besides (A38).
+/// The conversation does not save its own state. Instead it is walked again from the start with the answers
+/// it was given, which derives again everything those answers produced (the chain, the boundary, the
+/// records, the targets, each element's configuration and output), because all of it follows from the
+/// sample and the answers, and both are kept. Deriving these again is cheaper than storing them, and much
+/// of it is the stream's own text, which should not be copied.
 ///
-/// A replayed answer is not re-scored by hand: the walk judges it exactly as it judged it the first time.
-/// That the walk has reached the same place is checked rather than assumed — every replayed answer is
-/// given only to the question the record says it answered, and a walk that asks anything else has
-/// diverged and is refused (see [ReplayDiverged]). An attempt that resumes therefore either reaches the
-/// state it stopped in or says it could not, and never binds a configuration learned from a mixture of
-/// two walks.
+/// A replayed answer is judged by the walk exactly as it was the first time. That the walk has reached the
+/// same place is checked rather than assumed: each replayed answer is given only to the question the record
+/// says it answered, and a walk that asks anything else has diverged and is refused (see [ReplayDiverged]).
+/// So a resumed attempt either reaches the state it stopped in or says it could not, and never binds a
+/// configuration learned from a mixture of two walks.
 public final class RecordedAdvisor implements Advisor {
 
     private final List<Turn> answered = new ArrayList<>();
     private final Advisor then;
     private int next;
-    /// The turn the last question was answered from, or null where it was put afresh: what says whether
-    /// the guidance a re-walk records is the record's or today's.
+    /// The turn the last question was answered from, or null where it was put to the next advisor. It
+    /// decides whether the guidance recorded for the turn is the recorded turn's or today's.
     private Turn replayed;
 
-    /// @param turns The turns of the attempt being resumed, in order; those with no answer are the ones it
-    ///              stopped at and are not replayed.
-    /// @param then  Who answers once the record runs out: the model for an attempt being carried on, or
-    ///              [#awaiting()] for one that is to stop and wait for the worker.
+    /// @param turns The turns of the attempt being resumed. They are sorted by number; turns with no answer
+    ///              are where it stopped, and are not replayed.
+    /// @param then  The advisor that answers once the recorded turns run out: the model for an attempt
+    ///              being resumed, or [#awaiting()] for one that is to stop and wait for the worker.
     public RecordedAdvisor(final List<Turn> turns, final Advisor then) {
         turns.stream()
                 .sorted(Comparator.comparingInt(Turn::number))
@@ -62,8 +60,11 @@ public final class RecordedAdvisor implements Advisor {
         this.then = then;
     }
 
-    /// An advisor that answers nothing: the conversation stops at the first question the record does not
-    /// answer, and the attempt waits for whoever will (A28).
+    /// Returns an advisor that answers nothing, by throwing [AwaitingAnswer]. The conversation stops at the
+    /// first question the record does not answer, and the attempt waits for the worker or a person to
+    /// answer it.
+    ///
+    /// @return The advisor.
     public static Advisor awaiting() {
         return (transcript, question) -> {
             throw new AwaitingAnswer(question);
@@ -75,18 +76,18 @@ public final class RecordedAdvisor implements Advisor {
         return ask(transcript, question, List.of());
     }
 
-    /// The record first, then whoever answers what it does not.
+    /// Answers from the record first, then from the next advisor.
     ///
-    /// Guidance is passed on to the one that has to be persuaded and withheld from the record, which has
-    /// already answered: a replayed turn was asked under what stood then, and saying otherwise would put
-    /// a hint into the history of a question nobody asked with it.
+    /// Guidance is passed on to the next advisor but not applied to recorded answers. A replayed turn was
+    /// asked with the guidance in force then, and recording today's guidance against it would claim the
+    /// question was asked with a hint it never had.
     @Override
     public String ask(final List<Exchange> transcript, final Question question, final List<Given> guidance) {
         if (next < answered.size()) {
             final Turn turn = answered.get(next++);
-            // The identity names the kind of question and what it is about, so one comparison covers
-            // both; how much the step had been told is left out of it, since a re-walk over a fragment
-            // the session itself bound is told of that fragment's shortfalls from its first question.
+            // The identity covers the kind of question and what it is about. The count of shortfalls is left
+            // out, because a replay over a fragment the session itself bound is told of that fragment's
+            // shortfalls from its first question, which the original questions were not.
             if (!question.identity().equals(Question.identityOf(turn.question()))) {
                 throw new ReplayDiverged(turn, question);
             }
@@ -97,8 +98,8 @@ public final class RecordedAdvisor implements Advisor {
         return then.ask(transcript, question, guidance);
     }
 
-    /// @return The recorded turn the last question was answered from; empty where it was put afresh, or
-    ///         nothing has been asked yet.
+    /// @return The recorded turn the last question was answered from; empty where it was passed to the
+    ///         next advisor, or nothing has been asked yet.
     public Optional<Turn> lastReplayed() {
         return Optional.ofNullable(replayed);
     }
@@ -117,7 +118,7 @@ public final class RecordedAdvisor implements Advisor {
 
     @Override
     public long tokensUsed() {
-        // What the record cost was charged when it was first asked; this advisor charges for what it adds.
+        // Recorded turns were charged when they were first asked, so only the next advisor's tokens count.
         return then.tokensUsed();
     }
 
@@ -125,10 +126,10 @@ public final class RecordedAdvisor implements Advisor {
     // --------------------------------------------------------------------------------
 
 
-    /// Raised where a resumed walk asks something other than what the record says it asked at that turn
-    /// (A45): the flow, the document or the sample has changed under the attempt, so the answers kept are
-    /// not answers to the questions now being put. The attempt is refused rather than carried on, since an
-    /// answer given to the wrong question would be judged, configured and possibly bound.
+    /// Thrown when a resumed walk asks something other than what the record says was asked at that turn.
+    /// The flow, the document or the sample has changed since, so the recorded answers are not answers to
+    /// the questions now being asked. The attempt is refused rather than resumed, since an answer to the
+    /// wrong question would be judged, configured and possibly bound.
     public static final class ReplayDiverged extends RuntimeException {
 
         ReplayDiverged(final Turn turn, final Question question) {
@@ -141,9 +142,9 @@ public final class RecordedAdvisor implements Advisor {
     // --------------------------------------------------------------------------------
 
 
-    /// Raised where an attempt has reached a question nobody present can answer: it stops here, and the
-    /// worker or a person takes it up (A28). Where in the walk it stopped is filled in by the conversation,
-    /// which alone knows it, so that the turn can be recorded unanswered and a person can answer it.
+    /// Thrown when an attempt reaches a question that nothing present can answer. The attempt stops there,
+    /// and the worker or a person takes it up. The conversation fills in where in the walk it stopped,
+    /// since only it knows, so that the turn can be recorded unanswered and a person can answer it.
     public static final class AwaitingAnswer extends RuntimeException {
 
         private final transient Question question;
@@ -168,17 +169,17 @@ public final class RecordedAdvisor implements Advisor {
             return question;
         }
 
-        /// The step whose question it stopped at.
+        /// @return The id of the step whose question it stopped at.
         public String stepId() {
             return stepId;
         }
 
-        /// Which candidate of that step.
+        /// @return Which candidate of that step it stopped at.
         public int candidate() {
             return candidate;
         }
 
-        /// The turn it would have been, by its number in the transcript.
+        /// @return The number the unanswered turn would have in the transcript.
         public int number() {
             return number;
         }

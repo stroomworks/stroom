@@ -28,20 +28,19 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 import java.util.OptionalInt;
 
-/// What one record is in a stream that arrives as, or is parsed into, markup (A31, A35).
+/// What one record is in a stream that arrives as, or is parsed into, XML or JSON. The split step settles it.
 ///
-/// Three shapes:
+/// There are three shapes:
 ///
-/// - **An element**, by local name: every `<record>` is one record. The usual XML case.
+/// - **An element**, by local name: every `<record>` is one record. This is the usual XML case.
 /// - **The children of an element**, whatever they are called: every child of `<batch>` is one record.
-///   For a feed that interleaves several record types as siblings under a container — common in audit
-///   exports, SIEM exports and event logs — where no single name describes a record and the old
-///   vocabulary could say nothing at all (`docs/learning-flow-mixed-record-elements.md`).
+///   This is for a feed that mixes several record types as siblings under a container (common in audit
+///   exports, SIEM exports and event logs), where no single element name describes a record.
 /// - **A JSON array**, by key, or [#ROOT] where every top-level value is one record.
 ///
-/// A binding carries the boundary its variant was learned with, so that the stage counts the stream's
-/// records and judges yield by it rather than by the root's children; raw text has none, since the
-/// parser's configuration cuts it.
+/// A binding carries the boundary it was learned with, so that the Smart Pipeline element counts the
+/// stream's records and judges yield by it rather than by the root's children. Raw text has no boundary,
+/// since the parser's configuration cuts it into records.
 @JsonPropertyOrder({"element", "children", "array", "depth"})
 @JsonInclude(Include.NON_NULL)
 public final class RecordBoundary {
@@ -49,8 +48,8 @@ public final class RecordBoundary {
     /// The JSON boundary where every top-level value is one record, as JSON lines are.
     public static final String ROOT = "root";
 
-    /// The element whose **children** are each one record, [#ROOT] for the document's own root; null
-    /// where the boundary is not of that shape.
+    /// The element whose **children** are each one record, or [#ROOT] for the document's own root; null
+    /// where the boundary is of another shape.
     @JsonProperty
     private final String children;
     @JsonProperty
@@ -82,14 +81,14 @@ public final class RecordBoundary {
         this.depth = depth;
     }
 
-    /// A boundary that is only enough to be one: what a serialisation test builds, since the real
-    /// constructor refuses the empty one.
+    // The minimal valid boundary, for serialisation tests: the real constructor refuses an empty one.
     @SerialisationTestConstructor
     private RecordBoundary() {
         this(null, null, ROOT, null);
     }
 
-    /// The boundary of input that is already XML: the element that is one record.
+    /// @param element The local name of the element that is one record.
+    /// @return The boundary of XML input whose records are each that element.
     public static RecordBoundary ofElement(final String element) {
         return new RecordBoundary(element, null, null, null);
     }
@@ -104,68 +103,71 @@ public final class RecordBoundary {
         return new RecordBoundary(null, parent, null, null);
     }
 
-    /// The boundary of JSON: the key of the array whose items are records, or [#ROOT].
+    /// @param array The key of the array whose items are records, or [#ROOT].
+    /// @return The boundary of JSON input whose records are that array's items.
     public static RecordBoundary ofArray(final String array) {
         return new RecordBoundary(null, null, array, null);
     }
 
-    /// The same boundary, knowing how deep in the document one record sits.
+    /// @param depth How deep in the document one record sits.
+    /// @return A copy of this boundary recording that depth.
     public RecordBoundary atDepth(final Integer depth) {
         return new RecordBoundary(element, children, array, depth);
     }
 
-    /// How deep in the document the transform receives one record sits: what the fragment's `SplitFilter`
-    /// is set to split at, so that the stylesheet sees one record and memory is bounded by the record and
-    /// not by the stream (§12 item 25). One for the children of a root; three for the items of an array
-    /// under a key, since the JSON parser wraps its output in a records root. It is read from the document
-    /// the split was settled against and not assumed, which is why it is kept rather than derived.
+    /// How deep in the document the transform receives one record sits. The fragment's `SplitFilter` is set
+    /// to split at this depth, so that the stylesheet sees one record at a time and memory use is bounded by
+    /// the record rather than by the stream. It is one for the children of a root, and three for the items of
+    /// an array under a key, since the JSON parser wraps its output in a records root. It is measured from
+    /// the document the split was settled against, not assumed, which is why it is stored rather than derived.
     ///
-    /// @return Empty for a binding learned before the depth was recorded. A guess would be worse than
-    /// nothing: the usual depth of one splits a JSON document at its single top-level map and a nested
-    /// XML document at its one wrapper, which is one document for the whole stream and bounds nothing.
-    /// A binding with no depth is written without a filter, exactly as it was before item 25, until it is
-    /// learned again.
+    /// @return The depth, or empty for a binding learned by an earlier version that did not record it. No
+    /// depth is guessed for such a binding, because the usual depth of one would split a JSON document at its
+    /// single top-level map, or a nested XML document at its one wrapper, giving one document for the whole
+    /// stream. Such a binding's fragment is written without a split filter until it is learned again.
     public OptionalInt splitDepth() {
         return depth == null
                 ? OptionalInt.empty()
                 : OptionalInt.of(depth);
     }
 
-    /// The depth as it is stored, which is null for a binding learned before it was recorded.
+    /// @return The depth as it is stored, which is null for a binding learned before depths were recorded.
     public Integer getDepth() {
         return depth;
     }
 
-    /// The local name of the element that is one record, or null where the boundary is an array.
+    /// @return The local name of the element that is one record, or null where the boundary is of another
+    /// shape.
     public String getElement() {
         return element;
     }
 
-    /// The key of the array whose items are records, [#ROOT], or null where the boundary is an element.
+    /// @return The key of the array whose items are records, or [#ROOT]; null where the boundary is of another
+    /// shape.
     public String getArray() {
         return array;
     }
 
-    /// The local name of the element whose children are each one record, [#ROOT] for the document's own
-    /// root, or null where the boundary is not of that shape.
+    /// @return The local name of the element whose children are each one record, or [#ROOT] for the
+    /// document's own root; null where the boundary is of another shape.
     public String getChildren() {
         return children;
     }
 
-    /// Whether the boundary is the children of an element rather than an element or an array.
+    /// @return Whether the boundary is the children of an element rather than an element or an array.
     @JsonIgnore
     public boolean isChildren() {
         return children != null;
     }
 
-    /// Whether the boundary is a JSON array — [#getArray()] is set — rather than an element.
+    /// @return Whether the boundary is a JSON array (so [#getArray()] is set).
     @JsonIgnore
     public boolean isArray() {
         return array != null;
     }
 
-    /// A boundary is a name: two that name the same records are the same boundary, whether or not
-    /// either has been told how deep they sit, since the depth follows from the name and the document.
+    // Two boundaries that name the same records are equal whether or not either records its depth, since
+    // the depth follows from the name and the document.
     @Override
     public boolean equals(final Object o) {
         if (this == o) {

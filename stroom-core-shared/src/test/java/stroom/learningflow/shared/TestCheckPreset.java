@@ -22,7 +22,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Decision D6: *Lenient* and *Strict* over the three states, *Standard* the defaults.
+/// Tests the check presets: *Standard* is the defaults, and *Lenient* and *Strict* loosen or tighten it.
 class TestCheckPreset {
 
     @Test

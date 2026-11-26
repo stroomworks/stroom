@@ -16,10 +16,10 @@
 
 package stroom.learningflow.shared;
 
-/// Where the time zone a Smart Pipeline reads timestamps in came from (decision N6), which its Learning Status
-/// tab shows so that a surprising date can be traced to what set the zone (Track 2 step 4).
+/// Where the time zone a Smart Pipeline uses to read timestamps came from. The pipeline's Learning Status tab
+/// shows it, so that a surprising date can be traced back to whatever set the zone.
 public enum TimeZoneSource {
-    /// The stream's own `TimeZone` header: the sender said so.
+    /// The stream's own `TimeZone` header, set by the sender.
     HEADER,
     /// The Smart Pipeline element's `timeZone` property.
     PIPELINE,

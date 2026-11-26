@@ -61,18 +61,19 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * Runs a written fragment over an input with the step runners, the way the conversation ran it before it
- * was written: the chain is walked from {@code Source} along the links, each element's configuration
- * document read back from its store, each step's output the next step's input. The Tier 1 stand-in for
- * merging the fragment into a pipeline (design 02 §2). It runs the fragment as a pipeline would — the
- * whole inheritance stack merged — so a fragment that inherits its structure from a template (§3,
- * {@code parentPipeline}) runs here as it will there.
- */
+/// A [FragmentRunner] for the in-memory scenario tests, which runs a written fragment with the step
+/// runners instead of as a real nested pipeline.
+///
+/// It runs the fragment the same way a learning session runs its candidates before they are written: the
+/// chain is followed from `Source` along the links, each element's configuration document is read back
+/// from its store, and each step's output is the next step's input. Like a real pipeline, it first merges
+/// the whole inheritance stack, so a fragment that inherits its structure from a template (through
+/// `parentPipeline`) runs here as it would in a pipeline.
 public final class StandInFragmentRunner implements FragmentRunner {
 
-    /// Elements that shape the stream into records without changing what any record says: run by the
-    /// pipeline, passed over here (§12 item 25).
+    /// Elements that divide the stream into records without changing what any record says. A real pipeline
+    /// runs them; here they are skipped, and their effect is reproduced by running the following steps one
+    /// record at a time.
     private static final Set<String> SHAPING = Set.of(PipelineRuns.SPLIT_FILTER);
 
     private final PipelineStore pipelineStore;
@@ -94,14 +95,12 @@ public final class StandInFragmentRunner implements FragmentRunner {
                 .collect(Collectors.toUnmodifiableMap(StepRunner::elementType, Function.identity()));
     }
 
-    /**
-     * Walks the chain with the module's step runners. A step that produced output and raised errors on
-     * the way is followed, as a pipeline would follow it: the errors are records that failed, dropped to
-     * the error stream, and the scorers count what got through (design 01 §5).
-     *
-     * @param boundary What one record is in the stream (A35), as the binding carries it, for the scorers that
-     *                 count records; null where none was settled.
-     */
+    /// Runs the chain with the module's step runners. A step that produced output but also raised errors
+    /// is followed by the next step, as in a pipeline: the errors are records that failed and went to the
+    /// error stream, and the scorers count what got through.
+    ///
+    /// @param boundary What one record is in the stream, as the binding records it, for the scorers that
+    ///                 count records; null if none has been settled.
     @Override
     public List<Attempted> run(final DocRef fragment, final String input, final RecordBoundary boundary) {
         return run(fragment, input, boundary, Map.of());
@@ -123,9 +122,9 @@ public final class StandInFragmentRunner implements FragmentRunner {
 
         final List<Attempted> steps = new ArrayList<>();
         final Set<String> visited = new HashSet<>();
-        // From the filter on, the chain runs one record at a time, because that is how the pipeline will
-        // run it (§12 item 25): a stylesheet that reads the whole document behaves differently when it is
-        // given one record, and what is scored has to be what will run.
+        // After the split filter, the chain runs one record at a time, because that is how the pipeline
+        // will run it. A stylesheet that reads the whole document behaves differently when it is given one
+        // record, and what is scored has to be what will run.
         final OptionalInt depth = boundary == null
                 ? OptionalInt.empty()
                 : boundary.splitDepth();
@@ -146,18 +145,18 @@ public final class StandInFragmentRunner implements FragmentRunner {
             final StepRunner runner = runners.get(element.getType());
             if (runner == null) {
                 if (SHAPING.contains(element.getType())) {
-                    // The `SplitFilter` the fragment carries so that the pipeline gives its transform one
-                    // record at a time (§12 item 25). There is no runner for it because it changes
-                    // nothing about any record: what it changes is how many documents the elements after
-                    // it are given, and that is what happens from here.
+                    // The `SplitFilter` that the fragment includes so that the pipeline gives its
+                    // transform one record at a time. There is no runner for it because it changes
+                    // nothing in any record; it only changes how many documents the elements after it are
+                    // given, which is reproduced from here on.
                     split = true;
                     continue;
                 }
                 throw new IllegalStateException("No runner for element type " + element.getType()
                                                 + " in fragment " + fragment.getName());
             }
-            // A snapshot's code for the element where one was given (A70), else what the fragment's
-            // documents say.
+            // The snapshot's code for the element if one was given, otherwise the configuration in the
+            // fragment's documents.
             final String configuration = code.containsKey(elementId)
                     ? code.get(elementId)
                     : runner.configured()
@@ -165,8 +164,9 @@ public final class StandInFragmentRunner implements FragmentRunner {
                             .orElse(null);
             final boolean first = split && !ran && depth.isPresent();
             ran = ran || first;
-            // As above: one SplitFilter in a fragment, so what follows the first per-record element is
-            // given what that element wrote for each record.
+            // A fragment has only one SplitFilter. The first element after it is given each record split
+            // from the input at the boundary's depth; the elements after that are given what the previous
+            // element wrote for each record.
             final StepResult result = split && depth.isPresent()
                     ? PerRecord.run(runner, configuration, current, first
                             ? depth.getAsInt()
@@ -182,10 +182,10 @@ public final class StandInFragmentRunner implements FragmentRunner {
         return steps;
     }
 
-    /// The stand-in serves as it runs: the chain over the whole text, step by step, and the tail's output
-    /// then read through the same gate the pipeline's tail feeds, so that what Tier 1 asserts about a
-    /// record's verdict is what a node decides. Nothing here is streaming — the text is in hand — and
-    /// nothing here needs to be.
+    /// Serves a stream by running the chain over the whole text, step by step, and then reading the last
+    /// step's output through the same [RecordGate] that a real pipeline's output passes through, so that
+    /// what the in-memory tests assert about each record's verdict is what a node would decide. Nothing
+    /// here streams, because the whole text is already in memory and tests do not need streaming.
     @Override
     public ServedStream serve(final DocRef fragment,
                               final InputStream input,
@@ -205,9 +205,10 @@ public final class StandInFragmentRunner implements FragmentRunner {
         final String output = steps.isEmpty()
                 ? null
                 : steps.get(steps.size() - 1).result().output();
-        // The parser's records, by index, for a judge that wants the record whose output fell short: the
-        // one-to-one premise of design 04 §3, which is what the pipeline's tap gives too. Counted as the
-        // pipeline's tap counts them, so that the two runners agree on what went in (W4-7).
+        // The parser's records, by index, for a judge that needs the input record whose output fell short.
+        // This assumes each input record produces one output record, as the real runner also does. They
+        // are counted the same way the real runner counts them, so that the two runners agree on how many
+        // records went in.
         final List<String> parsedRecords = !steps.isEmpty() && steps.get(0).parser()
                 ? RecordSplit.split(steps.get(0).result().output(), boundary == null
                         ? 1
@@ -238,11 +239,11 @@ public final class StandInFragmentRunner implements FragmentRunner {
                 gate.skips(), gate.skipReasons(), read);
     }
 
-    /// How many errors the parser logged, counted as the real runner counts them: every error, not the
-    /// de-duplicated handful a caller is shown (W4-2).
+    /// Counts the errors the parser logged, as the real runner counts them: every error, not the
+    /// de-duplicated few that a caller is shown.
     ///
     /// @param parser The parser's step.
-    /// @return How many.
+    /// @return The number of errors and fatal errors.
     private static int errors(final Attempted parser) {
         return (int) parser.result().diagnostics().stream()
                 .filter(error -> Severity.ERROR.equals(error.getSeverity())

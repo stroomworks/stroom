@@ -33,28 +33,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/// Whether an event is dated anywhere near the stream it came from (Track 1 task 3, fix 3).
+/// The times scorer, which checks whether each event is dated anywhere near the time its stream was
+/// received.
 ///
-/// This is the check for the fault nobody else catches. A timestamp with no year — `Oct 19 09:06:02`, the
-/// shape syslog writes — read without one lands in whatever year the translation guessed, and an event
-/// dated three years before its stream still validates against the schema, still carries real content and
-/// still obeys every business rule. It scores 1.0 everywhere while being wrong about when it happened.
+/// It catches a fault no other check does. A timestamp with no year (e.g. `Oct 19 09:06:02`, as syslog
+/// writes it) lands in whatever year the translation guessed, and an event dated three years before its
+/// stream still validates against the schema, still has real content and still obeys every business
+/// rule. It would score 1.0 on every other check while being wrong about when it happened.
 ///
-/// **Advice by default** (stage 0b group 4): it shows beside a draft and goes back to the model, but does
-/// not refuse a candidate until it has run on real feeds without crying wolf. A Learning Flow may make it
-/// a gate, and *Strict* does.
+/// **It is advice by default**: it is shown beside a draft and fed back to the model, but does not refuse
+/// a candidate until it has been shown on real feeds not to give false failures. A Learning Flow may make
+/// it a gate, and the *Strict* preset does.
 ///
-/// What the model is told is the whole point of the check, so the feedback names the record, the time it
-/// wrote, how far out it is and what to do about it — which is to use `stroom:format-date`, now that the
-/// Smart Pipelines list allows it.
+/// The feedback to the model is what makes the check useful, so it names the record, the time it wrote,
+/// how far out it is, and how to fix it, which is to use `stroom:format-date`.
 public final class TimesScorer implements Scorer {
 
     private static final ElementId TIMES = new ElementId("Times");
-    /// Where an event's time is in event-logging: what is judged where the Learning Flow names no other.
+    /// Where an event's time is in event-logging, which is the field judged where the Learning Flow names
+    /// no other.
     private static final String TIME_CREATED = "EventTime/TimeCreated";
-    /// How many records to name before the feedback stops listing them: a translation that gets the year
-    /// wrong gets it wrong for every record, and twenty copies of one fault teach the model nothing more
-    /// than three do.
+    /// The maximum number of records the feedback names. A translation that gets the year wrong gets it
+    /// wrong for every record, and twenty copies of one fault teach the model nothing more than three do.
     private static final int SHOWN = 3;
 
     @Override
@@ -75,8 +75,8 @@ public final class TimesScorer implements Scorer {
                                  final TargetSchema target) {
         final Long receivedMs = step.facts().receivedMs();
         if (receivedMs == null || step.parser()) {
-            // A parser's records are the input's shape, not the target's, and a run that does not know
-            // when the stream arrived has nothing to measure against
+            // A parser's records follow the input's structure, not the target's, and a run that does not
+            // know when the stream arrived has nothing to measure against.
             return Optional.empty();
         }
         final Optional<OutputRecords> parsed = OutputRecords.ofTransformed(step);
@@ -88,7 +88,7 @@ public final class TimesScorer implements Scorer {
                 : new TimesParameters(null, null);
         final String field = timeField(window, target);
         if (field == null) {
-            // Another schema keeps its time elsewhere, and the Learning Flow hasn't said where
+            // Another schema keeps its time elsewhere, and the Learning Flow has not said where.
             return Optional.empty();
         }
         final String fieldText = "string(" + field + ")";
@@ -104,7 +104,7 @@ public final class TimesScorer implements Scorer {
         for (int i = 0; i < records.size(); i++) {
             final String written = output.evaluate(records.get(i), fieldText).toString().trim();
             if (written.isEmpty()) {
-                // An event with no time at all is the schema's business, not this check's
+                // An event with no time at all is for the schema check to judge, not this one.
                 continue;
             }
             judged++;
@@ -130,8 +130,8 @@ public final class TimesScorer implements Scorer {
         return Optional.of(new Score(type(), (double) plausible / judged, diagnostics));
     }
 
-    /// The sentence the model is given: when the event says it happened, how far that is from the stream,
-    /// and the way to put it right.
+    /// Builds the message the model is given: when the event says it happened, how far that is from when
+    /// the stream was received, and how to fix it.
     private static String outOfWindow(final int index,
                                       final String field,
                                       final String written,
@@ -148,8 +148,8 @@ public final class TimesScorer implements Scorer {
                + "stroom:format-date(value, pattern), rather than being given one.";
     }
 
-    /// Which time is judged (task 7): the one the Learning Flow names, else event-logging's where the
-    /// target is event-logging or none.
+    /// Chooses which time field is judged: the one the Learning Flow names, otherwise event-logging's where
+    /// the target is event-logging or there is no target.
     ///
     /// @return An XPath from a record, or null where there is none to judge.
     private static String timeField(final TimesParameters window, final TargetSchema target) {
@@ -174,7 +174,7 @@ public final class TimesScorer implements Scorer {
     }
 
     /// @param written An event's time as the translation wrote it.
-    /// @return When that is, or null where it is not an instant this can read.
+    /// @return The instant, or null where it cannot be parsed as one.
     private static Instant read(final String written) {
         try {
             return Instant.ofEpochMilli(DateUtil.parseNormalDateTimeString(written));

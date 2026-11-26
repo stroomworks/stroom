@@ -44,11 +44,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 45 (design 03 §3): the Windows Security event log as XML. The split names the element
-/// that is one record — EventData, holding most of an event but not the System block, is refused on wholeness
-/// — and the degeneracy trap arrives in the wild: a transform that copies every named Data to a Data under
-/// Unknown validates and is refused on extraction quality, before the one that maps the EventID to a typed
-/// branch is promoted, three kinds of event among its records — which structure alone cannot tell apart.
+/// Tests learning the Windows Security event log exported as XML.
+///
+/// The split step names the element that is one record. `EventData`, which holds most of an event but not
+/// its `System` block, is refused by the wholeness check. The test also covers a transform that produces
+/// events that validate but extract nothing: one that copies every named `Data` to a `Data` element under
+/// `Unknown` is refused by the extraction quality check. The transform that maps each `EventID` to a typed
+/// event is then promoted, handling three kinds of event that are told apart by the names of their `Data`
+/// elements.
 class TestScenario45WindowsSecurity {
 
     private static final String TYPED = Scenarios.resource("windows-security.xsl");
@@ -90,7 +93,7 @@ class TestScenario45WindowsSecurity {
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.xmlScript("Event", TYPED)
                 .expect(QuestionMatcher.chain()).reply("XSLTFilter")
-                // Most of an event, but not its System block: refused on wholeness.
+                // Most of an event, but not its System block, so it is refused on wholeness.
                 .expect(QuestionMatcher.split().withoutFeedback()).reply("EventData")
                 .expect(QuestionMatcher.split().withFeedbackMentioning("of the document's")).reply("Event")
                 .expect(QuestionMatcher.configuration("XSLTFilter").withoutFeedback())
@@ -107,14 +110,15 @@ class TestScenario45WindowsSecurity {
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
         assertThat(Scenarios.canonical(run.output())).isEqualTo(Scenarios.canonical(EVENTS));
-        // The records are the root's children, so the stream's count is the events': promoted outright.
+        // Each record is a child of the root element, so the number of events matches the number of records
+        // and the candidate scores 1.0.
         assertThat(((Promoted) run.decision()).score()).isEqualTo(1.0);
         final List<Exchange> turns = run.transcript();
         assertThat(turns.get(1).question()).isInstanceOf(Split.class);
         assertThat(turns.get(1).outcome()).isEqualTo(StepOutcome.WHOLENESS_SHORT);
-        // Kinds of record are told apart by structure, and the skeleton carries the value of an attribute that
-        // names — Data/@Name — so a logon, a logoff and a process creation, each a System block and its own run
-        // of named Data, are three kinds, and a target is asked for each (design 03 §5).
+        // Kinds of record are told apart by their structure, and the structural summary includes the values of
+        // naming attributes such as Data/@Name. A logon, a logoff and a process creation, each a System block
+        // and its own set of named Data elements, are therefore three kinds, and a target is asked for each.
         final List<TargetFor> targets = script.asked().stream()
                 .filter(TargetFor.class::isInstance).map(TargetFor.class::cast).toList();
         assertThat(targets).hasSize(3);

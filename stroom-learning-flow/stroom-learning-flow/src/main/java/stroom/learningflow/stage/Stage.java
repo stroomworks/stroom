@@ -118,27 +118,25 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * One supervised stage over one stream, as design 02 §4 spells it out: route, learn, judge, write,
- * emit. This is the supervisor's logic without the pipeline element around it; the element (design 01
- * §12 item 4) will delegate to it. The fragment is run by the step runners here, as it was learned.
- * <p>
- * Where the input is raw text and records do not yet exist, the learning sample is a prefix and the whole
- * stream is held out, as design 02 §7 says.
- * <p>
- * Runtime state is what the stage is given (A26): the learners' states, the outputs' bindings and the
- * regression set. A sentinel is an error stream and nothing more (A131): the attempt that gave up is the
- * record of why. Binding a learner wakes its pipeline, which puts its waiting streams through, and asks
- * for nothing to be reprocessed (A129). In review mode (A25) a binding is a draft until
- * {@link Promotion#approve} makes it the promotion or {@link Promotion#reject} discards it.
- */
+/// The Smart Pipeline element's logic for one stream, without the pipeline element around it; the element
+/// delegates to this class. For each stream it decides whether to serve it with the learner's binding, defer
+/// it while a learning session runs, or error it because the learner has given up. It also serves a bound
+/// stream, reprocesses a stream as it was first processed, performs dry runs for stepping, and is the entry
+/// point for the deferred worker and the Supervisor's improve and rebuilt-prompt actions, which it passes on
+/// to [Learning].
+///
+/// The runtime state (learner states, bindings, outputs, deferrals and the regression corpus) is passed in.
+/// A sentinel is an error stream and nothing more; the session that gave up records why. Binding a learner
+/// wakes its pipeline, which processes its waiting streams; nothing is reprocessed automatically. Under
+/// review promotion mode a binding is a draft until [Promotion#approve] promotes it or [Promotion#reject]
+/// discards it.
 public final class Stage {
 
-    /// The element a stage's own diagnostics are laid at.
+    /// The element id that the stage's own diagnostics are reported against.
     static final ElementId STAGE = new ElementId("Stage");
 
     private final List<Scorer> scorers;
-    /// Where the one schema a document's translations must write is read from (task 7).
+    /// Resolves the target schema that a document's translations must produce.
     private final TargetSchemas targetSchemas;
     private final FragmentRunner fragmentRunner;
     private final Attempts attempts;
@@ -149,47 +147,47 @@ public final class Stage {
     private final Learners learners;
     private final Wake wake;
     private final Snapshots snapshots;
-    /// What a record of the chain's output is judged as when it is served: the element type the scorers
-    /// of meaning read it as, which is any element that is not a parser.
+    /// The element type a record of the chain's output is judged as when it is served. The scorers that
+    /// judge content treat it as the output of a transform, i.e. any element that is not a parser.
     private static final String TRANSFORM = XsltStep.ELEMENT_TYPE;
     private final Clock clock;
-    /// Drafts, approval, rejection, promotion and retraction (simplification option iii).
+    /// Handles drafts, approval, rejection, promotion and retraction.
     private final Promotion promotion;
-    /// The record of each learning run (simplification option iii).
+    /// Records each learning session.
     private final Sessions sessions;
-    /// How what a stage runs is judged, shared by serving and learning (simplification option iii).
+    /// Judges what the stage runs, for both serving and learning.
     private final Judging judging;
-    /// Learning, relearning, improving and resuming (simplification option iii).
+    /// Handles learning, relearning, improving and resuming sessions.
     private final Learning learning;
 
-    /// A stage over its state and the elements it can learn.
+    /// Creates a stage over its runtime state and the elements it can learn.
     ///
-    /// @param advisors        How the model is asked.
-    /// @param runners         The elements it can learn.
-    /// @param scorers         What judges what it learns.
-    /// @param targetSchemas   Where a document's target schema is read from; null for none.
-    /// @param writer          Where learned content is written.
-    /// @param fragmentRunner  How a fragment is run.
-    /// @param attempts        Where attempts are recorded.
+    /// @param advisors        Creates the advisors that ask the model.
+    /// @param runners         Runners for the pipeline elements it can learn configurations for.
+    /// @param scorers         The scorers that judge what it learns and serves.
+    /// @param targetSchemas   Resolves a document's target schema; null for none.
+    /// @param writer          Writes learned content.
+    /// @param fragmentRunner  Runs a fragment.
+    /// @param attempts        Where sessions are recorded.
     /// @param learnerBindings What serves each learner.
     /// @param states          Each learner's state.
-    /// @param spend           What has been spent.
+    /// @param spend           The cluster-wide spend counter.
     /// @param breaker         The spend breaker.
-    /// @param guidance        What people have said to learners.
-    /// @param outputs         What each output was produced by.
-    /// @param regressionSet   The records each binding was accepted on.
-    /// @param deferrals       The streams waiting.
-    /// @param learners        The learners there are.
-    /// @param wake            How a pipeline is woken.
+    /// @param guidance        The guidance people have left for learners.
+    /// @param outputs         What produced each output.
+    /// @param regressionSet   The corpus records each binding was accepted on.
+    /// @param deferrals       The waiting streams.
+    /// @param learners        Keeps learners' rows under the document they run under.
+    /// @param wake            Wakes a pipeline's deferred tasks.
     /// @param places          Where learned content goes.
-    /// @param snapshots       What each binding serves with.
-    /// @param codes           A fragment as text.
-    /// @param clock           The clock.
-    /// @param lease           How long a claim on an attempt lasts from its last renewal (design 04 §4).
-    /// @param node            Which node this is.
-    /// @param build           The build of Stroom running, recorded against each attempt's words (N9) so that
-    ///                        a prompt rebuilt after an upgrade can say the checks' wording may have moved
-    ///                        under it; null where it is not known, as in a harness.
+    /// @param snapshots       The configuration snapshots each binding serves with.
+    /// @param codes           Reads a fragment's documents as text, for snapshots.
+    /// @param clock           The source of the current time.
+    /// @param lease           How long a claim on a learner lasts from its last renewal.
+    /// @param node            This node's name.
+    /// @param build           The Stroom build version, recorded with each session's question wording so that
+    ///                        a prompt rebuilt after an upgrade can warn that the checks' wording may have
+    ///                        changed since; null if not known, as in a test harness.
     @SuppressWarnings("checkstyle:ParameterNumber")
     public Stage(final Advisors advisors,
                  final List<StepRunner> runners,
@@ -238,25 +236,25 @@ public final class Stage {
                 clock, lease, node, promotion, sessions, judging, fragmentRunner);
     }
 
-    /// As [Learning#resume].
+    /// Resumes a session; see [Learning#resume].
     ///
     /// @param doc       The document.
-    /// @param attemptId The run.
-    /// @param input     The stream it was raised on.
-    /// @param answerer  Who answers what the record does not.
-    /// @return What the run came to.
+    /// @param attemptId The session's id.
+    /// @param input     The stream it was opened on, or the reassembled sample for an improvement.
+    /// @param answerer  The advisor that answers questions the recorded turns do not.
+    /// @return The outcome of the session.
     public StageRun resume(final LearningFlowDoc doc, final long attemptId, final Input input,
                            final Advisor answerer) {
         return learning.resume(doc, attemptId, input, answerer);
     }
 
-    /// As [Learning#improve].
+    /// Opens an improvement session for a serving binding; see [Learning#improve].
     ///
     /// @param doc         The document.
-    /// @param bindingUuid The binding to improve.
-    /// @param message     What a person said to improve it with.
+    /// @param bindingUuid The UUID of the binding to improve.
+    /// @param message     What the person wants improved, recorded as guidance; may be null.
     /// @param by          Who asked.
-    /// @return What the ask came to.
+    /// @return The result of the request; a sentinel if the session could not be opened.
     public StageRun improve(final LearningFlowDoc doc,
                             final String bindingUuid,
                             final String message,
@@ -264,53 +262,53 @@ public final class Stage {
         return learning.improve(doc, bindingUuid, message, by);
     }
 
-    /// As [Learning#improvementInput].
+    /// Builds an improvement session's sample; see [Learning#improvementInput].
     ///
-    /// @param attempt An improvement.
-    /// @return Its sample, put back together from the records its binding was accepted on.
+    /// @param attempt An improvement session.
+    /// @return Its sample, reassembled from the corpus records its binding was accepted on.
     public Optional<Input> improvementInput(final Attempts.Attempt attempt) {
         return learning.improvementInput(attempt);
     }
 
-    /// As [Learning#rebuild].
+    /// Rebuilds the prompts a session sent; see [Learning#rebuild].
     ///
     /// @param doc       The document.
-    /// @param attemptId The run.
+    /// @param attemptId The session's id.
     /// @param input     The stream it learned from.
-    /// @return The prompts, or empty where the run's words were not kept.
+    /// @return The prompts, or empty if the session's question wording was not recorded.
     public Optional<Rebuilt> rebuild(final LearningFlowDoc doc, final long attemptId, final Input input) {
         return learning.rebuild(doc, attemptId, input);
     }
 
-    /// What each of the fragment's own elements made of the stream on the run this stage just made, a
-    /// list per record (A30, design 01 §11.7) — what the stepper shows beneath a supervised stage.
+    /// Gets what each of the fragment's elements made of the stream on this stage's last run, a list per
+    /// record, which the stepper shows beneath the Smart Pipeline element.
     ///
-    /// **Taken**, not read, and taken immediately after the run it belongs to: the runner is left
-    /// holding nothing, so a later run that decided without running a fragment at all — a draft awaiting
-    /// review, a learner that gave up — finds nothing here rather than the chain of the run
-    /// before it (see [FragmentRunner#takeRecords]).
+    /// The records are **taken**, not just read, and should be taken immediately after the run they belong
+    /// to. That leaves the runner empty, so a later run that decided without running a fragment (a draft
+    /// awaiting review, or a learner that gave up) finds nothing here rather than the previous run's records
+    /// (see [FragmentRunner#takeRecords]).
     ///
-    /// Empty where the fragment was walked by a stand-in rather than run as a pipeline, and where
-    /// nothing was bound and so nothing ran.
+    /// Empty if the fragment was run by a stand-in rather than as a pipeline, or if nothing was bound and so
+    /// nothing ran.
     public List<FragmentRecord> takeFragment() {
         return fragmentRunner.takeRecords();
     }
 
-    /// The stream through the fragment that produced its output before: an **as-processed** reprocess
-    /// (design 01 §7.3), which is what an audit needs and what a person asks for when the question is
-    /// "what did this stream become?" rather than "what would it become now?".
+    /// Runs a stream through the fragment and snapshot that produced its output before: an
+    /// **as-processed** reprocess. This is what an audit needs, and what a person asks for when the question
+    /// is "what did this stream become?" rather than "what would it become now?".
     ///
-    /// The bindings as they stand are not consulted and nothing is learned, scored or relearned. A binding that has
-    /// since been rebound, retracted or given up makes no difference: what ran is what runs, because an
-    /// improvement is a new document and the old one cannot have changed (§7.3 rule 1). For the other
-    /// question — what serves the learner today — the answer is a task's [#decide], which is what an
-    /// ordinary reprocess filter puts a stream through.
+    /// The current bindings are not consulted, and nothing is learned, scored or relearned. It makes no
+    /// difference if the binding has since been rebound, retracted or given up: the recorded snapshot of the
+    /// configuration is run again. For the other question, what serves the learner today, the answer is
+    /// [#decide], which is what an ordinary reprocess filter puts a stream through.
     ///
+    /// @param doc     The document.
     /// @param learner The learner whose pipeline the input is processed again through.
-    /// @param input   The input.
-    /// @return The run bound to the recorded fragment, or a sentinel where nothing is recorded for this
-    /// input: an input nothing remembers cannot be served as it was, and quietly serving it as-current
-    /// would answer a question nobody asked.
+    /// @param input   The input stream.
+    /// @return The run of the recorded fragment, or a sentinel if nothing is recorded for this input. An
+    ///         input with no record cannot be processed as it was, and quietly processing it with the current
+    ///         binding would answer a question nobody asked.
     public StageRun reprocess(final LearningFlowDoc doc, final Learner learner, final Input input) {
         final Optional<Produced> recorded = outputs.asProcessed(doc.getUuid(), input.id(), input.pipeline());
         if (recorded.isEmpty()) {
@@ -321,11 +319,11 @@ public final class Stage {
         final Produced produced = recorded.get();
         final Optional<Binding> binding = learnerBindings.byUuid(produced.bindingUuid())
                 .map(LearnerBindings.Held::binding);
-        // Under the boundary that produced it, which the row remembers: the binding's boundary is today's,
-        // and a rebind may have changed it. The same fragment under another boundary is another chain.
-        // And with the code that produced it (A61, A70): the fragment has moved in place since, and the
-        // snapshot the row names is what ran. A row from before snapshots existed runs the fragment as
-        // it stands, which is all that was ever recorded for it.
+        // Run under the record boundary that produced it, which the row records, because the binding's
+        // boundary is today's and a rebind may have changed it; the same fragment under another boundary
+        // is a different chain. And run with the code that produced it, from the snapshot the row names,
+        // because the fragment may have been rewritten in place since. A row recorded before snapshots
+        // existed runs the fragment as it is now, which is all that was recorded for it.
         final Map<String, String> code = produced.snapshotId() == null
                 ? Map.of()
                 : snapshots.byId(produced.snapshotId()).map(Snapshots.Snapshot::code).orElse(Map.of());
@@ -336,27 +334,31 @@ public final class Stage {
                 ? null
                 : attempted.get(attempted.size() - 1).result().output();
         if (output == null) {
-            // The fragment is still there and still immutable, so this is the content having gone — a
-            // document deleted by hand, or a fragment that never ran cleanly. Said rather than served.
+            // The fragment produced nothing, which means its content has gone (e.g. a document deleted by
+            // hand) or it never ran cleanly. This is reported rather than served.
             return StageRun.refused(doc, learner, "The fragment " + produced.fragment().getUuid()
                                        + " that produced input " + input.id() + " produced nothing this time");
         }
-        // Recorded again, because this output carries the same bindings as the one it replaces.
+        // Recorded again, because this output was produced by the same binding as the one it replaces.
         outputs.emitted(input.id(), input.pipeline(), produced);
         return new StageRun(doc, new Bound(binding.orElse(null)), learner, produced, output, List.of(), List.of(),
                 events, attempted.stream().flatMap(step -> step.result().diagnostics().stream()).toList());
     }
 
-    /// A bound fragment run over an input for its events, for a caller that has a downstream to serve
-    /// and a [StageRun] that carried none.
+    /// Runs a bound fragment over an input to get its events, for a caller that has a downstream to serve
+    /// and a [StageRun] that has no events.
     ///
-    /// A chain is judged as it is learned — step by step, over the element runners, before it has been
-    /// written anywhere — so the stream a learner *learned* on has an output and no events to serve it
-    /// with. The fragment it became is run once here, which is the run that stream would have made had it
-    /// already been bound, and not a second one: nothing has run this fragment yet.
+    /// A chain is judged as it is learned, step by step through the element runners, before it has been
+    /// written anywhere, so the stream a learner *learned* on has an output but no events to serve it with.
+    /// The resulting fragment is run once here, which is the run that stream would have had if it had
+    /// already been bound; it is not a second run, because nothing has run this fragment yet.
     ///
-    /// A stream already bound never comes here. Its events are the ones its judgement was made
-    /// from, which is what §12 item 2 bought: the run that is judged is the run that is served.
+    /// A stream that was already bound never comes here. Its events are the ones its judgement was made
+    /// from, so the run that is judged is the run that is served.
+    ///
+    /// @param produced What produced the stream's output.
+    /// @param input    The input stream.
+    /// @return The events and the elements' diagnostics.
     public Served serve(final Produced produced, final Input input) {
         final List<Attempted> attempted = fragmentRunner.run(produced.fragment(), input.data(),
                 produced.boundary());
@@ -364,22 +366,25 @@ public final class Stage {
                 attempted.stream().flatMap(step -> step.result().diagnostics().stream()).toList());
     }
 
-    /// What this stage would do with a stream, and what it would produce, without doing any of it
-    /// (A30, design 01 §11.7).
+    /// Reports what this stage would do with a stream, and what it would produce, without doing any of it.
     ///
-    /// Stepping is a dry run. What serves the learner is found and a bound fragment is run, because a
-    /// fragment's output is what the person stepping the pipeline came to see — and nothing else
-    /// happens at all: no model is asked, no fragment written, no binding written, promoted, retracted or
-    /// relearned, no rolling score, no output row and no wake. A learner no
-    /// binding serves is *reported*, as [Decision.Would], rather than learned.
+    /// Stepping is a dry run. The binding that serves the learner is found and its fragment is run, because
+    /// the fragment's output is what the person stepping the pipeline wants to see, but nothing else happens:
+    /// no model is asked, no fragment or binding is written, promoted, retracted or relearned, and no rolling
+    /// score, output row or wake is recorded. A learner with no serving binding is *reported*, as a
+    /// [Decision.Would], rather than learned for.
     ///
-    /// It is a separate walk rather than a flag through [#decide] because every branch of that walk writes
-    /// something, and a flag threaded through all of them would be one `if` away from a stepping
+    /// This is a separate method rather than a flag on [#decide], because every branch of [#decide] writes
+    /// something, and a flag threaded through all of them would be one missed `if` away from a stepping
     /// session that learned and bound something.
     ///
+    /// @param doc         The document.
     /// @param learner     The learner whose pipeline is being stepped.
-    /// @param asProcessed As [#reprocess]: the fragment that produced this input's output before,
-    ///                    rather than whatever serves the learner today.
+    /// @param input       The input stream.
+    /// @param asProcessed Whether to run the fragment that produced this input's output before, as
+    ///                    [#reprocess] does, rather than whatever serves the learner today. Unlike
+    ///                    [#reprocess], the fragment is run as it is now, without the recorded snapshot.
+    /// @return What would be done and produced.
     public StageRun dryRun(final LearningFlowDoc doc,
                            final Learner learner,
                            final Input input,
@@ -423,8 +428,8 @@ public final class Stage {
         return would(doc, learner, "Learn a fragment for this learner");
     }
 
-    /// A bound fragment's run, as a dry run reports it: what it produced and what the scorers made of
-    /// it, and nothing recorded anywhere.
+    /// Reports a bound fragment's run for a dry run: what it produced and how it was scored, with nothing
+    /// recorded anywhere.
     private StageRun served(final LearningFlowDoc doc,
                             final Decision decision,
                             final Learner learner,
@@ -441,18 +446,24 @@ public final class Stage {
                 List.of());
     }
 
-    /// The task decision (design 04 §3): emit, defer or error, and never learn. Every task does the same
-    /// cheap thing — consult what the learner knows, take one of three outcomes — and a session
-    /// is the worker's: the only thing a task does about one is open it and stand aside.
+    /// Makes the decision for a processing task: serve, defer or error, but never learn. Every task does the
+    /// same cheap thing (look at what the learner knows and take one of three outcomes). Learning sessions
+    /// are run by the worker; all a task does is open one and step aside.
     ///
-    /// - A binding serves the learner and every record clears the bar: emitted.
-    /// - A binding serves it and any record falls short: deferred, with a row against the transform in force,
-    ///   and the session opened if none holds the learner's claim. A row whose stamp is still the
-    ///   transform in force defers again without running anything.
-    /// - No binding: deferred, with the session opened on this stream.
-    /// - The learner has given up: errored with the reason — the only outcome that errors.
+    /// - A binding serves the learner: the stream is to be served (see [#stream], which defers it if any
+    ///   record falls short of the bar, and opens a session if none holds the learner's claim). A stream
+    ///   whose deferral row is stamped with the transform still in force is deferred again without running
+    ///   anything.
+    /// - The only binding is a draft awaiting review: deferred until a person decides.
+    /// - No binding: deferred, with a session opened on this stream.
+    /// - The learner has given up: errored with the reason. This is the only outcome that errors.
+    ///
+    /// @param doc     The document.
+    /// @param learner The learner the stream is for.
+    /// @param input   The input stream.
+    /// @return The decision.
     public StageRun decide(final LearningFlowDoc doc, final Learner learner, final Input input) {
-        // What the learner keeps goes with it to the document it runs under now, so that this document's
+        // The learner's rows are moved to the document it runs under now, so that this document's
         // Supervisor shows what serves its pipeline and no other document's editors can act on it.
         learners.runsUnder(learner, doc.getUuid());
         final Scorecard scorecard = Scorecard.of(doc.getChecks(), scorers, targetSchemas.of(doc).orElse(null));
@@ -461,8 +472,8 @@ public final class Stage {
         if (matched.isPresent()) {
             final Binding binding = matched.get();
             if (binding.isDraft()) {
-                // A person has it in front of them: the stream waits for their decision rather than
-                // erroring behind it, and Approve or Reject is what moves it.
+                // A person is reviewing the draft, so the stream waits for their decision rather than
+                // erroring, and approving or rejecting the draft releases it.
                 return deferred(doc, learner, input, null, 0, "Awaiting review: draft binding " + binding.getUuid()
                                                              + " binds " + binding.getPipeline().getName());
             }
@@ -471,60 +482,58 @@ public final class Stage {
 
         final Optional<String> givenUp = states.reasonGivenUp(learner);
         if (givenUp.isPresent()) {
-            // A stream that waited on a session that gave up (A54) has reached its end: its row goes, and
-            // it errors with the reason. A person sends the learner back from the attempt that gave up,
-            // and reprocesses its error streams as they would any others (A129, A131).
+            // A stream that waited on a session that gave up has reached its end: its row is removed and it
+            // errors with the reason. A person can send the learner back to learn again, and reprocess its
+            // error streams as they would any others.
             deferrals.released(learner, input.id());
             return StageRun.refused(doc, learner, "Given up: " + givenUp.get());
         }
         if (doc.getLearningMode() == LearningMode.DISABLED) {
-            // The kill switch: no session can open, so the stream waits for a person to turn learning on
-            // and the deferral age (A57) is what raises it if nobody does.
+            // Learning is disabled, so no session can open. The stream waits for a person to enable
+            // learning, and is raised in the Supervisor once it exceeds the maximum deferral age.
             return deferred(doc, learner, input, null, 0,
                     "Learning Flow is disabled for this document and nothing serves this learner");
         }
-        // Learning leaves the task (A60, A64): the session is opened on this stream and parked at its
-        // first question for the worker, and the stream waits on it. Where an attempt already holds the
+        // Learning never happens in the task: a session is opened on this stream and left waiting at its
+        // first question for the worker, and the stream waits on it. If a session already holds the
         // learner's claim, this stream waits on that one.
         return sessions.recording(doc, learner, input, RecordedAdvisor.awaiting(),
                 reason -> deferred(doc, learner, input, null, 0, reason),
                 recorder -> learning.learnAndBind(doc, learner, input, scorecard, recorder));
     }
 
-    /// The task decision for a learner a binding serves.
+    /// Makes the task decision for a learner that a binding serves.
     private StageRun decideServed(final LearningFlowDoc doc,
                                   final Learner learner,
                                   final Binding matched,
                                   final Input input,
                                   final Scorecard scorecard) {
-        // As it serves now (A72): a hand edit is snapshotted here, before the stamp is compared, so that
-        // a stream deferred against the old snapshot is scored against the edit.
+        // Take a new snapshot if the fragment has been edited by hand, before the stamp is compared, so
+        // that a stream deferred against the old snapshot is scored against the edit.
         final Binding binding = promotion.freshened(doc, learner, matched);
         final String stamp = stamp(binding);
         final Optional<Deferral> row = deferrals.of(learner, input.id());
         if (row.isPresent() && stamp.equals(row.get().failedAgainst())) {
-            // Version-stamped (design 04 §3): the transform it failed against is still the one in force, so
-            // nothing is run. The session is opened if none holds the claim — the last may have lapsed or
-            // failed — or the stream would be waiting on nothing.
+            // The transform the stream fell short against is still the one in force, so nothing is run. A
+            // session is opened if none holds the claim (the last may have expired or failed), or the stream
+            // would be waiting on nothing.
             return session(doc, learner, binding, input, scorecard, null, row.get().reason(), stamp,
                     row.get().failingRecords());
         }
-        // Served as it is read (design 04 §3, *streams of any size*): nothing is run here. The caller
-        // streams the fragment over the stream with [#stream], which judges each record as the fragment
-        // writes it, and what the stream came to is decided there.
+        // Served as it is read, so that streams of any size can be handled: nothing is run here. The caller
+        // runs the fragment over the stream with [#stream], which judges each record as the fragment
+        // writes it and decides the outcome.
         final StageRun bound = new StageRun(doc, new Bound(binding), learner, producedBy(doc, binding), null, List.of(),
                 List.of(), null, List.of());
         relearnOnMark(doc, learner, binding, input, scorecard);
         return bound;
     }
 
-    /// A learner a person marked for relearning (A100) relearns on its next stream that brings enough
-    /// records to judge a candidate on: the session is opened here and parked for the worker, while the
-    /// stream itself is served by the incumbent, as it would be without the mark (A29). A learner behind a
-    /// draft waits for the review; one that gave up is a person's to
-    /// send back (A80); with learning off nothing opens; and
-    /// where a session already holds the claim — one the mark or a short record opened — the stream
-    /// simply flows.
+    /// Opens a relearning session for a learner a person has marked for relearning, on its next stream that
+    /// brings enough records to judge a candidate on. The session is opened here and left for the worker,
+    /// while the stream itself is served by the serving binding, as it would be without the mark. Nothing is
+    /// opened for a learner with a draft awaiting review, a learner that has given up (a person must send it
+    /// back), a document with learning disabled, or a learner whose claim is already held by a session.
     private void relearnOnMark(final LearningFlowDoc doc,
                                final Learner learner,
                                final Binding binding,
@@ -549,22 +558,23 @@ public final class Stage {
                         recorder));
     }
 
-    /// Serve a bound stream, as it is read (design 04 §3): the fragment runs over the whole stream
-    /// once, each record of its output is judged by the gates that judge a record as it is produced, and
-    /// each that clears the bar is handed on to the downstream. The first record short of the bar stops
-    /// the run: the stream is deferred — a row stamped against the fragment in force, the learner marked,
-    /// a relearning session opened where none holds the claim — and the deferral is thrown, so that the
-    /// task ends deferred and what the downstream wrote of the records before it is discarded.
+    /// Serves a bound stream as it is read. The fragment runs over the whole stream once, each record of its
+    /// output is judged by the record gates as it is produced, and each record that clears the bar is passed
+    /// downstream. The first record that falls short stops the run: the stream is deferred (a row stamped
+    /// against the fragment in force, the learner marked for relearning, and a relearning session opened if
+    /// none holds the claim), and a [DeferTaskException] is thrown so that the task ends deferred and
+    /// whatever the downstream wrote for the earlier records is discarded. The stream is also deferred if
+    /// the parser did not account for all of its input.
     ///
-    /// A stream that clears in full is served: its row goes, the learner's rolling score is fed, a
-    /// provisional binding that has now seen enough records is promoted, and the output is recorded against
-    /// the bindings that produced it.
+    /// A stream that clears in full is served: its deferral row is removed, the learner's rolling score is
+    /// updated, and the output is recorded against the binding that produced it, with this run's score.
     ///
     /// @param doc        The document.
-    /// @param binding    The binding that binds the stream, as [#decide] returned it.
-    /// @param input      The stream.
+    /// @param learner    The learner the stream is for.
+    /// @param binding    The binding that serves the stream, as [#decide] returned it.
+    /// @param input      The input stream.
     /// @param downstream Where the output goes.
-    /// @return What the run came to, for the caller to say on the error stream (A20).
+    /// @return The result of the run, whose diagnostics the caller reports on the error stream.
     public ServedStream stream(final LearningFlowDoc doc,
                                final Learner learner,
                                final Binding binding,
@@ -589,9 +599,9 @@ public final class Stage {
                             1);
             throw new DeferTaskException(((Deferred) deferred.decision()).reason());
         }
-        // What came out is only half of it. A record the parser could not read becomes no event, so no
-        // check judges it and the stream is recorded as clean — the fault this task exists to fix
-        // (`docs/learning-flow-parser-drift-not-detected.md`). The serving run now says what went in.
+        // The output is only half of it. A record the parser could not read becomes no event, so no check
+        // would judge it and the stream would be recorded as clean (the fault described in
+        // `docs/learning-flow-parser-drift-not-detected.md`). So the input is checked as well.
         final Optional<String> lost = Judging.inputShortfall(doc, served);
         if (lost.isPresent()) {
             final StageRun deferred = session(doc, learner, binding, input,
@@ -602,14 +612,14 @@ public final class Stage {
         }
         deferrals.released(learner, input.id());
         if (served.records() > 0) {
-            // The rolling score goes on being kept for the Supervisor's list of what could be better
-            // (A46), and triggers nothing here. A run that made nothing is said on the error stream by the
-            // caller and scores nothing.
+            // The rolling score is kept for the Supervisor's list, to show what could be improved; it
+            // triggers nothing here. A run that produced no records is reported on the error stream by the
+            // caller and is not scored.
             states.scored(learner, doc.getUuid(), served.meanTotal(), served.records(), served.skipped(),
                     doc.getMinRecordsToLearn());
         }
-        // This run's score, not the binding's promotion score: an output history that records every
-        // stream at the score the translation had when it was promoted cannot show it getting worse.
+        // This run's score, not the binding's promotion score, because an output history that records
+        // every stream at the score the translation had when it was promoted cannot show it getting worse.
         outputs.emitted(input.id(), input.pipeline(), producedBy(doc, binding, served),
                 served.records(), served.skipped());
         return served;
@@ -622,9 +632,9 @@ public final class Stage {
                         : binding.getScore(), binding.getSnapshot());
     }
 
-    /// What produced an output, scored on **this** run rather than on the binding's promotion (audit
-    /// finding W4-6): a run that made nothing must not appear in the output history at the score the
-    /// translation had on the day it was promoted.
+    /// Records what produced an output, with the score from **this** run rather than the binding's score at
+    /// promotion, so that a run that produced nothing does not appear in the output history with the score
+    /// the translation had on the day it was promoted.
     ///
     /// @param doc     The document.
     /// @param binding The binding that served the stream.
@@ -637,13 +647,13 @@ public final class Stage {
                 served.meanTotal(), binding.getSnapshot());
     }
 
-    /// A stream under a binding waits for the binding to be learned again: the row is written against the
-    /// transform in force, the learner is marked with why, and the session is opened and parked for the
-    /// worker where none holds the claim (A69: one session, every waiting stream tried again when it
-    /// promotes).
+    /// Defers a stream that a binding failed to serve, to wait for the binding to be relearned. The deferral
+    /// row is written against the transform in force, the learner is marked for relearning with the reason,
+    /// and a session is opened and left for the worker if none holds the claim. One session learns for the
+    /// learner, and every waiting stream is tried again when it promotes.
     ///
-    /// @param judged The stream as the binding's fragment judged it, or null where the stamp said not to run
-    ///               it.
+    /// @param judged The stream as the binding's fragment judged it, or null if the stamp meant it was not
+    ///               run.
     private StageRun session(final LearningFlowDoc doc,
                              final Learner learner,
                              final Binding binding,
@@ -654,7 +664,7 @@ public final class Stage {
                              final String stamp,
                              final int failingRecords) {
         // A stream judged against a transform that a relearning has since replaced says nothing about the
-        // one in force (A69): marking the learner on its word would relearn what has just been learned. It
+        // one in force, and marking the learner because of it would relearn what has just been learned. It
         // waits against the stamp it failed, which is no longer in force, so its next try is scored
         // against the new transform rather than deferred again.
         final Optional<Binding> inForce = promotion.bindingFor(learner);
@@ -662,18 +672,18 @@ public final class Stage {
             return deferred(doc, learner, input, stamp, failingRecords, reason,
                     reason + " (against a transform since replaced; it is tried again against the new one)");
         }
-        // A draft awaiting review is the learner's answer already, and a person has it in front of them
-        // (A25): the stream waits for their decision, as a marked learner's streams do. A session opened
-        // here would relearn behind them, and its reset would forget the draft awaiting them.
+        // A draft awaiting review is already the learner's answer, and a person is reviewing it, so the
+        // stream waits for their decision. A session opened here would relearn behind their back, and its
+        // reset would forget the draft awaiting them.
         final Optional<String> awaiting = states.draftAwaiting(learner);
         if (awaiting.isPresent()) {
             return deferred(doc, learner, input, stamp, failingRecords, reason,
                     reason + " (Awaiting review: draft binding " + awaiting.get() + ")");
         }
-        // A stream that has been relearned for and put back again, against the same translation, is not
-        // going to be fixed by asking the model a fourth time (audit finding W4-5). The corpus's
-        // no-worse rule can keep every candidate out — a feed whose format has changed for good needs a
-        // translation that reads both, and may not get one — and without this the stream opens a new
+        // A stream that has been relearned for and deferred again several times, against the same
+        // translation, is not going to be fixed by asking the model once more. The corpus's no-worse rule
+        // can keep every candidate out (a feed whose format has changed for good needs a translation that
+        // reads both formats, and may not get one), and without this check the stream would open a new
         // paid session on every retry of the deferred task, for as long as it waits.
         final Optional<Deferral> tried = deferrals.of(learner, input.id());
         if (tried.isPresent()
@@ -694,10 +704,11 @@ public final class Stage {
                 waiting -> deferred(doc, learner, input, stamp, failingRecords, reason,
                         reason + " (" + waiting + ")"),
                 recorder -> {
-                    // Opened in the task only to be parked: the worker re-walks it as a relearning, since
-                    // a binding serves the learner (resume reads that from the bindings as they stand). The stream
-                    // was judged once, where it fell short; a stamped stream that found no session open
-                    // is judged here, since the session's opening needs to say what fell short.
+                    // Opened in the task only to be left waiting: the worker replays it as a relearning,
+                    // because a binding serves the learner (resume reads that from the current bindings).
+                    // The stream was judged once already, where it fell short; a stamped stream that found
+                    // no session open is judged here, because the session must start by saying what fell
+                    // short.
                     final Judged served = judged != null
                             ? judged
                             : judging.judge(scorecard, binding.getPipeline(), input.data(),
@@ -707,7 +718,7 @@ public final class Stage {
                 });
     }
 
-    /// The stream waits: its row is written — or brought up to date — and nothing else is.
+    /// Defers the stream: its deferral row is written or updated, and nothing else is.
     private StageRun deferred(final LearningFlowDoc doc,
                               final Learner learner,
                               final Input input,
@@ -717,8 +728,9 @@ public final class Stage {
         return deferred(doc, learner, input, failedAgainst, failingRecords, reason, reason);
     }
 
-    /// The same, where the decision has more to say than the row keeps: the row holds why the stream
-    /// waits, which is the same each time it is tried, and not what each try found the session doing.
+    /// As [#deferred(LearningFlowDoc, Learner, Input, String, int, String)], where the decision has more to
+    /// say than the row keeps. The row holds why the stream waits, which is the same each time it is tried,
+    /// not what each try found the session doing.
     private StageRun deferred(final LearningFlowDoc doc,
                               final Learner learner,
                               final Input input,
@@ -731,31 +743,32 @@ public final class Stage {
         return new StageRun(doc, new Deferred(said), learner, null, null, List.of(), List.of(), null, List.of());
     }
 
-    /// What a deferral row is stamped with: the transform in force — the binding's snapshot (A61), or for a
-    /// binding written before snapshots existed the fragment it names, until its first serve snapshots it.
+    /// The stamp written on a deferral row, identifying the transform in force: the binding's snapshot id,
+    /// or, for a binding written before snapshots existed, its fragment's UUID until it is first served and
+    /// snapshotted.
     private static String stamp(final Binding binding) {
         return binding.getSnapshot() != null
                 ? binding.getSnapshot()
                 : binding.getPipeline().getUuid();
     }
 
-    /// A promotion wakes what waits on its learner (design 04 §5.3, design 06 §4.3): the deferred tasks of
-    /// every filter on the learner's pipeline go back to the queue ahead of the retry delay. The rows
-    /// stay until each stream is served.
+    /// Wakes the streams waiting on a learner: the deferred tasks of every filter on the learner's pipeline
+    /// go back to the queue without waiting for the retry delay. The deferral rows stay until each stream is
+    /// served.
     private void wake(final Learner learner) {
         wake.wake(learner.pipelineUuid());
     }
 
-    /// Wake the pipelines whose streams wait against a transform no longer in force: what the learning job
-    /// does on every pass (design 04 §5.3, A130). A promotion wakes its learner's pipeline, but a stream
-    /// judged against the old transform while the promotion was being made writes its row after that wake,
-    /// and its task is not deferred until after the row is written, so nothing the promotion did can reach
-    /// it. Such a row is not waiting on anything: the next try scores it against the transform now in
-    /// force. A task still running when the pass comes is not woken, and the next pass tries again; a
-    /// learner behind a draft waits for the review, as its streams do.
+    /// Wakes the pipelines whose streams are waiting against a transform that is no longer in force. The
+    /// learning job does this on every pass. A promotion wakes its learner's pipeline, but a stream judged
+    /// against the old transform while the promotion was being made writes its row after that wake, and its
+    /// task is only deferred after the row is written, so the promotion's wake cannot reach it. Such a row is
+    /// not really waiting for anything: its next try is scored against the transform now in force. A task
+    /// still running when the pass comes is not woken, and the next pass tries again. A learner whose only
+    /// binding is a draft is not woken, because its streams wait for the review.
     ///
-    /// Read by learner and transform, not by row: as many as there are learners waiting, however many
-    /// streams wait on each.
+    /// Rows are read by learner and transform, not one by one, so the work grows with the number of
+    /// learners waiting, not the number of streams.
     ///
     /// @return How many tasks were woken.
     public int wakeSuperseded() {
@@ -763,15 +776,14 @@ public final class Stage {
         for (final Deferrals.Stamp waiting : deferrals.stampsWaiting()) {
             final boolean replaced = promotion.bindingFor(waiting.learner())
                     .filter(binding -> !binding.isDraft())
-                    // A row with no stamp is a stream waiting for a *first* learning (W7-4): there was
-                    // nothing to fail against, so anything serving the learner now is new to it. Such a
-                    // row used to be left out of this sweep entirely, and a stream deferred just after
-                    // the promotion's wake waited the full retry delay for a translation that already
-                    // existed.
+                    // A row with no stamp is a stream waiting for a *first* learning: there was nothing to
+                    // fall short against, so anything serving the learner now is new to it. Without this,
+                    // a stream deferred just after the promotion's wake would wait the full retry delay for
+                    // a translation that already exists.
                     //
-                    // A row still here is a stream not yet served — the row goes when it is — so waking
-                    // it is right rather than wasteful. Sweeping again before it runs re-wakes tasks
-                    // that are already `CREATED`, which costs one update of no rows per pipeline.
+                    // A row that is still here is a stream not yet served (the row is removed when it is),
+                    // so waking it is right rather than wasteful. Sweeping again before it runs re-wakes
+                    // tasks that are already `CREATED`, which costs one update of no rows per pipeline.
                     .map(binding -> waiting.failedAgainst() == null
                                     || !waiting.failedAgainst().equals(stamp(binding)))
                     .orElse(false);
@@ -783,20 +795,19 @@ public final class Stage {
     }
 
     /// How many times one stream may open a relearning session against the **same** translation before it
-    /// stops asking and waits for a person (audit finding W4-5). A translation that has not moved after
-    /// this many tries is not going to move because the stream was retried again five minutes later, and
-    /// every try costs a call to the model.
+    /// stops and waits for a person. A translation that has not changed after this many tries will not
+    /// change because the stream is retried five minutes later, and every try costs calls to the model.
     private static final int MOST_SESSIONS_PER_STREAM = 3;
 
     // --------------------------------------------------------------------------------
 
     // --------------------------------------------------------------------------------
 
-    /// One run of a bound fragment, for a caller that means to serve it.
+    /// One run of a bound fragment, for a caller that intends to serve it.
     ///
-    /// @param events      What the chain's tail emitted, or null where the fragment produced nothing and
-    ///                    where the runner has no pipeline under it to make events with.
-    /// @param diagnostics What its elements said making them, for the pipeline's error stream (A20).
+    /// @param events      What the last element of the chain emitted, or null if the fragment produced
+    ///                    nothing or the runner has no pipeline under it to produce events with.
+    /// @param diagnostics The elements' diagnostics from the run, for the pipeline's error stream.
     public record Served(EventList events, List<StoredError> diagnostics) {
 
     }

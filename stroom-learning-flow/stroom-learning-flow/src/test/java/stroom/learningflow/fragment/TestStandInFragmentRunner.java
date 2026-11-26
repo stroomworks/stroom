@@ -31,24 +31,22 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * A written fragment run the way the pipeline will run it (§12 item 25): from the `SplitFilter` on, one
- * record at a time — and only one filter, however many elements follow it.
- */
+/// Tests that the stand-in fragment runner runs a written fragment the way the real pipeline will: from the
+/// `SplitFilter` on, one record at a time, with only one filter however many elements follow it.
 class TestStandInFragmentRunner {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow", "SYSLOG");
     private static final Verdict UNSCORED = new Verdict(List.of(), 1.0);
     private static final String TWO_RECORDS = "<a><b><record>1</record><record>2</record></b></a>";
 
-    /// One event per record, whatever the record says: what matters here is how many documents the
-    /// element was given, not what it made of them.
+    /// Writes one event per document it is given, whatever the record says, because what matters here is how
+    /// many documents the element was given, not what it made of them.
     private static final String ONE_EVENT = """
             <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
               <xsl:template match="/"><Events><Event/></Events></xsl:template>
             </xsl:stylesheet>""";
 
-    /// Counts the events in the document it was given, which says how the element before it was run.
+    /// Counts the events in the document it is given, which shows how the element before it was run.
     private static final String COUNT_EVENTS = """
             <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
               <xsl:template match="/"><Out><count><xsl:value-of select="count(//Event)"/></count></Out>
@@ -57,10 +55,10 @@ class TestStandInFragmentRunner {
 
     @Test
     void aSecondTransformIsGivenWhatTheFirstWroteForEachRecordAndNotTheWholeOfIt() {
-        // A repeated element is a legal chain, and a fragment carries one SplitFilter, not one per
-        // element: the filter stands in front of the first transform, and the second is handed each
-        // record's output as the pipeline hands it on. Run instead at the boundary's own depth, the
-        // second element would be re-splitting a document of events where the records used to be.
+        // A chain may repeat an element, and a fragment has one SplitFilter, not one per element. The filter
+        // stands in front of the first transform, and the second transform is given each record's output as
+        // the pipeline passes it on. If the second were split again at the boundary's depth, it would be
+        // splitting a document of events at a depth where the records used to be.
         final ContentStores stores = new ContentStores();
         final List<LearnedStep> chain = List.of(
                 new LearnedStep(new StandInXsltStep(), ONE_EVENT, new StepResult("<Events/>", List.of()), UNSCORED),

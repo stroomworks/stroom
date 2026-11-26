@@ -18,10 +18,10 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * Whether the stage may call the model at all. Design §11 makes Learning Flow opt-in per document and ruling A9
- * removed the human-approval mode, so the only choices are on and off.
- */
+/// Whether learning may call the model at all for a Learning Flow document. Learning is opted into per
+/// document. When it is disabled, translations already in use keep serving but nothing new is learned, so
+/// streams with nothing to translate them wait. Whether a person must approve a learned translation is a
+/// separate setting, [PromotionMode].
 public enum LearningMode implements HasDisplayValue {
     AUTOMATIC("Automatic"),
     DISABLED("Disabled");

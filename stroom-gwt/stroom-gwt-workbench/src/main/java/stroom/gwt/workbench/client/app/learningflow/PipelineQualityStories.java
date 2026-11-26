@@ -33,14 +33,14 @@ import stroom.learningflow.client.component.QualityTabController;
 
 import com.google.gwt.user.client.ui.Widget;
 
-/// Two views of a Smart Pipeline beside its Learning Status, shown in Stroom's real pipeline editor with fake REST
-/// replies ([AiPipelines]):
+/// Stories for two views of a Smart Pipeline other than its Learning Status tab, shown in Stroom's real pipeline
+/// editor with fake REST replies ([AiPipelines]):
 ///
-/// - `App/Editors/PipelineQualityAssurance`, its **Quality Assurance** tab ([QualityTabController]): the figures
-///   its translation is judged by, and each learning run's score.
-/// - `App/Editors/PipelineStructureLearned`, its Structure tab with the Smart Pipeline selected
-///   ([LearnedTranslationController]): **What it learned**, folded until asked for, then the learned translation's
-///   elements and the documents they use, which open.
+/// - `App/Editors/PipelineQualityAssurance` shows its **Quality Assurance** tab ([QualityTabController]): the
+///   figures its translation is judged by, and each learning run's score.
+/// - `App/Editors/PipelineStructureLearned` shows its Structure tab with the Smart Pipeline element selected
+///   ([LearnedTranslationController]): **What it learned**, folded until asked for, then the learned
+///   translation's elements and the documents they use, which can be opened.
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
@@ -54,16 +54,17 @@ public final class PipelineQualityStories {
     private static final String WHAT_IT_LEARNED = "What it learned";
     private static final String AI_ELEMENT = "Learn the feed";
 
-    // The firewall's pipeline translating, scored lately over its records, with nothing waiting
+    // The firewall pipeline's learner serving, with a recent rolling score over its records and no streams
+    // waiting.
     private static final String TRANSLATING = LearningFlowFixtures.FIREWALL_TRANSLATING
             .replace("\"waiting\": 2", "\"waiting\": 0")
             .replace("\"records\": 0", "\"records\": 1204, \"rollingScore\": 0.98");
-    // As it, but scoring lately below its Learning Flow's flag
+    // As TRANSLATING, but with a recent score below the threshold at which its Learning Flow flags it.
     private static final String BELOW_PAR = TRANSLATING
             .replace("\"rollingScore\": 0.98", "\"rollingScore\": 0.42")
             .replace("\"belowThreshold\": false", "\"belowThreshold\": true");
 
-    // The learned translation's layers: a parser using a text converter, then a filter using an XSLT
+    // The learned translation's pipeline layers: a parser using a text converter, then a filter using an XSLT.
     private static final String FRAGMENT_LAYERS = """
             [{"sourcePipeline": {"type": "Pipeline", "uuid": "f-2", "name": "Firewall pipeline learned"},
               "pipelineData": {
@@ -77,7 +78,8 @@ public final class PipelineQualityStories {
                     "value": {"entity": {"type": "XSLT", "uuid": "x-1", "name": "Firewall transform"}}}]}}}]""";
 
     private static final String QUALITY = "/learningFlowQuality/v1/pipelines/p-1/elements/learningFlow";
-    // A fortnight, oldest first, from the 30th of October 2025 (UTC), busiest on the twelfth day
+    // The first of the report's fourteen days, 30 October 2025 (UTC). The days run oldest first, and the
+    // twelfth is the busiest.
     private static final long FIRST_DAY = 1_761_782_400_000L;
     private static final String REPORT = report();
     private static final String SAMPLES = """
@@ -97,8 +99,8 @@ public final class PipelineQualityStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/PipelineQualityAssurance", PipelineQualityStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // The figures the translation in use is judged by, each with what it rests on, and each learning
-                // run's score
+                // The figures the translation in use is judged by, each with what it is based on, and each
+                // learning run's score.
                 .story("Default", context -> render(context, false, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     openTab(play);
@@ -111,18 +113,18 @@ public final class PipelineQualityStories {
                     play.expect(figures.getByText("97%")).toBeInTheDocument();
                     final Play runs = play.within(play.getByRole("grid", "Learning runs"));
                     play.expect(runs.findByText("95%")).toBeInTheDocument();
-                    // Its result and its decision
+                    // The run's status and its decision both read "Promoted".
                     play.expect(runs.getAllByText("Promoted")).toHaveLength(2);
-                    // One element, so there is no choosing between them
+                    // There is only one element, so the element chooser is hidden.
                     play.expect(play.queryByText("Smart Pipeline element")).not().toBeVisible();
-                    // The volume in words and as a chart, and what the kept records became
+                    // The volume is given in words and as a chart, with what the kept records became.
                     play.expect(play.findByText("1,830 records in 61 streams over the last 14 days."))
                             .toBeVisible();
                     play.expect(play.getByRole("img", TextMatch.startingWith("Records translated each day")))
                             .toBeInTheDocument();
                     final Play cardinality = play.within(play.getByRole("list", "What its records became"));
                     play.expect(cardinality.getByText("Marked Unknown")).toBeVisible();
-                    // Samples: a record as received beside what it became
+                    // Each sample shows a record as received beside what it became.
                     final Play samples = play.within(play.findByRole("list", "Samples"));
                     play.expect(samples.findByText("2025-10-30T10:00:01Z,10.0.0.1,443,ALLOW")).toBeVisible();
                     play.expect(samples.getByText(TextMatch.containing("<TypeId>Network/Open</TypeId>")))
@@ -130,7 +132,7 @@ public final class PipelineQualityStories {
                     play.expect(samples.getByText("No event: this kind of record yields none.")).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // Day by day, folded beneath the chart
+                // The day-by-day figures are folded beneath the chart.
                 .story("VolumeDayByDay", context -> render(context, false, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     openTab(play);
@@ -142,7 +144,7 @@ public final class PipelineQualityStories {
                     play.expect(grid.getByText("600")).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // Someone who may not view data sees why there are no samples, and nothing is alerted
+                // A user who may not view data is told why there are no samples, and no alert is shown.
                 .story("SamplesNotPermitted", context -> AiPipelines.render(context, false, AiPipelines.ONE_ELEMENT,
                         routes("[" + TRANSLATING + "]", RestReply.error(403, "You may not view data")), null))
                 .withPlay(play -> {
@@ -151,7 +153,7 @@ public final class PipelineQualityStories {
                     play.expect(play.queryByRole("list", "Samples")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // Read only: the same figures, as there is nothing to change on the tab
+                // When read only, the same figures are shown, as there is nothing to change on the tab.
                 .story("ReadOnly", context -> render(context, true, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     openTab(play);
@@ -159,7 +161,8 @@ public final class PipelineQualityStories {
                             .toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // Scoring lately below its Learning Flow's flag: the figure calls for attention
+                // When the recent score is below the Learning Flow's flag threshold, the figure is shown as a
+                // warning.
                 .story("BelowTheFlag", context -> render(context, false, "[" + BELOW_PAR + "]"))
                 .withPlay(play -> {
                     openTab(play);
@@ -170,7 +173,7 @@ public final class PipelineQualityStories {
                             .toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // An element that hasn't learned anything has nothing to judge, and says so
+                // An element that hasn't learned anything has nothing to judge, and says so.
                 .story("NothingLearned", context -> render(context, false, "[]"))
                 .withPlay(play -> {
                     openTab(play);
@@ -179,7 +182,7 @@ public final class PipelineQualityStories {
                     play.expect(play.queryByRole("list", "Quality figures")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // A pipeline without a Smart Pipeline has no such tab
+                // A pipeline without a Smart Pipeline element has no Quality Assurance tab.
                 .story("NoAiTranslator", context -> AiPipelines.render(context, false, AiPipelines.NO_ELEMENT,
                         routes("[]"), null))
                 .withPlay(play -> {
@@ -192,9 +195,9 @@ public final class PipelineQualityStories {
 
         registry.component("App/Editors/PipelineStructureLearned", PipelineQualityStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // The Smart Pipeline selected: what it learned is folded until asked for, then its learned
-                // translation and that translation's elements, in the order records pass through them, each with
-                // the documents it uses, which open
+                // With the Smart Pipeline element selected, What it learned is folded until asked for. Unfolded,
+                // it shows the learned translation and its elements, in the order records pass through them,
+                // each with the documents it uses, which can be opened.
                 .story("Default", context -> render(context, false, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     selectAiElement(play);
@@ -209,7 +212,7 @@ public final class PipelineQualityStories {
                     play.waitFor(() -> play.expect(play.spy(AiPipelines.OPENED)).toHaveBeenCalledWith("tc-1"));
                     DocEditors.expectNoProblems(play);
                 })
-                // Its link to Learning Status opens that tab at the element
+                // Its link to Learning Status opens that tab at the element.
                 .story("OpenLearningStatus", context -> render(context, false, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     selectAiElement(play);
@@ -219,7 +222,7 @@ public final class PipelineQualityStories {
                             .toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // An element that hasn't learned anything says so when unfolded
+                // An element that hasn't learned anything says so when unfolded.
                 .story("NothingLearned", context -> render(context, false, "[]"))
                 .withPlay(play -> {
                     selectAiElement(play);
@@ -227,7 +230,7 @@ public final class PipelineQualityStories {
                     play.expect(play.findByText(TextMatch.startingWith("Nothing learned yet"))).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // Another element selected: there is nothing learned to show
+                // When another element is selected, there is nothing learned to show.
                 .story("OtherElement", context -> render(context, false, "[" + TRANSLATING + "]"))
                 .withPlay(play -> {
                     selectAiElement(play);
@@ -244,7 +247,7 @@ public final class PipelineQualityStories {
         play.click(DocEditors.tab(play, TAB));
     }
 
-    // Shows the Structure tab and selects the Smart Pipeline in its tree
+    // Shows the Structure tab and selects the Smart Pipeline element in its tree.
     private static void selectAiElement(final Play play) {
         play.waitFor(() -> play.expect(DocEditors.tab(play, "Structure")).toBeInTheDocument());
         play.click(DocEditors.tab(play, "Structure"));
@@ -255,8 +258,8 @@ public final class PipelineQualityStories {
         return AiPipelines.render(context, readOnly, AiPipelines.ONE_ELEMENT, routes(learners), null);
     }
 
-    // The firewall's learners as given, its promoted run, its learned translation's layers, and what the quality
-    // resource says of it
+    // The routes for the given firewall learners, the firewall's promoted run, its learned translation's
+    // layers, and the quality resource's report and samples.
     private static RestFixtures.Builder routes(final String learners) {
         return routes(learners, RestReply.json(SAMPLES));
     }
@@ -271,7 +274,8 @@ public final class PipelineQualityStories {
                 LearningFlowFixtures.DOC, LearningFlowFixtures.FIREWALL_PROMOTED, learners);
     }
 
-    // The report: a fortnight of days, 61 streams and 1,830 records in all, and the kept records' kinds
+    // Builds the quality report: fourteen days with 61 streams and 1,830 records in all, and the kinds of
+    // the kept records.
     private static String report() {
         final long[] streams = {0, 2, 4, 5, 3, 0, 0, 6, 7, 5, 4, 20, 3, 2};
         final long[] records = {0, 60, 120, 150, 90, 0, 0, 180, 210, 150, 120, 600, 90, 60};

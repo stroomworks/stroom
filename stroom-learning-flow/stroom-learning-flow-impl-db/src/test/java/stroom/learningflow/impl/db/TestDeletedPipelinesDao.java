@@ -39,10 +39,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// A deleted pipeline's learning as the table of marks and the retention job see it (design 06 A120,
-/// A134–A136): marked once and only where something is kept, kept until forgotten, and forgotten whole —
-/// every row its learners keep, under the pipeline's uuid or its bindings' — and nothing of any other
-/// pipeline's.
+/// Tests [DeletedPipelinesDao]: a deleted pipeline is marked once, and only if it has learning rows; its
+/// learning is kept until it is forgotten; and forgetting it deletes every row its learners have, whether
+/// keyed by the pipeline's UUID or by its bindings' UUIDs, and nothing of any other pipeline.
 class TestDeletedPipelinesDao {
 
     private static final String RUN = Long.toString(System.nanoTime());
@@ -110,7 +109,8 @@ class TestDeletedPipelinesDao {
                 .describedAs("aged from when it was first heard")
                 .contains(GONE.pipelineUuid());
 
-        // Back, as an import of it would bring it, and gone again: the mark is cleared and made afresh.
+        // The pipeline is restored, as an import would, and then deleted again: the mark is cleared and
+        // made again.
         assertThat(deletedPipelines.restored(GONE.pipelineUuid())).isTrue();
         assertThat(deletedPipelines.isDeleted(GONE.pipelineUuid())).isFalse();
         assertThat(deletedPipelines.restored(GONE.pipelineUuid())).describedAs("nothing left to clear").isFalse();
@@ -136,7 +136,8 @@ class TestDeletedPipelinesDao {
         assertKeepsNothing(STAYING, STAYING_BINDING, stayingsAttempt);
     }
 
-    /// A row in every table a learner keeps rows in, under its pipeline's uuid or its binding's.
+    /// Writes a row for the learner in every learning table, keyed by its pipeline's UUID or its binding's,
+    /// and returns the id of its attempt.
     private long learned(final Learner learner, final String bindingUuid) {
         final DocRef fragment = new DocRef("Pipeline", "fragment-" + bindingUuid, bindingUuid);
         learnerBindings.append(learner, DOC, Binding.builder()

@@ -18,10 +18,9 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * What the yield scorer counts output records against (§8.4): input records for a transformation stage,
- * input lines or bytes for an extraction stage, where there are no records yet.
- */
+/// What the yield scorer counts output records against. Input records suit a step whose input is already
+/// records; input lines or bytes suit a parser over raw text, where there are no records yet. Where the input
+/// is already records, the scorer counts against records whatever basis is set.
 public enum YieldBasis implements HasDisplayValue {
     RECORDS("Input records"),
     LINES("Input lines"),

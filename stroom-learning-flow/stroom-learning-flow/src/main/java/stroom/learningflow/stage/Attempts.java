@@ -30,46 +30,48 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/// Every attempt at learning, as a record that outlives the node that made it (A28): its turns,
-/// what each was answered with and by whom, and what the attempt came to. The same record whichever mode
-/// produced it — an automatic attempt differs from a deferred or reviewed one only in who answered and
-/// when — so that one view can show them all, a person can see what was said, and a resumed attempt
-/// (A45) can pick up where it stopped.
+/// Storage for learning sessions (attempts) and their turns, as durable records that outlive the node that
+/// created them. Each records its turns, what each turn was answered with and by whom, and the session's
+/// outcome.
 ///
-/// This is the record; the resuming is slice 25's.
+/// The record is the same whatever produced it (an automatic session differs from a deferred or reviewed
+/// one only in who answered and when), so that one view can show them all, a person can see what was said,
+/// and a resumed session can pick up where it stopped. The open session row is also the learner's claim:
+/// only one session may be open per learner. Resuming is done by `Learning` and `Sessions`; this interface
+/// only stores the record.
 public interface Attempts {
 
-    /// Open an attempt for a learner. The row is the learner's claim (A45): one open attempt per learner
-    /// is what one session at a time means, and an attempt parked awaiting the model or a person is still
-    /// learning.
+    /// Opens a session for a learner. The row is the learner's claim: only one session may be open per
+    /// learner, and a session waiting for the model or for a person is still open.
     ///
-    /// An open attempt whose lease has lapsed holds its claim still: its node has stopped, and the session
-    /// is resumed from its recorded turns by the next worker to find it (design 04 §4), not replaced.
+    /// An open session whose lease has expired still holds the claim. Its node has stopped, and the session
+    /// is resumed from its recorded turns by the next worker to find it, rather than replaced.
     ///
-    /// @param nowMs What the caller's clock says now, which the record keeps beside the claim's expiry;
-    ///              the two must come from one clock.
-    /// @return The attempt's id, or empty where another is open for the learner — the caller has not
-    /// taken the claim and must not learn.
+    /// @param attempt The session to open.
+    /// @param nowMs   The current time by the caller's clock, which the record keeps beside the claim's
+    ///                expiry; both must come from the same clock.
+    /// @return The session's id, or empty if another session is open for the learner, in which case the
+    ///         caller has not taken the claim and must not learn.
     Optional<Long> opened(Attempt attempt, long nowMs);
 
-    /// The attempt open for a learner, if one is — lapsed or not: what a node meeting the learner finds
-    /// instead of taking the claim, and what a stream of the learner waits on.
+    /// Gets the open session for a learner, if there is one, whether or not its lease has expired. A node
+    /// that finds one does not take the claim, and the learner's streams wait on that session.
     Optional<Recorded> open(Learner learner, long nowMs);
 
-    /// Park an attempt until whoever will answer its next question does (A28): it keeps its learner's
-    /// claim, since it is still learning, and its expiry is pushed out by the same heartbeat. What it has
-    /// spent so far is added to what it had spent before, since a resumed attempt's cost is the whole of
-    /// it and not its last leg.
+    /// Leaves a session waiting until whoever will answer its next question (the model or a person) does.
+    /// It keeps its learner's claim, since it is still learning, with its expiry set as a heartbeat would.
+    /// The tokens spent are added to what it had spent before, because a resumed session's cost is its whole
+    /// cost and not just its latest run.
     void parked(long attemptId, AttemptStatus status, long expiryMs, long tokensSpent);
 
-    /// Park an attempt for a person (A65): out of budget or out of candidates before its stream cleared
-    /// the bar. It keeps its learner's claim with a lease that does not lapse, the worker leaves it
-    /// alone, and what it stopped on is recorded as its decision for the Supervisor to show.
+    /// Parks a session for a person, because it stopped (e.g. ran out of budget) before its stream cleared
+    /// the bar. It keeps its learner's claim with a lease that does not expire, the worker leaves it alone,
+    /// and the reason is recorded as its decision for the Supervisor to show.
     ///
-    /// @param attemptId   The attempt.
-    /// @param reason      What it stopped on, in one line.
-    /// @param report      Why, in parts (error, details, suggestions); null where nothing worded it.
-    /// @param tokensSpent What this leg cost.
+    /// @param attemptId   The session's id.
+    /// @param reason      Why it stopped, in one line.
+    /// @param report      The reason in parts (error, details, suggestions); null if there is none.
+    /// @param tokensSpent What this run of the session cost.
     void parked(long attemptId, String reason, StopReport report, long tokensSpent);
 
     /// As [#parked(long, String, StopReport, long)], with no report.
@@ -77,56 +79,62 @@ public interface Attempts {
         parked(attemptId, reason, null, tokensSpent);
     }
 
-    /// Take up an attempt that stopped, as this node, and hold it while it runs (A45). An attempt parked
-    /// awaiting an answer is nobody's to carry — no thread is behind it — so whichever worker reaches it
-    /// first may take it; one that is running is its own node's until its claim lapses, which is how a
-    /// node that died mid-attempt lets the next one in.
+    /// Takes up a session that stopped, for this node, and holds it while it runs. A session waiting for an
+    /// answer has no thread behind it, so whichever worker reaches it first may take it. A running session
+    /// belongs to its node until its claim expires, which is how another node takes over from a node that
+    /// died mid-session.
     ///
-    /// @return Whether this node may carry it on: false where it has finished, and false where it is
-    /// running on another node that has not lapsed. An attempt already running on *this* node is taken
-    /// again, since that is what a node re-entering its own attempt does; what keeps two of this node's
-    /// own threads off one attempt is that the job cannot overlap itself, not this method.
+    /// @param attemptId The session's id.
+    /// @param node      This node's name.
+    /// @param nowMs     The current time.
+    /// @param expiryMs  When the claim expires unless renewed.
+    /// @return Whether this node may resume it: false if it has finished, or if it is running on another
+    ///         node whose claim has not expired. A session already running on *this* node is taken again,
+    ///         since that is what a node re-entering its own session does. Two threads of the same node are
+    ///         kept off one session because the job cannot run concurrently with itself, not by this
+    ///         method.
     boolean claimed(long attemptId, String node, long nowMs, long expiryMs);
 
-    /// The attempts waiting for the model, oldest first: what the worker advances (A5, A28).
-    /// Whether a parked attempt's claim has lapsed does not matter here — nobody is carrying it, so there
-    /// is nothing to take it from, and a worker that was down while it lapsed must still pick it up or
-    /// the learner waits for a stream that may never come. A parked attempt that *has* been taken over is
-    /// no longer awaiting: opening the attempt that took it closed this one.
+    /// Gets the sessions waiting for the model, oldest first, for the worker to advance. Whether a waiting
+    /// session's claim has expired does not matter here: nobody is running it, so there is nothing to take
+    /// it from, and a worker that was down while it expired must still pick it up, or the learner would
+    /// wait for a stream that may never come. A waiting session that another session *has* replaced is no
+    /// longer returned, because opening the replacement closed it.
+    ///
+    /// @param limit The maximum number to return.
     List<Recorded> awaiting(int limit);
 
-    /// Send an attempt to the exhaustion step (A65): the worker carrying it on puts no further transform
-    /// question to the model and takes the flow's spent transition instead. Stands until the attempt is
-    /// [#closed]: a park on the way — for the budget the exhaustion step's own question needs — and the
-    /// grant that reopens it leave the sending to be taken by the walk that follows.
+    /// Marks a session to go to the exhaustion step: the worker resuming it puts no further transform
+    /// question to the model and takes the flow's transition for spent candidates instead. The mark stays
+    /// until the session is [#closed], so if the session parks on the way (e.g. for budget for the
+    /// exhaustion step's own question) and is granted more, the run that follows still takes it.
     void exhaustNext(long attemptId);
 
-    /// Give an attempt more to spend (A77): tokens and milliseconds added to what the document allows it,
-    /// recorded against the attempt alone and kept for as long as the row is.
+    /// Grants a session more budget: tokens and milliseconds added to what the document allows it, recorded
+    /// against this session alone and kept for as long as its row is.
     void granted(long attemptId, long tokens, long ms);
 
-    /// The attempts a node was carrying whose lease has lapsed: `IN_PROGRESS`, expiry at or before `nowMs`,
-    /// oldest first. The node behind each has stopped without finishing — died, or was stopped — and the
-    /// session is resumed from its recorded turns by whichever worker finds it (design 04 §4), not opened
-    /// again from nothing.
+    /// Gets the running sessions whose claim has expired (`IN_PROGRESS`, with an expiry at or before
+    /// `nowMs`), oldest first. The node running each has stopped without finishing, and the session is
+    /// resumed from its recorded turns by whichever worker finds it, rather than started again from nothing.
     ///
-    /// @param nowMs The time the lease is judged against.
-    /// @param limit The most to list.
+    /// @param nowMs The time to judge expiry against.
+    /// @param limit The maximum number to return.
     List<Recorded> lapsed(long nowMs, int limit);
 
-    /// Push a running attempt's claim out, as the conversation asks each question (A45): the heartbeat that
-    /// keeps a slow model call from costing a node the claim it is learning under.
+    /// Renews a running session's claim. This is the heartbeat, called as each question is asked and during
+    /// a slow model call, so that the node does not lose the claim it is learning under.
     void heartbeat(long attemptId, long expiryMs);
 
-    /// Write a turn of an attempt, by its number: as it is answered, and again when it is judged. An
-    /// attempt still running — or one whose node died — then shows what it had got to, which is the
-    /// transcript a person most needs.
+    /// Writes a turn of a session, by its number, as it is answered and again when it is judged. A session
+    /// that is still running, or whose node died, then shows how far it got, which is the transcript a
+    /// person most needs.
     void turn(long attemptId, Turn turn);
 
-    /// What an attempt came to, and when it stopped. The tokens are added to what it had spent before it
-    /// was last parked, so a resumed attempt records the whole of its cost.
+    /// Closes a session with its outcome. The tokens are added to what it had spent before, so a resumed
+    /// session records its whole cost.
     ///
-    /// @param report Why it stopped, in parts, where it stopped short of a translation; null otherwise.
+    /// @param report The reason in parts, if it stopped without a translation; null otherwise.
     void closed(long attemptId, AttemptStatus status, String decision, String bindingUuid, Double score,
                 StopReport report, long tokensSpent);
 
@@ -140,88 +148,93 @@ public interface Attempts {
         closed(attemptId, status, decision, bindingUuid, score, null, tokensSpent);
     }
 
-    /// A person's answer in place of a turn's (A28): *answer instead*, for the question an attempt
-    /// stopped at, and *edit and re-run from here*, for one it had already been answered. The turns after
-    /// it are discarded — what they were is a consequence of an answer that has changed, and the walk
-    /// will derive them again — and this turn's outcome with them, since it has not been judged yet.
+    /// Records a person's answer in place of the model's for one turn: *answer instead*, for the question a
+    /// session stopped at, or *edit and re-run from here*, for one already answered. The turns after it are
+    /// discarded, because they followed from an answer that has changed and the replay will derive them
+    /// again. This turn's outcome is cleared too, since the new answer has not been judged yet.
     void amended(long attemptId, int turnNumber, String answer, String answeredBy);
 
-    /// Open an attempt again, so that it may be run from a turn a person has changed (A28). It takes its
-    /// learner's claim back and the claim is pushed out, as opening one does (A45), whether it had finished, was
-    /// parked, or was being walked by a node that has since stopped.
+    /// Reopens a session so that it can be run again, e.g. from a turn a person has changed. It takes back
+    /// its learner's claim, with a new expiry, whether it had finished, was parked, or was being run by a
+    /// node that has since stopped.
     ///
-    /// @return Whether it was opened. False where another attempt holds the claim now — lapsed or not,
-    /// since a lapsed one is resumed and not replaced — and false where a node is walking this one at this
-    /// moment: its answers are that walk's to give, and a person's would be overwritten by the next turn
-    /// it records. Either way the person is told rather than the answer being lost.
+    /// @return Whether it was reopened. False if another session holds the claim now (expired or not, since
+    ///         an expired one is resumed rather than replaced), or if a node is running this session at this
+    ///         moment, because that run would overwrite a person's answer with the next turn it records.
+    ///         Either way the person is told, rather than their answer being lost.
     boolean reopened(long attemptId, long nowMs, long expiryMs);
 
-    /// What a person decided about the draft an attempt wrote (A25, A28): the attempt that is awaiting
-    /// review for this binding is closed with their decision, so that an approved draft stops reading as
-    /// though it were still waiting.
-    /// Who decided is kept with the time, and shown beside what was learned (Track 2 step 4).
+    /// Records what a person decided about the draft a session wrote. The session awaiting review for this
+    /// binding is closed with the decision, so that an approved draft no longer shows as waiting. Who decided
+    /// is kept with the time, and shown beside what was learned.
     ///
     /// @param reviewedBy Who approved or rejected the draft.
     void decided(String docUuid, String bindingUuid, AttemptStatus status, String decision, String reviewedBy);
 
-    /// How what an attempt learned did on each check that ran (Track 2 step 4, approval evidence), kept
-    /// beside the attempt for a person deciding whether to approve it. Numbers only: what a check said
-    /// about a record quotes the stream (A146).
+    /// Records how what a session learned scored on each check that ran, for a person deciding whether to
+    /// approve it. Only numbers are kept, because what a check said about a record may quote the stream's
+    /// data.
     ///
-    /// @param attemptId The attempt.
+    /// @param attemptId The session's id.
     /// @param evidence  One result per check.
     void evidence(long attemptId, List<CheckResult> evidence);
 
-    /// What has become of the binding an attempt bound (A28, design 01 §6, §11.6): retracted by the gate or
-    /// by a person.
+    /// Records what has become of the binding a session bound, e.g. that it was retracted.
     ///
-    /// Separate from [#decided], and it has to be: that one is A25's decision about a draft *awaiting
-    /// review*, and filters to attempts in that state. These are about a binding that was **serving**,
-    /// whose attempt closed promoted a long time ago, so the same call would match
-    /// nothing and the attempt would go on saying what is no longer true.
+    /// This must be separate from [#decided], which records a decision about a draft *awaiting review* and
+    /// only matches sessions in that state. This is about a binding that was **serving**, whose session
+    /// closed as promoted long ago, so [#decided] would match nothing and the session would go on showing
+    /// an outcome that is no longer true.
     ///
-    /// Attempts that ended some other way are left alone: an abandoned attempt did not write this binding.
+    /// Sessions that ended some other way are left alone, because they did not write this binding.
     void settled(String docUuid, String bindingUuid, AttemptStatus status, String decision);
 
-    /// Remove the record of attempts that finished before a given time, and their turns with them (A28,
-    /// design 01 §12 item 8): one row per attempt and one per turn is the fastest-growing thing this
-    /// feature writes, and a record kept for ever is a record nobody reads.
+    /// Deletes the records of sessions that finished before a given time, with their turns. A row per
+    /// session and a row per turn is the fastest-growing data this feature writes, and a record kept for
+    /// ever is a record nobody reads.
     ///
-    /// An attempt that is still learning or still waiting is never removed, however old it is: age is not
-    /// what says an attempt is over.
+    /// A session that is still learning or still waiting is never removed, however old it is.
     ///
-    /// @return How many attempts were removed.
+    /// @param finishedBeforeMs Sessions that finished before this time are deleted.
+    /// @return How many sessions were removed.
     int prune(long finishedBeforeMs);
 
-    /// One attempt, whole, with its turns in order.
+    /// Gets one session in full, with its turns in order.
     Optional<Recorded> byId(long attemptId);
 
-    /// The attempts of a document, newest first, for the Supervisor view of A28.
+    /// Gets the sessions of a document, newest first.
     List<Recorded> forDocument(String docUuid, int limit);
 
-    /// Attempts across every document, newest first (A28): what the Supervisor view lists, narrowed by
-    /// whatever a person looking for one would know. Without their turns, which the detail reads.
+    /// Finds sessions across documents, newest first, for the Supervisor, filtered by the criteria. Their
+    /// turns are not included; the detail view reads those.
     ///
-    /// @param docUuids The documents to look in: those the person asking may see, so that the count they
-    ///                 are given and the pages they turn are of what they may read and not of what
-    ///                 exists. Empty means none, and answers with nothing.
-    /// @return The page the criteria asked for, and how many attempts match it in all.
+    /// @param criteria The filters, and which page to return.
+    /// @param docUuids The documents to search: those the user may see, so that the total and the pages
+    ///                 reflect what they may read rather than everything that exists. Empty means none, and
+    ///                 returns nothing.
+    /// @return The requested page, and how many sessions match in total.
     Page found(AttemptCriteria criteria, Collection<String> docUuids);
 
 
     // --------------------------------------------------------------------------------
 
 
-    /// @param learner  What is learning: the pipeline and element whose claim the attempt is (A114).
-    /// @param docUuid  The document it learns under.
-    /// @param feed     The feed of the stream it opened on.
-    /// @param type     The type of the stream it opened on.
-    /// @param inputId  The stream that raised the attempt, so a person can see what it was learning from.
-    /// @param node     Which node opened it.
-    /// @param expiryMs   When the claim lapses if nothing heartbeats it (A45).
-    /// @param askedWith The words it was asked with (N9): the template set and texts the run used, so
-    ///                  that a parked run resumes in the words it began in and a person with *View
-    ///                  Data* can be shown the prompt as it was sent.
+    /// A learning session, as opened.
+    ///
+    /// @param learner       The learner the session is for, whose claim it holds.
+    /// @param docUuid       The UUID of the document it learns under.
+    /// @param feed          The feed of the stream it opened on.
+    /// @param type          The type of the stream it opened on.
+    /// @param inputId       The meta id of the stream that opened the session, so a person can see what it
+    ///                      was learning from.
+    /// @param node          Which node opened it.
+    /// @param promotionMode The promotion mode it opened under.
+    /// @param expiryMs      When the claim expires if no heartbeat renews it.
+    /// @param askedWith     The question templates and texts the session used, so that a resumed session
+    ///                      continues with the same wording and a person with *View Data* can be shown the
+    ///                      prompt as it was sent.
+    /// @param improving     The UUID of the binding being improved, for an improvement session; otherwise
+    ///                      null.
     record Attempt(Learner learner,
                    String docUuid,
                    String feed,
@@ -239,18 +252,18 @@ public interface Attempts {
                     : askedWith;
         }
 
-        /// An attempt that is learning from a stream rather than improving a binding, which is every
-        /// attempt but the ones a person asks for with *Improve*.
+        /// Creates a session that learns from a stream rather than improving a binding, which is every
+        /// session except those a person asks for with *Improve*.
         ///
-        /// @param learner       What is learning.
-        /// @param docUuid       The document it learns under.
+        /// @param learner       The learner the session is for.
+        /// @param docUuid       The UUID of the document it learns under.
         /// @param feed          The feed of the stream it opened on.
         /// @param type          The type of the stream it opened on.
-        /// @param inputId       The stream that raised it.
+        /// @param inputId       The meta id of the stream that opened it.
         /// @param node          Which node opened it.
-        /// @param promotionMode The mode it opened under.
-        /// @param expiryMs      When its claim lapses.
-        /// @param askedWith     The words it is asked with.
+        /// @param promotionMode The promotion mode it opened under.
+        /// @param expiryMs      When its claim expires.
+        /// @param askedWith     The question templates and texts it uses.
         public Attempt(final Learner learner,
                        final String docUuid,
                        final String feed,
@@ -263,27 +276,27 @@ public interface Attempts {
             this(learner, docUuid, feed, type, inputId, node, promotionMode, expiryMs, askedWith, null);
         }
 
-        /// Whether this attempt is an improvement a person asked for (A46) rather than a learning raised
-        /// by a stream. An improvement has no stream behind it: its sample is the records the binding was
-        /// accepted on, put back together, so the worker reads it from the regression set rather than
-        /// from the stream store.
+        /// Whether this session is an improvement a person asked for, rather than learning started by a
+        /// stream. An improvement has no stream behind it: its sample is the corpus records the binding was
+        /// accepted on, reassembled, so the worker reads it from the regression corpus rather than the
+        /// stream store.
         ///
-        /// @return True where it is improving a binding.
+        /// @return True if it is improving a binding.
         public boolean isImprovement() {
             return improving != null;
         }
 
-        /// An attempt whose words were not recorded: one opened before N9, or a test that is not about
-        /// them.
+        /// Creates a session whose question wording was not recorded: one opened before the wording was
+        /// recorded, or a test that does not care about it.
         ///
-        /// @param learner       What is learning.
-        /// @param docUuid       The document it learns under.
+        /// @param learner       The learner the session is for.
+        /// @param docUuid       The UUID of the document it learns under.
         /// @param feed          The feed of the stream it opened on.
         /// @param type          The type of the stream it opened on.
-        /// @param inputId       The stream that raised it.
+        /// @param inputId       The meta id of the stream that opened it.
         /// @param node          Which node opened it.
-        /// @param promotionMode The mode it opened under.
-        /// @param expiryMs      When its claim lapses.
+        /// @param promotionMode The promotion mode it opened under.
+        /// @param expiryMs      When its claim expires.
         public Attempt(final Learner learner,
                        final String docUuid,
                        final String feed,
@@ -296,12 +309,14 @@ public interface Attempts {
         }
     }
 
-    /// @param answer     What was answered, or null for a turn an attempt stopped at and nobody has
-    ///                    answered yet (A28).
-    /// @param answeredBy The model a document names, or the person who answered instead (A28); null
-    ///                   while nobody has answered.
-    /// @param outcome    What the answer scored, once it was judged; null while it is being asked.
-    /// @param score      The score of the check that decided it (design 06 A144); null where no scorer did.
+    /// One turn of a session: a question put to the model (or answered by a person instead) and its outcome.
+    ///
+    /// @param answer     The answer, or null for a turn a session stopped at that nobody has answered yet.
+    /// @param answeredBy The model the document names, or the person who answered instead; null while
+    ///                   nobody has answered.
+    /// @param outcome    How the answer was judged, once it has been; null while it is being asked.
+    /// @param score      The score of the check that decided the outcome; null if no scorer decided it.
+    /// @param carried    The ids of the guidance the question included.
     record Turn(int number,
                 String stepId,
                 int candidate,
@@ -317,7 +332,7 @@ public interface Attempts {
             carried = List.copyOf(carried);
         }
 
-        /// A turn that carried no guidance, which is every turn until somebody says something (A46).
+        /// Creates a turn that included no guidance, which is every turn until a person leaves some.
         public Turn(final int number,
                     final String stepId,
                     final int candidate,
@@ -329,7 +344,7 @@ public interface Attempts {
             this(number, stepId, candidate, kind, question, answer, answeredBy, outcome, null, List.of());
         }
 
-        /// A turn no scorer decided, asked with the guidance it carried.
+        /// Creates a turn that no scorer decided, with the guidance it included.
         public Turn(final int number,
                     final String stepId,
                     final int candidate,
@@ -343,18 +358,20 @@ public interface Attempts {
         }
     }
 
-    /// A page of attempts, and how many there are to page through.
+    /// A page of sessions, and how many there are in total.
     record Page(List<Recorded> attempts, long total) {
 
     }
 
-    /// An attempt as it is read back: what it was, what it came to, and every turn of it.
-    /// @param grant       What a person granted the attempt beyond the document's budgets (A77).
-    /// @param exhaustNext Whether a person sent the attempt to the exhaustion step (A65): the next transform
-    ///                    question that would be put to the model is not put, and the flow's spent
-    ///                    transition is taken instead. Stands until the attempt closes, through any park
-    ///                    and grant between.
-    /// @param report      Why it stopped, in parts, where it stopped short of a translation; null otherwise.
+    /// A session as it is read back: what it was, its outcome, and all its turns.
+    ///
+    /// @param grant       What a person granted the session beyond the document's budgets.
+    /// @param exhaustNext Whether a person sent the session to the exhaustion step: the next transform
+    ///                    question is not put to the model, and the flow's transition for spent candidates
+    ///                    is taken instead. It stays set until the session closes, through any park and
+    ///                    grant in between.
+    /// @param report      The reason in parts, if it stopped without a translation; null otherwise.
+    /// @param review      The approval evidence and review decision for its draft, if any.
     record Recorded(long id,
                     Attempt attempt,
                     AttemptStatus status,
@@ -407,11 +424,11 @@ public interface Attempts {
         }
     }
 
-    /// What a person deciding about an attempt's draft is shown, and what they decided (Track 2 step 4).
+    /// What a person deciding about a session's draft is shown, and what they decided.
     ///
-    /// @param evidence       How what it learned did on each check that ran; empty where it learned nothing.
-    /// @param reviewedBy     Who approved or rejected it; null where nobody has.
-    /// @param reviewedTimeMs When; null where nobody has.
+    /// @param evidence       How what it learned scored on each check that ran; empty if it learned nothing.
+    /// @param reviewedBy     Who approved or rejected it; null if nobody has.
+    /// @param reviewedTimeMs When it was approved or rejected; null if nobody has.
     record Review(List<CheckResult> evidence, String reviewedBy, Long reviewedTimeMs) {
 
         public static final Review NONE = new Review(List.of(), null, null);
@@ -423,13 +440,13 @@ public interface Attempts {
         }
     }
 
-    /// What a person granted an attempt beyond the document's budgets (A77): added to them for that
-    /// attempt alone, and shown on its row.
+    /// What a person granted a session beyond the document's budgets: added to them for that session alone,
+    /// and shown on its row.
     record Grant(long tokens, long ms) {
 
         public static final Grant NONE = new Grant(0L, 0L);
 
-        /// This grant with more added.
+        /// Returns this grant with more added.
         public Grant plus(final long moreTokens, final long moreMs) {
             return new Grant(tokens + moreTokens, ms + moreMs);
         }

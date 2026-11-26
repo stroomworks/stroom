@@ -18,6 +18,8 @@ package stroom.learningflow.impl.db;
 
 import javax.sql.DataSource;
 
+/// The data source for the Learning Flow's database tables, bound by [LearningFlowDbModule] and used by
+/// the DAOs in this package.
 public interface LearningFlowDbConnProvider extends DataSource {
 
 }

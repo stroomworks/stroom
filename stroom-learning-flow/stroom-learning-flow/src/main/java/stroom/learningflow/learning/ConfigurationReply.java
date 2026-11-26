@@ -20,13 +20,12 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * The strict grammar for what comes back from a model (design §10). A reply must be a single configuration
- * document and nothing else: either exactly one fenced code block, whose contents are the document, or
- * the bare document with no fence at all. Anything else — prose with no document, two candidate blocks, an
- * unclosed fence — is refused rather than guessed at. A refusal is a failed attempt with feedback, not an
- * error.
- */
+/// Extracts the configuration document from the model's reply to a configuration question.
+///
+/// A reply must be a single configuration document and nothing else: either exactly one fenced code block,
+/// whose contents are the document, or the bare document (starting with `<`) with no fence at all. Anything
+/// else (prose with no document, two candidate blocks, an unclosed fence) is refused rather than guessed at.
+/// A refusal counts as a failed candidate with feedback to the model, not as an error.
 public final class ConfigurationReply {
 
     private static final Pattern FENCED_BLOCK = Pattern.compile(

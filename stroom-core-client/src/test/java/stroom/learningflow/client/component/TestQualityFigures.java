@@ -115,8 +115,8 @@ class TestQualityFigures {
 
     @Test
     void theVolumeSaysHowManyRecordsTheTranslationDeclaredItSkipped() {
-        // Nothing caps how many records a translation may declare it skipped (ruling A148), so the count
-        // being read is the whole of what stops it quietly skipping its awkward ones
+        // There is no limit on how many records a translation may declare skipped, so showing the count is
+        // the only safeguard against a translation quietly skipping the records it finds awkward
         assertThat(QualityFigures.volume(List.of(day(0, 3L, 1200L, 12L), day(1, 1L, 4L, 6L))))
                 .isEqualTo("1,204 records in 4 streams over the last 2 days. 18 of those records were "
                            + "declared skipped by the translation.");
@@ -166,11 +166,11 @@ class TestQualityFigures {
         return day(day, streams, records, 0L);
     }
 
-    /// @param day     Which day.
-    /// @param streams How many streams it translated.
+    /// @param day     The day's number, counted from zero.
+    /// @param streams How many streams were translated that day.
     /// @param records How many records those streams held.
-    /// @param skips   How many of them the translation declared it skipped.
-    /// @return The day.
+    /// @param skips   How many of those records the translation declared skipped.
+    /// @return The day's volume.
     private static VolumeDay day(final int day, final Long streams, final Long records, final Long skips) {
         return new VolumeDay(day * 86_400_000L, streams, records, skips);
     }

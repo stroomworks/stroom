@@ -27,30 +27,36 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// Running a step the way the fragment will run it (§12 item 25): the `SplitFilter` the fragment carries
-/// gives the transform one record at a time, so what is scored must be what a transform run one record at
-/// a time produces. A stylesheet that reads the whole document — counting its siblings, asking for its
-/// position, pulling a value from the record before it — behaves differently when it is given one record,
-/// and the promotion gate has to see that difference before it promotes rather than after.
+/// Runs a step one record at a time, the way the learned fragment will run it, so that what is scored is what
+/// will actually be served.
+///
+/// The fragment's `SplitFilter` gives the transform one record at a time. A stylesheet that reads the whole
+/// document (counting its siblings, asking for its position, or taking a value from the previous record)
+/// behaves differently when it is given one record, and the promotion gate has to see that difference before
+/// it promotes rather than after.
 public final class PerRecord {
 
-    /// The most distinct shortfalls one per-record run reports. A step that has gone wrong in twenty
-    /// different ways has gone wrong.
+    /// The maximum number of distinct diagnostics one per-record run reports. Twenty is already enough to
+    /// show the model that the step has gone wrong.
     private static final int MOST = 20;
 
     private PerRecord() {
     }
 
-    /// The depth at which the documents a per-record step *writes* carry their records: each is the
-    /// transform's output for one record, so what it wrote is the children of its root. An element after
-    /// the first per-record one is given those, one at a time, exactly as the pipeline gives them — there
-    /// is only ever one `SplitFilter` in a fragment, and what follows it is already one record deep.
+    /// The depth of the records in the output of a per-record step. Each output document is the transform's
+    /// output for one record, so its records are the children of its root. An element after the first
+    /// per-record one is given those one at a time, as the pipeline gives them, because a fragment has only
+    /// one `SplitFilter` and everything after it already works one record at a time.
     public static final int WRITTEN = 1;
 
-    /// @param depth How deep the records sit, as the binding's boundary carries it.
-    /// @return What the step wrote for each record, joined; or the step run over the whole document where
-    /// the depth names no records at all, which is the only case in which there is nothing to run per
-    /// record. A stream carrying a single record is run as the one record it is.
+    /// Runs a step over each record of the input in turn and joins the outputs into one document.
+    ///
+    /// @param runner        The step to run.
+    /// @param configuration The candidate configuration, or null for a run-only step.
+    /// @param input         The whole input document.
+    /// @param depth         How deep the records sit, as recorded in the binding's record boundary.
+    /// @return What the step wrote for each record, joined. If there are no records at that depth, the step
+    /// is run once over the whole input instead. A stream with a single record is run as that one record.
     public static StepResult run(final StepRunner runner,
                                  final String configuration,
                                  final String input,
@@ -58,8 +64,14 @@ public final class PerRecord {
         return run(runner, configuration, input, RecordSplit.split(input, depth));
     }
 
-    /// The same, for a caller that has already cut the input — the conversation cuts it to show the model one
-    /// record and would otherwise cut it again for every candidate it asks about.
+    /// The same, for a caller that has already split the input into records. The conversation splits it once
+    /// to show the model a record, and uses this to avoid splitting it again for every candidate.
+    ///
+    /// @param runner        The step to run.
+    /// @param configuration The candidate configuration, or null for a run-only step.
+    /// @param input         The whole input, run as one if `records` is empty.
+    /// @param records       The records of the input, each one an XML document.
+    /// @return What the step wrote for each record, joined, with each distinct diagnostic once.
     public static StepResult run(final StepRunner runner,
                                  final String configuration,
                                  final String input,
@@ -67,8 +79,8 @@ public final class PerRecord {
         if (records.isEmpty()) {
             return runner.run(configuration, input);
         }
-        // Compiled once for the candidate, run once per record: a stylesheet compiled per record is a
-        // stylesheet compiled ten thousand times for a stream of ten thousand records.
+        // Compile once for the candidate and run once per record; compiling per record would compile a
+        // stylesheet ten thousand times for a stream of ten thousand records.
         final List<String> written = new ArrayList<>();
         final List<StoredError> diagnostics = new ArrayList<>();
         try (StepRunner.Prepared prepared = runner.prepare(configuration)) {
@@ -86,11 +98,10 @@ public final class PerRecord {
                 : told(diagnostics));
     }
 
-    /// Why a per-record run produced nothing, where nothing else said why. What the transform wrote for
-    /// each record is read back to make one document, and a piece that will not parse takes the whole
-    /// document with it — but a stylesheet can write something that is not a document without Saxon
-    /// raising anything, and the step then failed in silence. A re-ask that says nothing is an attempt
-    /// spent for nothing, so the silence is filled here.
+    // Explains why a per-record run produced nothing, when no diagnostic already says why. The outputs for
+    // each record are joined into one document, and one piece that will not parse spoils the whole document.
+    // A stylesheet can write something that is not XML without Saxon raising anything, so the step would fail
+    // silently. Asking the model again without saying why would waste the attempt, so a reason is given.
     private static List<StoredError> unjoined(final StepRunner runner,
                                               final int records,
                                               final List<String> written,
@@ -106,10 +117,15 @@ public final class PerRecord {
                   + "stylesheet whose templates match nothing writes the input's text and no elements."));
     }
 
-    /// What fell short, once each: a stylesheet that raises the same error for every record of a stream
-    /// raises it ten thousand times, and ten thousand copies of one sentence is a re-ask that says no
-    /// more than one copy and costs a budget (A44) to send. Public because a run through the real
-    /// pipeline gathers its diagnostics record by record too, and the two must report alike.
+    /// Removes repeated diagnostics, keeping the first of each and at most twenty in all.
+    ///
+    /// A stylesheet that raises the same error for every record of a stream raises it once per record. Ten
+    /// thousand copies of one message tell the model no more than one copy, but cost far more tokens to send.
+    /// This is public because a run through the real pipeline also gathers its diagnostics record by record,
+    /// and the two must report alike.
+    ///
+    /// @param diagnostics The diagnostics gathered over every record.
+    /// @return Each distinct diagnostic (by severity, element and message) once, in first-seen order.
     public static List<StoredError> told(final List<StoredError> diagnostics) {
         final Map<String, StoredError> once = new LinkedHashMap<>();
         for (final StoredError error : diagnostics) {

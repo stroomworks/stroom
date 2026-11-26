@@ -103,17 +103,18 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 04 §8.1, **test A, steps 4 to 6** — phase 5, end to end against real processor tasks and a real
-/// database, on the feed steps 1 to 3 learned.
+/// Tests what happens when a stream brings kinds of record the learned transform has not met, against
+/// real processor tasks and a real database. It continues from where `TestScenarioAFromNothingToServed`
+/// ends, with a feed that has already been learned.
 ///
-/// A stream arrives carrying a kind of record the transform has not met — one it can translate, the
-/// logoff, and one nothing can, the badge fault — beside the kinds already known. Its task defers with
-/// nothing emitted, and one session opens. The model translates the logoff and, its candidate spent on
-/// the badge fault, is asked by the exhaustion step for the admitted form and gives it: the same pipeline
-/// is improved in place under a new snapshot, held to the corpus, which now holds the badge faults as
-/// admissions beside the translations. The task wakes and completes: logons and logoffs as their events,
-/// the badge faults as marked Unknown events. A stream of every kind is then served at once, with no
-/// session opened.
+/// The stream holds the kinds already known and two new ones: the logoff, which can be translated, and
+/// the badge fault, which nothing can translate. Its task is deferred with nothing emitted, and one
+/// session opens. The model translates the logoff, and when its only transform candidate fails on the
+/// badge fault, the exhaustion step asks it to admit the badge fault as a marked Unknown, which it does.
+/// The same fragment is updated in place under a new snapshot and held to the corpus, which now holds the
+/// badge faults as admissions beside the translations. The task wakes and completes, writing logons and
+/// logoffs as their events and the badge faults as marked Unknown events. A later stream with every kind
+/// is then served straight away, with no session opened.
 class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -138,7 +139,7 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
     private static final Pattern ADMITTED = Pattern.compile("Name=\"" + LearnedUnknown.MARKER
                                                             + "\" Value=\"badge-fault\"");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -193,15 +194,15 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
         filter = filterOver(pipeline(document));
     }
 
-    /// Run both ways round (simplification option H): off is the default, and was the case the
-    /// removed requirement refused outright. With the master queue this is the whole of an AI
-    /// feed end to end — its streams defer, learning promotes, the wake returns the tasks to
-    /// `CREATED`, the master hands them out, and they complete.
+    /// Runs with `claimTasksOnWorker` both off and on, as a pipeline with a Learning Flow element must work
+    /// with either way of handing tasks to workers. Off is the default. With the master node's queue, this
+    /// covers a learning feed end to end: its streams are deferred, learning promotes, the wake returns the
+    /// tasks to `CREATED`, the master hands them out, and they complete.
     @ParameterizedTest(name = "claimTasksOnWorker={0}")
     @ValueSource(booleans = {false, true})
     void anUnseenKindIsLearnedWhereItCanBeAndAdmittedWhereItCannot(final boolean claimTasksOnWorker) {
         processorConfigProvider.get().setClaimTasksOnWorker(claimTasksOnWorker);
-        // Steps 1 to 3, compressed: a stream of logons learns the feed, logon-only.
+        // Steps 1 to 3, in short: a stream of logons teaches the feed a transform for logons only.
         final Script silent = Script.of();
         advisor.set(silent);
         final Meta first = rawStream(LOGONS);
@@ -215,7 +216,7 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
         assertThat(statusByInput()).containsEntry(first.getId(), TaskStatus.COMPLETE);
         final Binding learned = learnerBindings.forLearner(learner).get(0);
 
-        // Step 4: a stream with two kinds the transform has not met defers, and one session opens.
+        // Step 4: a stream with two kinds the transform has not met is deferred, and one session opens.
         final Meta mixed = rawStream(EVERY_KIND);
         final ProcessorResult held = commonTranslationTestHelper.process(tasks(1).get(0));
         assertThat(held.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR)).isZero();
@@ -228,9 +229,10 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
                 .toList();
         assertThat(open).hasSize(1);
 
-        // Step 5: the model translates the logoff and falls short on the badge fault — which the sample
-        // already holds, so the schema's feedback is what spends the one candidate — then admits it at the
-        // exhaustion step. In place, a new snapshot, held to the corpus.
+        // Step 5: the model translates the logoff but fails on the badge fault. The sample already
+        // contains a badge fault, so the schema conformance failure uses up the transform's one candidate,
+        // and the exhaustion step then asks the model to admit it. The fragment is updated in place under
+        // a new snapshot and held to the corpus.
         final Script relearning = script(CSV.configuration(), STRICT)
                 .expect(QuestionMatcher.admission("XSLTFilter").withFeedbackMentioning("Schema conformance"))
                 .reply(Scenarios.fenced(ADMITS));
@@ -253,11 +255,11 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
                 .describedAs("and the badge faults are held as admissions (A75)").hasSize(2);
         assertThat(statusByInput()).containsEntry(mixed.getId(), TaskStatus.CREATED);
 
-        // Step 6: the task wakes and completes; a stream of every kind is served at once.
+        // Step 6: the task wakes and completes, and a new stream of every kind is served straight away.
         advisor.set(silent);
         commonTranslationTestHelper.process(tasks(1).get(0));
         assertThat(statusByInput()).containsEntry(mixed.getId(), TaskStatus.COMPLETE);
-        // The one visible output stream; what the deferred run wrote was discarded (§8 scenario 6).
+        // Take the one visible output stream. What the deferred run wrote was discarded (marked deleted).
         final String served = data(childrenOf(mixed).stream()
                 .filter(meta -> StreamTypeNames.EVENTS.equals(meta.getTypeName())
                                 && !Status.DELETED.equals(meta.getStatus()))
@@ -274,7 +276,7 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
         assertThat(deferrals.forDocument(document.getUuid())).isEmpty();
     }
 
-    /// Create what tasks there are to create and hand out `count` of them.
+    /// Creates and queues any tasks due, assigns them, and checks that exactly `count` were assigned.
     private List<ProcessorTask> tasks(final int count) {
         processorTaskAvailability.clear();
         processorTaskTestHelper.createAndQueueTasks();
@@ -303,17 +305,17 @@ class TestScenarioAStepsFourToSix extends AbstractCoreIntegrationTest {
         }
     }
 
-    /// The pack's document with the model left off: the script answers.
+    /// Creates a document configured like the demo content pack's, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName() + " " + feed);
-        // The pack's settings under a flow whose transform has one candidate before the exhaustion step
-        // (design 04 §4), so that the scripted model's one refusal of the unseen kind is what sends the
-        // session there.
+        // The pack's settings, but with a flow whose transform step has only one candidate before it goes
+        // to the exhaustion (Admit) step, so that the one failed candidate sends the session there.
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .flow(new LearningFlow(List.of(
                         FlowStep.of(QuestionKind.CHAIN),

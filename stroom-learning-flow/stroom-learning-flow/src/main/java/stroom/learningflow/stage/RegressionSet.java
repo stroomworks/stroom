@@ -19,55 +19,59 @@ package stroom.learningflow.stage;
 import java.util.List;
 import java.util.Optional;
 
-/// The corpus (ruling A18; design 04 §4.1): the records a binding was accepted on, per binding, each with the
-/// output it was accepted with. Keyed on the binding's uuid so that a binding that is rebound keeps its
-/// history. A candidate is held to every entry, to **no worse** (A66): every entry's new output must
-/// clear the bar, and a record once translated may never become Unknown. Output may otherwise change.
+/// Storage for the regression corpus: for each binding, the records it was accepted on, each with the output
+/// it was accepted with. A new candidate must do no worse than this before it can replace the binding.
 ///
-/// An entry is a record and not a stream (A56): only the records a session had to learn for go in — a
-/// first stream contributes the sample the model was shown, a relearning the records that fell short —
-/// so a stream of ten gigabytes contributes a handful. Appended at promotion, capped per binding by the
-/// document (A63), the oldest going first. In-memory in scenarios; in a node, a stream per promotion on
-/// the source feed with a row per entry (design 04 §4.1), so that the copy inherits the feed's
-/// classification and lives under its retention.
+/// The corpus is keyed on the binding's UUID, so a binding that is rebound to a new fragment keeps its
+/// history. A candidate is held to every entry: each entry's new output must clear the bar, and a record that
+/// was once translated may never become Unknown. The output may otherwise change.
+///
+/// An entry is a single record, not a stream, and only the records a session had to learn for are added: a
+/// first learning adds the sample the model was shown, a relearning adds the records that fell short. A
+/// stream of ten gigabytes therefore contributes only a handful of entries. Entries are appended at
+/// promotion and capped per binding by the document's setting, the oldest being dropped first. Tests keep the
+/// corpus in memory; a node writes one stream per promotion on the source feed, with an index row per entry,
+/// so that the copy inherits the feed's classification and is subject to its retention rules.
 public interface RegressionSet {
 
-    /// What a binding was accepted on, oldest first.
+    /// Gets the records a binding was accepted on, oldest first.
     ///
-    /// @param bindingUuid The binding.
-    /// @return Its entries.
+    /// @param bindingUuid The binding's UUID.
+    /// @return Its entries; any the current user cannot read, or that no longer exist, are left out.
     List<Accepted> accepted(String bindingUuid);
 
-    /// Append a promotion's entries, dropping the oldest beyond the cap.
+    /// Appends a promotion's entries, dropping the oldest beyond the cap.
     ///
-    /// @param docUuid     The document.
-    /// @param bindingUuid The binding.
-    /// @param feed        The feed the records came from: where a node keeps the copy. Never null: a copy
-    ///                    must be kept on some feed.
+    /// @param docUuid     The UUID of the Learning Flow document the learner runs under.
+    /// @param bindingUuid The UUID of the promoted binding.
+    /// @param feed        The feed the records came from, which is where a node keeps the copy. Never null,
+    ///                    because the copy must be kept on some feed.
     /// @param type        The stream type the records came from.
     /// @param entries     The records, in the order they were learned.
-    /// @param cap         How many entries the binding may hold (A63).
+    /// @param cap         The maximum number of entries the binding may hold, from the document.
     void accept(String docUuid, String bindingUuid, String feed, String type, List<Accepted> entries, int cap);
 
-    /// The feed a binding's records are kept on: its newest entry's. What an improvement, which has no stream
-    /// of its own, keeps what it learns for on (A126: a learner does not know its feed, but its records
-    /// do).
+    /// Gets the feed a binding's records are kept on, taken from its newest entry. An improvement session has
+    /// no stream of its own, and a learner does not know its feed, so this is where an improvement keeps the
+    /// records it learns for.
     ///
-    /// @param bindingUuid The binding.
+    /// @param bindingUuid The binding's UUID.
     /// @return The feed, or empty where the binding holds no records.
     Optional<String> feedOf(String bindingUuid);
 
-    /// A binding that will never serve — a rejected draft, a retracted binding — takes its records with it.
+    /// Discards the records of a binding that will never serve, such as a rejected draft or a retracted
+    /// binding.
     ///
-    /// @param bindingUuid The binding.
+    /// @param bindingUuid The binding's UUID.
     void discard(String bindingUuid);
 
-    /// Approve rebinds the incumbent to a draft's fragment and the draft's history becomes the
-    /// incumbent's: its entries move, appended after what the incumbent already holds.
+    /// Moves a draft's entries to the serving binding when the draft is approved. Approval rebinds the
+    /// serving binding to the draft's fragment, so the draft's entries are appended after those the serving
+    /// binding already holds.
     ///
-    /// @param fromBindingUuid The draft.
-    /// @param toBindingUuid   The binding it replaced.
-    /// @param cap             How many entries the binding may hold (A63).
+    /// @param fromBindingUuid The UUID of the approved draft.
+    /// @param toBindingUuid   The UUID of the serving binding it replaces.
+    /// @param cap             The maximum number of entries the binding may hold, from the document.
     void move(String fromBindingUuid, String toBindingUuid, int cap);
 
     // --------------------------------------------------------------------------------
@@ -76,9 +80,10 @@ public interface RegressionSet {
     enum Kind {
         /// A real translation: an event with something in its detail.
         TRANSLATION,
-        /// An admission: an event whose detail is `Unknown` (A51, A53).
+        /// A marked Unknown: an event whose detail is `Unknown`, learned for a kind of record nothing better
+        /// could be done with.
         UNKNOWN,
-        /// Nothing: a kind of record that yields no event — a header line, a comment.
+        /// No event: a kind of record that yields no event, such as a header line or a comment.
         NONE
     }
 
@@ -87,20 +92,20 @@ public interface RegressionSet {
     /// @param record     The record as the parser cut it, as one document of its own: the parser's output
     ///                   with this record alone under its ancestors, which is what the transform is given
     ///                   and what a candidate is run over.
-    /// @param text       The record's own text as it was received, where the parser knows where it cut —
-    ///                   the data splitter does, the JSON and XML parsers do not — else null.
-    /// @param preamble   What the stream carried before its first record — a header line, an opening
-    ///                   bracket — where the parser knows; else null. What a stream rebuilt from entries
-    ///                   begins with.
+    /// @param text       The record's raw text as it was received, if the parser reports where it split
+    ///                   the record (the Data Splitter does; the JSON and XML parsers do not); else null.
+    /// @param preamble   The text the stream had before its first record (e.g. a header line or an opening
+    ///                   bracket), if the parser reports it; else null. A stream rebuilt from entries
+    ///                   begins with this.
     /// @param postamble  What the stream carried after its last record, likewise.
     /// @param output     The output the record was accepted with: the transform's events for it, or null
     ///                   where it yielded none.
     /// @param kind       What that output is.
     /// @param score      The weighted score the promoted candidate achieved on the stream it was accepted
     ///                   from.
-    /// @param attemptId  The attempt that accepted it, where one was open.
+    /// @param attemptId  The session that accepted it, if one was open.
     /// @param acceptedMs When it was accepted.
-    /// @param target     What the flow said this kind of record should become (A31), where it settled one.
+    /// @param target     The target event the flow settled on for this kind of record, if it settled one.
     record Accepted(String record,
                     String text,
                     String preamble,
@@ -112,8 +117,7 @@ public interface RegressionSet {
                     long acceptedMs,
                     String target) {
 
-        /// Whether the record can be put back through a parser: it has its own text, and what the stream
-        /// wrapped it in.
+        /// Whether the record can be run through a parser again, which needs its raw text.
         public boolean runnable() {
             return text != null;
         }

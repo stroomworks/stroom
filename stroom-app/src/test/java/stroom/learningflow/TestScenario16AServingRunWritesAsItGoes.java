@@ -94,19 +94,19 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 04 §8, scenario 16 (its first half) and §3, *streams of any size*: **a serving run writes as it
-/// goes and leaves nothing when it defers.**
+/// Tests that a serving run writes each record as it goes, and leaves no visible output when the stream is
+/// deferred part way through.
 ///
-/// A binding is learned that translates logons and leaves anything else as an event the schema refuses.
-/// A stream of six records, two of them logoffs, is then served as it is read: the fragment runs over
-/// the stream, each record of its output is judged as it is written, and the two records before the
-/// first logoff reach the pipeline's writer before the third stops the run. The task ends deferred, and
-/// what the writer had made of those two records is discarded by the task — a stream that waits leaves
-/// nothing anyone can see. The worker relearns on the held stream, the promotion wakes the task, and the
+/// First a binding is learned that translates logons and turns any other record into an event the schema
+/// rejects. A stream of six records, two of them logoffs, is then served as it is read. The fragment runs
+/// over the stream and each record of its output is judged as it is written, so the two records before
+/// the first logoff reach the pipeline's writer before the third record stops the run. The task ends
+/// deferred and discards what the writer had produced from those two records, so a waiting stream has no
+/// visible output. The worker then relearns on the held stream, the promotion wakes the task, and the
 /// stream is served in full.
 ///
-/// What this test cannot show is memory: that nothing larger than a record is held is the gate's
-/// construction, read in `RecordGate`, not a thing a six-record stream can measure.
+/// This test cannot show that memory use is bounded. That only one record is held at a time follows from
+/// how `RecordGate` is written, and a six-record stream cannot measure it.
 class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -115,7 +115,7 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
     private static final String TRANSLATES_BOTH = Scenarios.resource("csv-logon.xsl");
     private static final Pattern EVENT = Pattern.compile("<Event>");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -170,7 +170,8 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
 
     @Test
     void aStreamWithARecordShortOfTheBarIsDiscardedAsItWaitsAndServedWhenTheTransformMoves() {
-        // A binding that translates logons alone, learned on a stream of logons: task, worker, task.
+        // Learn a binding that translates only logons from a stream of logons. The first task defers the
+        // stream, the worker learns, and the second task serves it.
         advisor.set(Script.of());
         final Meta logons = rawStream(CSV.input());
         commonTranslationTestHelper.process(tasks(1).get(0));
@@ -182,7 +183,7 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
         commonTranslationTestHelper.process(tasks(1).get(0));
         assertThat(statusByInput()).containsEntry(logons.getId(), TaskStatus.COMPLETE);
 
-        // The mixed stream: two records reach the writer, the third stops the run, the task defers.
+        // On the mixed stream, two records reach the writer, the third stops the run, and the task defers.
         final Meta mixed = rawStream(MIXED);
         final ProcessorResult held = commonTranslationTestHelper.process(tasks(1).get(0));
         assertThat(held.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR))
@@ -206,8 +207,8 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
                 .toList();
         assertThat(open).describedAs("a relearning session, parked for the worker").hasSize(1);
 
-        // The worker relearns on the held stream with a stylesheet that translates both; the rebinding
-        // wakes the task; the stream is served in full.
+        // The worker relearns on the held stream with a stylesheet that translates both kinds of record.
+        // The new binding wakes the task, and the stream is served in full.
         final Script relearning = script(CSV.configuration(), TRANSLATES_BOTH);
         advisor.set(relearning);
         deferredLearning.exec();
@@ -232,7 +233,7 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
                 .toList();
     }
 
-    /// Create what tasks there are to create and hand out `count` of them.
+    /// Creates and queues any tasks due, assigns them, and checks that exactly `count` were assigned.
     private List<ProcessorTask> tasks(final int count) {
         processorTaskAvailability.clear();
         processorTaskTestHelper.createAndQueueTasks();
@@ -261,14 +262,15 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
         }
     }
 
-    /// The pack's document with the model left off: the script answers.
+    /// Creates a document configured like the demo content pack's, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName() + " " + feed);
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .build());
         return docRef;

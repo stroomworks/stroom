@@ -29,18 +29,18 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The static check of decision N1: a learned stylesheet may use only what is on the allow-list.
+/// Tests the static check that a learned stylesheet uses only functions and instructions on the allow-list.
 ///
-/// There is a test here for each refused group of N1's table, because the list is the only guard until
-/// Track 2 step 6 adds run-time enforcement.
+/// There is a test for each group of refused functions and instructions, because until the list is also
+/// enforced when the stylesheet runs, this static check is the only guard.
 class TestLearnedStylesheetCheck {
 
     private static final AiXsltAllowList LIST = AiXsltAllowList.hardCoded();
 
     @Test
     void everyStylesheetTheScenariosAlreadyUsePasses() throws IOException {
-        // The check is no use if it refuses the translations the module already learns: these are the
-        // stylesheets the scenario suite holds the engine to, so each must pass as it stands.
+        // The check is no use if it refuses the translations Learning Flow already learns. These are the
+        // stylesheets the scenario tests expect, so each must pass unchanged.
         final Path fixtures = Path.of("src/testFixtures/resources/stroom/learningflow/scenario");
         assertThat(fixtures).exists();
         final List<Path> stylesheets;
@@ -114,7 +114,7 @@ class TestLearnedStylesheetCheck {
 
     @Test
     void theStroomFunctionsOfThisStreamAreAllowed() {
-        // What Track 1 task 3 needs: the missing year from the stream, and the zone it was received in
+        // Translations need these to take a missing year from the stream and to read the zone it was written in
         assertThat(LearnedStylesheetCheck.refusals(wrapping("""
                 <xsl:template match="record">
                   <xsl:value-of select="stroom:format-date(@when, 'MMM dd HH:mm:ss')"/>
@@ -150,7 +150,8 @@ class TestLearnedStylesheetCheck {
 
     @Test
     void referringToAFunctionByNameAndArityIsRefused() {
-        // The route that defeats a check of named calls: the call never appears as one
+        // A function reference defeats a check that only looks for named calls, because the call never
+        // appears as one
         assertThat(LearnedStylesheetCheck.refusals(wrapping("""
                 <xsl:template match="record">
                   <xsl:variable name="f" select="stroom:http-call#5"/>
@@ -170,7 +171,7 @@ class TestLearnedStylesheetCheck {
 
     @Test
     void aCallInAnAttributeValueTemplateIsChecked() {
-        // A literal result element's attributes are the easiest place to hide a call
+        // An attribute value template on a literal result element is the easiest place to hide a call
         assertThat(LearnedStylesheetCheck.refusals(wrapping("""
                 <xsl:template match="record">
                   <Event id="{unparsed-text('file:///etc/passwd')}"/>
@@ -236,8 +237,8 @@ class TestLearnedStylesheetCheck {
                 .isEqualTo("concat('  ', $b)");
     }
 
-    // Security review finding 1 (23 November 2026): an apostrophe inside an XPath comment opens a
-    // "literal" that blanks the real call after it.
+    // A known gap found by a security review: an apostrophe inside an XPath comment opens a "literal" that
+    // hides the real call after it from the check. Disabled until the check is fixed.
     @Test
     @Disabled("Security review finding 1: fails until Track 3 task 1 makes the check sound")
     void aCallHiddenBetweenCommentsHoldingQuotesIsRefused() {
@@ -247,8 +248,9 @@ class TestLearnedStylesheetCheck {
                 </xsl:template>"""));
     }
 
-    // Security review N1 (24 November 2026): a declared function is matched on its lexical name only, so
-    // a stylesheet that declares its own `stroom:http-call` makes the check pass the real one.
+    // A known gap found by a security review: a declared function is matched on its lexical name only, so a
+    // stylesheet that declares its own `stroom:http-call` makes the check pass the real one. Disabled until
+    // the check is fixed.
     @Test
     @Disabled("Security review N1: fails until Track 3 task 1 keys declared functions by namespace")
     void aDeclaredFunctionDoesNotExcuseACallToTheRealOneOfTheSameName() {
@@ -262,7 +264,8 @@ class TestLearnedStylesheetCheck {
                 </xsl:template>"""));
     }
 
-    // Security review N1 (24 November 2026): `for-each-source` holds XPath but is not scanned.
+    // A known gap found by a security review: `for-each-source` holds XPath but is not scanned. Disabled
+    // until the check is fixed.
     @Test
     @Disabled("Security review N1: fails until Track 3 task 1 scans every attribute that holds XPath")
     void aCallInAMergeSourceIsRefused() {
@@ -277,8 +280,8 @@ class TestLearnedStylesheetCheck {
                 </xsl:template>"""));
     }
 
-    // Security review N1 (24 November 2026): `use-when` holds XPath that runs at compile time, and is
-    // not scanned.
+    // A known gap found by a security review: `use-when` holds XPath that runs at compile time, and is not
+    // scanned. Disabled until the check is fixed.
     @Test
     @Disabled("Security review N1: fails until Track 3 task 1 scans every attribute that holds XPath")
     void aCallInUseWhenIsRefused() {
@@ -290,7 +293,7 @@ class TestLearnedStylesheetCheck {
 
     @Test
     void aPlainCallToABannedStroomFunctionIsRefused() {
-        // The control for the four tests above: without a trick, the same call is refused.
+        // The control for the four disabled tests above: without a trick, the same call is refused.
         assertRefusesHttpCall(wrapping("""
                 <xsl:template match="/">
                   <xsl:value-of select="stroom:http-call('http://x')"/>
@@ -303,10 +306,10 @@ class TestLearnedStylesheetCheck {
                 .anyMatch(refusal -> refusal.contains("stroom:http-call"));
     }
 
-    /// Puts a fragment in a stylesheet that declares the prefixes the tests use.
+    /// Wraps a fragment in a stylesheet that declares the prefixes the tests use.
     ///
-    /// @param body The fragment.
-    /// @return A stylesheet holding it.
+    /// @param body The stylesheet fragment.
+    /// @return A stylesheet holding the fragment.
     private static String wrapping(final String body) {
         return """
                 <xsl:stylesheet version="3.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"

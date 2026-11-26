@@ -68,16 +68,18 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 20, in tier 2 against a real database (design 03, phase C): a stream whose
-/// learner has no binding produces no output and waits, on a row naming the input — the row being a row
-/// now, in `learning_flow_deferral` (A26), and not a map in one node's heap. Nothing is held: the stream
-/// stays in the store, and the task the row names is what a promotion wakes.
+/// Tests, in a running node with a real database, that a stream whose learner has no binding produces no
+/// output and is deferred.
+///
+/// The deferral is recorded as a row in the `learning_flow_deferral` table, which names the input stream,
+/// so that every node sees it. The stream itself stays in the store, and a later promotion wakes the
+/// pipeline's deferred tasks.
 class TestScenario20SentinelInAPipeline extends AbstractCoreIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-UNBOUND";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -110,8 +112,8 @@ class TestScenario20SentinelInAPipeline extends AbstractCoreIntegrationTest {
 
     @Test
     void scenario20AStreamNothingServesWaitsOnARow() {
-        // This harness is the node's own wiring, so the seams are the tables of A26 and not one node's
-        // heap — the bindings behind the cache a node reads them through (design 01 §12 item 8).
+        // This test uses the node's real wiring, so bindings are read from the database tables through
+        // the node's cache, rather than from in-memory stand-ins.
         assertThat(learnerBindings).isInstanceOf(CachedLearnerBindings.class);
         assertThat(bindingRows).isInstanceOf(LearnerBindingsDao.class);
         final DocRef feed = storeCreationTool.getOrCreateFeedDoc(FEED);
@@ -128,8 +130,8 @@ class TestScenario20SentinelInAPipeline extends AbstractCoreIntegrationTest {
                         .build())
                 .priority(1)
                 .build());
-        // Learning is off for this document, so nothing can bind and nothing is asked: the stream waits,
-        // and the row that says so is what this scenario is about.
+        // Learning is disabled for this document, so nothing can serve the stream and the model is not
+        // asked. The stream is deferred, and the deferral row is what this test checks.
         final Script silent = Script.of();
         advisor.set(silent);
         final Meta raw = rawStream();
@@ -146,7 +148,7 @@ class TestScenario20SentinelInAPipeline extends AbstractCoreIntegrationTest {
                 .isEmpty();
         assertThat(learnerBindings.forLearner(learner)).describedAs("and wrote no binding").isEmpty();
 
-        // The deferral names the input, in a row, under the learner whose pipeline a promotion wakes (A129).
+        // The deferral row names the input stream and the learner's pipeline, whose tasks a promotion wakes.
         assertThat(deferrals).isInstanceOf(DeferralsDao.class);
         assertThat(deferrals.of(new Learner(pipeline.getUuid(), "learningFlow"), raw.getId()))
                 .describedAs("the deferral row is a row in the database, not a map in one node's heap")

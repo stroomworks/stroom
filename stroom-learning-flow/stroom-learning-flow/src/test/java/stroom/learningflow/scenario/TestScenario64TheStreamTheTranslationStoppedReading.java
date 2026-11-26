@@ -38,21 +38,20 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Track 1 task 2, fix 1: **the stream the translation stopped reading**
-/// (`docs/learning-flow-parser-drift-not-detected.md`).
+/// Tests that a served stream the learned parser can no longer read is caught, rather than recorded as clean.
 ///
-/// Every other check judges what came out. A record the parser cannot read becomes no event, so nothing
-/// judges it — and the stream is recorded as clean, at the score the translation had on the day it was
-/// promoted. That is how the dev instance's NETFILTER feed went on reporting success after its timestamp
-/// format changed and it had stopped producing anything at all.
+/// Checks of the output alone cannot see this: a record the parser cannot read becomes no event, so nothing
+/// judges it, and the stream would be recorded as clean at the score the binding had when it was promoted. A
+/// feed whose format changes could then go on reporting success while producing nothing at all.
 ///
-/// A serving run now says what went **in** as well as what came out: the records the parser cut, the
-/// errors it reported, and whether the stream held anything. What is done about it is the Learning
-/// Flow's to say, through the same checks that judge a candidate.
+/// A serving run therefore reports what went in as well as what came out: the records the parser split, the
+/// errors it reported, and whether the stream held anything. The Learning Flow document decides what is done
+/// about it, through the same checks that judge a candidate.
 class TestScenario64TheStreamTheTranslationStoppedReading {
 
     private static final String DOC = "doc-1";
-    /// How many times one stream may open a session against the same translation (`Stage`).
+    /// How many times one stream may try to open a relearning session against the same translation before it
+    /// waits for a person. This mirrors the limit in `Stage`.
     private static final int MOST_SESSIONS = 3;
     private static final String FEED = "DOOR-ACCESS";
 
@@ -60,8 +59,8 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
     private static final String FIELDS = Scenarios.resource("csv-fields.ds3.xml");
     private static final String TRANSLATES_BOTH = Scenarios.resource("csv-logon.xsl");
 
-    /// A transform that writes an event for a logon and nothing at all for anything else: the records it
-    /// drops leave no trace in the output for a check of what came out to find.
+    /// A transform that writes an event for a logon and nothing at all for anything else. The records it drops
+    /// leave no trace in the output for a check of the output to find.
     private static final String LOGONS_ONLY_SILENTLY = """
             <?xml version="1.0" encoding="UTF-8" ?>
             <xsl:stylesheet
@@ -133,8 +132,8 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
 
     @Test
     void recordsThatBecameNeitherAnEventNorADeclaredSkipDeferToo() {
-        // The quieter half of the same fault: the parser reads every record, and the translation turns
-        // only some of them into events. Completeness is the check that sees it, and it is a gate.
+        // The less obvious form of the same fault: the parser reads every record, but the translation turns
+        // only some of them into events. Completeness is the check that sees this, and it is a gate.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
         final Binding binding = learn(scenarios, doc, LOGONS_ONLY_SILENTLY);
@@ -150,8 +149,8 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
 
     @Test
     void aCleanStreamIsStillServedAndItsRowHoldsThisRunsScore() {
-        // The regression this fix could most easily cause: a healthy stream deferred, which costs a
-        // relearning on every stream of a working feed
+        // Guards against deferring a healthy stream, which would cost a relearning on every stream of a
+        // working feed.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
         final Binding binding = learn(scenarios, doc);
@@ -169,9 +168,9 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
 
     @Test
     void aFeedTheParserHasStartedReadingBadlyIsHeldBackWhereCoverageIsAGate() {
-        // Short of total failure, it is the Learning Flow that decides. Four of the six lines still
-        // match, so the records that were read all became events and completeness is satisfied; what
-        // sees the two lines that were not read is input coverage.
+        // Short of total failure, the document's checks decide. Four of the six lines still match, so the
+        // records that were read all became events and completeness is satisfied. It is input coverage that
+        // sees the two lines that were not read.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc().copy()
                 .checks(List.of(new CheckSetting(Check.COVERAGE, CheckState.GATE, 0.9, null)))
@@ -190,10 +189,10 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
 
     @Test
     void andIsServedAnywayWhereTheLearningFlowMakesCoverageAdvice() {
-        // The one model of checks decides this, not the code: what refuses a candidate while it is
-        // learned is what refuses a stream while it is served. A document that has turned input coverage
-        // down to advice is asking to go on serving a feed its parser reads badly — which is what
-        // *Lenient* asks for — and its rolling score falls instead.
+        // The document's checks decide this, not the code: what refuses a candidate while learning is what
+        // refuses a stream while serving. A document that has turned input coverage down to advice, as the
+        // Lenient preset does, chooses to go on serving a feed its parser reads badly, and its rolling score
+        // falls instead.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc().copy()
                 .checks(List.of(new CheckSetting(Check.COVERAGE, CheckState.ADVICE, 0.9, null)))
@@ -212,9 +211,10 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
 
     @Test
     void aStreamStopsOpeningPaidSessionsOnceTheTranslationHasNotMoved() {
-        // Audit finding W4-5. The corpus's no-worse rule can keep every candidate out — a feed whose
-        // format has changed for good needs a translation that reads both, and may not get one — and the
-        // deferred task retries every five minutes for as long as the stream waits.
+        // The corpus's no-worse rule can keep every candidate out: a feed whose format has changed for good
+        // needs a translation that reads both formats, and may not get one. Meanwhile the deferred task is
+        // retried every five minutes for as long as the stream waits, so without a limit each retry would
+        // open a new paid session.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
         final Binding binding = learn(scenarios, doc);
@@ -263,9 +263,9 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
         return DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door").heldOutFraction(0.0).build();
     }
 
-    /// @param count     How many lines.
-    /// @param delimiter What separates the fields: a comma is what the parser learned.
-    /// @return The stream.
+    /// @param count     How many lines to write.
+    /// @param delimiter What separates the fields; the learned parser expects a comma.
+    /// @return The stream's text, one logon record per line.
     private static String lines(final int count, final String delimiter) {
         final StringBuilder text = new StringBuilder();
         for (int i = 0; i < count; i++) {
@@ -277,8 +277,8 @@ class TestScenario64TheStreamTheTranslationStoppedReading {
         return text.toString();
     }
 
-    /// Six records the parser reads in full, of which two are logoffs: a translation that writes events
-    /// for logons alone leaves those two as nothing at all.
+    /// Six records the parser reads in full, two of which are logoffs. A translation that writes events only
+    /// for logons produces nothing at all for those two.
     private static String withLogoffs() {
         return lines(4, ",") + "2020-06-17T08:04:00.000Z,user4,office,logoff\n"
                + "2020-06-17T08:05:00.000Z,user5,office,logoff\n";

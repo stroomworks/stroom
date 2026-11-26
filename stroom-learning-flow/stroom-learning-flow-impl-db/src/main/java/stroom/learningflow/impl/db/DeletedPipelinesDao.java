@@ -44,10 +44,13 @@ import static stroom.learningflow.impl.db.jooq.tables.LearningFlowGuidance.LEARN
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowLearnerState.LEARNING_FLOW_LEARNER_STATE;
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowTurn.LEARNING_FLOW_TURN;
 
-/// Deleted pipelines' learning as a table of marks (design 06 A120, A134–A136), and the learning a node
-/// keeps as the retention job sees it. A learner keeps rows under its pipeline's uuid in its state, its
-/// bindings, its guidance, its waiting streams and its attempts; its bindings' outputs, corpus and
-/// snapshots are kept under the bindings' uuids, which its bindings and attempts name.
+/// The database implementation of [DeletedPipelines] and [KeptLearning]. It marks pipelines that have been
+/// deleted, so that their learning stops at once and is shown only on request, and it lets the retention job
+/// find and remove the learning of pipelines deleted long enough ago.
+///
+/// A learner's rows are keyed by its pipeline's UUID in the learner state, binding, guidance, deferral and
+/// attempt tables. Its bindings' outputs, corpus entries and snapshots are keyed by the binding UUIDs, which
+/// are found through its bindings and attempts.
 @Singleton
 public class DeletedPipelinesDao implements DeletedPipelines, KeptLearning {
 
@@ -58,8 +61,8 @@ public class DeletedPipelinesDao implements DeletedPipelines, KeptLearning {
         this.connProvider = connProvider;
     }
 
-    /// Marked only where the pipeline keeps a row, since every pipeline deleted in Stroom is heard of here
-    /// and most never learned; and where a mark is already made, it stands.
+    /// Marks a pipeline as deleted, but only if it has learning rows, since every pipeline deleted in
+    /// Stroom is reported here and most never learned anything. An existing mark is left as it is.
     @Override
     public boolean deleted(final String pipelineUuid, final long timeMs) {
         return JooqUtil.transactionResult(connProvider, context -> {
@@ -131,9 +134,9 @@ public class DeletedPipelinesDao implements DeletedPipelines, KeptLearning {
                 .fetch(LearningFlowDeletedPipeline.LEARNING_FLOW_DELETED_PIPELINE.PIPELINE_UUID));
     }
 
-    /// In one transaction, so that a pipeline's learning is never half forgotten; and in the order the
-    /// keys need: what is kept under a binding's uuid while the bindings and attempts that name it are
-    /// still there to say which, and an attempt's turns before the attempt.
+    /// Deletes all of a pipeline's learning, in one transaction so that it is never left half deleted.
+    /// The rows keyed by binding UUID are deleted first, while the bindings and attempts that identify
+    /// them still exist, and an attempt's turns are deleted before the attempt that they reference.
     @Override
     public void forget(final String pipelineUuid) {
         JooqUtil.transaction(connProvider, context -> {
@@ -145,7 +148,8 @@ public class DeletedPipelinesDao implements DeletedPipelines, KeptLearning {
                             .from(LEARNING_FLOW_ATTEMPT)
                             .where(LEARNING_FLOW_ATTEMPT.PIPELINE_UUID.eq(pipelineUuid))
                             .and(LEARNING_FLOW_ATTEMPT.BINDING_UUID.isNotNull()));
-            // Read once: a delete may not select from the table it deletes from, and these are a few.
+            // The binding UUIDs are read into a list first, because a delete may not select from the
+            // table it deletes from. There are only a few of them.
             final List<String> bindingUuids = context.fetch(bindings).getValues(0, String.class);
             if (!bindingUuids.isEmpty()) {
                 context.deleteFrom(LearningFlowOutput.LEARNING_FLOW_OUTPUT)
@@ -185,7 +189,7 @@ public class DeletedPipelinesDao implements DeletedPipelines, KeptLearning {
         });
     }
 
-    /// Whether the pipeline keeps any row a learner keeps under its uuid.
+    /// Whether any learning table holds a row keyed by this pipeline's UUID.
     private static boolean keeps(final DSLContext context, final String pipelineUuid) {
         return context.fetchExists(LEARNING_FLOW_LEARNER_STATE,
                        LEARNING_FLOW_LEARNER_STATE.PIPELINE_UUID.eq(pipelineUuid))

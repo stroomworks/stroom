@@ -18,21 +18,22 @@ package stroom.learningflow.stage;
 
 import java.util.Objects;
 
-/// What learns (design 06 §4.7, A114): a Learning Flow element in a pipeline, named by the pipeline's
-/// UUID and the element's id in its chain. The pipeline is the one the processor runs, never the template
-/// it inherits; the element id keeps two AI elements in one pipeline apart.
+/// Identifies a learner, the unit of learning: one Smart Pipeline element in one pipeline, identified by the
+/// pipeline's UUID and the element's id in its chain. The pipeline is the one the processor runs, never the
+/// template it inherits from; the element id distinguishes two Smart Pipeline elements in one pipeline.
 ///
-/// The document a learner runs under is not part of it. A row records the document beside the learner,
-/// for the Supervisor to show and to decide who may see it, so a pipeline whose element is pointed at
-/// another document keeps what it learned.
+/// The document a learner runs under is not part of its identity. Rows record the document beside the
+/// learner, for the Supervisor to show and to decide who may see it, so that a pipeline whose element is
+/// pointed at another document keeps what it learned.
 ///
 /// @param pipelineUuid The UUID of the pipeline the element runs in.
 /// @param elementId    The element's id in that pipeline's chain.
 public record Learner(String pipelineUuid, String elementId) {
 
-    /// The type of the entity event that says a learner's rows have changed, so that every node drops what
-    /// it holds of them. A type of its own rather than the pipeline's, since a `CLEAR_CACHE` on a pipeline
-    /// clears every node's merged pipeline data; the event's uuid is the learner's pipeline.
+    /// The type of the entity event fired when a learner's rows change, so that every node discards its
+    /// cached copies of them. It has its own type rather than the pipeline type, because a `CLEAR_CACHE` on a
+    /// pipeline would also clear every node's merged pipeline data. The event's UUID is the learner's
+    /// pipeline UUID.
     public static final String EVENT_TYPE = "LearningFlowLearner";
 
     public Learner {

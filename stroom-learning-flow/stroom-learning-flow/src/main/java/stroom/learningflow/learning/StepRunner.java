@@ -20,98 +20,92 @@ import stroom.pipeline.shared.TextConverterDoc.TextConverterType;
 
 import java.util.Optional;
 
-/**
- * Runs one kind of pipeline element headlessly, for the conversation to try a candidate configuration before
- * anything is written to a store (design §7.3 rule 1). One runner per element type the stage can use.
- * <p>
- * A runner is the element's behaviour with its Stroom plumbing removed, not the element itself. Where that
- * would differ from the element in ways that matter, as a stylesheet's would, a node runs the real element
- * in a pipeline instead (the headless harness of design §12 item 2,
- * {@link stroom.learningflow.element.PipelineStepRunner}), which keeps the runner only for its description
- * of the element.
- */
+/// Runs one kind of pipeline element outside a pipeline, so that [Conversation] can try a candidate
+/// configuration before anything is written to a document store. There is one runner per element type a
+/// learning flow can use.
+///
+/// A runner reproduces the element's behaviour without its Stroom pipeline plumbing; it is not the element
+/// itself. Where that would differ from the element in ways that matter, as it would for a stylesheet, a node
+/// runs the real element in a pipeline instead ([stroom.learningflow.element.PipelineStepRunner]), and uses
+/// the runner only for its description of the element.
 public interface StepRunner {
 
-    /**
-     * @return The pipeline element type this runs, e.g. {@code DSParser}. Matches the document's allowed
-     * elements and the type recorded in a fragment.
-     */
+    /// @return The pipeline element type this runs, e.g. `DSParser`. Matches the document's allowed
+    /// elements and the type recorded in a fragment.
     String elementType();
 
-    /**
-     * @return The id the element takes in a fragment, e.g. {@code dsParser}.
-     */
+    /// @return The id the element takes in a fragment, e.g. `dsParser`.
     String elementId();
 
-    /**
-     * @return The document type the element consumes and the element property that references it, or
-     * empty for an element that takes no configuration and is a run-only step.
-     */
+    /// @return The document type the element consumes and the element property that references it, or
+    /// empty for an element that takes no configuration and is a run-only step.
     Optional<Configured> configured();
 
-    /**
-     * @param configuration The candidate configuration text, or null for a run-only element.
-     * @param input         What the element is to process.
-     */
+    /// Runs the element once with a configuration.
+    ///
+    /// @param configuration The candidate configuration text, or null for a run-only element.
+    /// @param input         What the element is to process.
+    /// @return What the element produced and the diagnostics it raised.
     StepResult run(String configuration, String input);
 
-    /**
-     * The same configuration, ready to be run many times: the fragment gives its transform one record at
-     * a time (§12 item 25), so a candidate is run once per record of the stream, and whatever compiling
-     * a configuration costs must be paid once for the candidate and not once for every record of it.
-     * <p>
-     * The default pays it every time, which is right for an element that compiles nothing; a runner that
-     * compiles — a stylesheet, a splitter — overrides it and compiles once.
-     */
+    /// Prepares a configuration to be run many times. The fragment gives its transform one record at a time,
+    /// so a candidate is run once per record of the stream, and the cost of compiling a configuration should
+    /// be paid once per candidate, not once per record.
+    ///
+    /// The default compiles on every run, which is right for an element that compiles nothing. A runner
+    /// that compiles (a stylesheet, a splitter) overrides it to compile once.
+    ///
+    /// @param configuration The candidate configuration text, or null for a run-only element.
+    /// @return The prepared configuration, which the caller must close.
     default Prepared prepare(final String configuration) {
         return input -> run(configuration, input);
     }
 
-    /**
-     * Whether the element parses raw input into records — the extraction position of design 01 §4 —
-     * rather than transforming records into records.
-     */
+    /// Whether the element parses raw input into records, as the first element of a chain does, rather than
+    /// transforming records into records.
+    ///
+    /// @return True for a parser.
     default boolean parser() {
         return false;
     }
 
-    /// The configuration this element always runs with, where it is not the model's to write: the
-    /// wrapper a fragment parser needs is the element's own business, not a question worth a candidate
-    /// (§12 item 26). No question is asked for it and the document is written all the same, so that a
-    /// pipeline has what it needs to run the element.
+    /// The configuration this element always runs with, where the model is not asked to write it. For
+    /// example, the root wrapper an XML fragment parser needs is fixed, and not worth a question. No question
+    /// is asked for it, but the document is still written, so that a pipeline has what it needs to run the
+    /// element.
     ///
-    /// @return Empty for an element whose configuration is asked for, which is every element a model
-    /// actually writes.
+    /// @return The fixed configuration, or empty for an element whose configuration the model is asked to
+    /// write.
     default Optional<String> fixedConfiguration() {
         return Optional.empty();
     }
 
-    /// What kind of stream this element is given, which says which split question the input calls for
-    /// (A31, A35) — the element that is one record for markup, the array whose items are records for
-    /// JSON, a configuration that cuts it for raw text.
+    /// What kind of input this element is given, which decides which split question is asked: the element
+    /// that is one record for XML, the array whose items are records for JSON, or a configuration that cuts
+    /// the text for raw text.
     ///
-    /// Read only of the chain's first element, and only where it parses: what a later element is given
-    /// is what the one before it wrote. An element that does not parse is given records, which are
-    /// markup.
+    /// It is read only for the chain's first element, and only where that element is a parser, because a
+    /// later element is given what the one before it wrote. An element that does not parse is given
+    /// records, which are XML.
+    ///
+    /// @return The kind of input.
     default InputKind consumes() {
         return InputKind.XML;
     }
 
-    /**
-     * @param documentType  The document type consumed, e.g. {@code TextConverter}.
-     * @param propertyName  The element property that references the document, e.g. {@code textConverter}.
-     * @param converterType Which kind of text converter, for a step whose document is one; null for
-     *                      every other document type. A {@code TextConverterDoc} carries its kind, and
-     *                      the element that reads it refuses one of the wrong kind — {@code
-     *                      XMLFragmentParser} throws "The assigned text converter is not an XML
-     *                      fragment" — so a writer that guessed would write a fragment that passes
-     *                      every scorer and fails on every stream a node gives it.
-     */
+    /// The document an element is configured with, and how the element refers to it.
+    ///
+    /// @param documentType  The document type consumed, e.g. `TextConverter`.
+    /// @param propertyName  The element property that references the document, e.g. `textConverter`.
+    /// @param converterType Which kind of text converter, for a step whose document is one; null for
+    ///                      every other document type. A `TextConverterDoc` records its kind, and the
+    ///                      element that reads it refuses one of the wrong kind (`XMLFragmentParser` throws
+    ///                      "The assigned text converter is not an XML fragment"). A writer that guessed
+    ///                      the kind would write a fragment that passes every scorer but fails on every
+    ///                      stream a node gives it.
     record Configured(String documentType, String propertyName, TextConverterType converterType) {
 
-        /**
-         * A configuration whose document is not a text converter and so has no kind.
-         */
+        /// A configuration whose document is not a text converter and so has no kind.
         public Configured(final String documentType, final String propertyName) {
             this(documentType, propertyName, null);
         }
@@ -121,10 +115,11 @@ public interface StepRunner {
     // --------------------------------------------------------------------------------
 
 
-    /// One configuration, compiled, to be run over one input after another, and then closed.
+    /// One compiled configuration, to be run over one input after another and then closed.
     ///
-    /// Closing matters where preparing took something that has to be given back — a pooled stylesheet,
-    /// a built pipeline — and costs nothing where it did not, which is why the default does nothing.
+    /// Closing matters where preparing took something that has to be given back, such as a pooled
+    /// stylesheet or a built pipeline. Where it did not, there is nothing to do, which is why the default
+    /// does nothing.
     interface Prepared extends AutoCloseable {
 
         StepResult run(String input);

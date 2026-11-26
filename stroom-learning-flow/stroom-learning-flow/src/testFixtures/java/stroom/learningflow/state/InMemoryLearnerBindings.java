@@ -25,8 +25,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/// The bindings of A41 in memory, until the A26 module holds them. Every method is synchronised: one node's
-/// tasks share it.
+/// An in-memory [LearnerBindings], for scenarios and for a node run without the database module. Every
+/// method is synchronised, because one node's tasks share it.
 public final class InMemoryLearnerBindings implements LearnerBindings {
 
     private final List<Held> rows = new ArrayList<>();
@@ -48,8 +48,8 @@ public final class InMemoryLearnerBindings implements LearnerBindings {
 
     @Override
     public synchronized Binding append(final Learner learner, final String docUuid, final Binding binding) {
-        // One live binding per learner, as the table's unique key has it (W7-2): a caller whose copy of
-        // the world predates another's promotion gets that promotion back rather than a rival to it.
+        // One live binding per learner, as the table's unique key enforces: a caller whose view predates
+        // another's promotion gets that promotion back rather than adding a second live binding.
         if (!binding.isDraft()) {
             final Optional<Binding> live = rows.stream()
                     .filter(row -> row.learner().equals(learner) && !row.binding().isDraft())
@@ -71,14 +71,14 @@ public final class InMemoryLearnerBindings implements LearnerBindings {
         for (int i = 0; i < rows.size(); i++) {
             final Held row = rows.get(i);
             if (row.binding().getUuid().equals(binding.getUuid())) {
-                // As the table has it: a uuid names one binding across every learner, so another
-                // learner's is not this one's to overwrite.
+                // As in the table, a UUID identifies one binding across all learners, so another learner's
+                // binding must not be overwritten.
                 if (!row.learner().equals(learner)) {
                     throw new IllegalStateException("Binding " + binding.getUuid() + " is a binding of "
                                                     + row.learner() + ", not of " + learner);
                 }
-                // The version as the table checks it (W7-3): a binding read at one version and written
-                // back after somebody else has moved the row is stale, and must not be forced over them.
+                // The version is checked as the DAO checks it: a binding read at one version and written
+                // back after someone else has changed the row is stale, and must not overwrite that change.
                 final Integer was = row.binding().getVersion();
                 if (binding.getVersion() != null && was != null && !binding.getVersion().equals(was)) {
                     return false;
@@ -100,7 +100,7 @@ public final class InMemoryLearnerBindings implements LearnerBindings {
         rows.removeIf(row -> row.learner().equals(learner) && bindingUuid.equals(row.binding().getUuid()));
     }
 
-    /// The learner's bindings brought to the document it runs under (see [InMemoryLearners]).
+    /// Updates the learner's bindings to the document it runs under (see [InMemoryLearners]).
     ///
     /// @param learner The learner.
     /// @param docUuid The document.
@@ -110,7 +110,7 @@ public final class InMemoryLearnerBindings implements LearnerBindings {
                 : row);
     }
 
-    /// Every row of every learner, oldest first: what the Supervisor's list reads in memory.
+    /// Returns every row of every learner, oldest first, for the in-memory Supervisor list.
     ///
     /// @return The rows.
     public synchronized List<Held> all() {

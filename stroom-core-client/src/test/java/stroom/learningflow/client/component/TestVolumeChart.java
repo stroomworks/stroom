@@ -39,7 +39,7 @@ class TestVolumeChart {
         assertThat(svg).startsWith("<svg").endsWith("</svg>");
         assertThat(svg).contains("role=\"img\"")
                 .contains("aria-label=\"Records translated each day, 3 days: 150 in all\"");
-        // Every day has a tooltip and a hit target, but a day with nothing has no bar
+        // Every day has a tooltip and a hit target, but a day with no records has no bar
         assertThat(svg.split("<title>", -1)).hasSize(4);
         assertThat(svg.split("quality-tab__chart-hit", -1)).hasSize(4);
         final List<Double> tops = tops(svg);

@@ -20,14 +20,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * What came of asking for a binding to be improved (A46), in the words the stage decided it in.
- * <p>
- * An improvement can end four ways and none of them is a failure: the candidate took over, it was kept
- * back as a draft for review, the incumbent held its place because nothing beat it (A18), or the learner
- * was left alone. The person is told which, and the attempt itself is in the Supervisor's list with
- * every question it asked.
- */
+/// The reply to a request to improve a serving binding, as one sentence for the person who asked.
+///
+/// The improvement session itself runs later on the background learning worker, so the reply cannot say how
+/// it ended. It says either that the improvement was asked for, or why it was refused straight away (for
+/// example, because the binding is a draft or learning is disabled). The session shows on the Learning Status
+/// tab like any other.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ImproveOutcome {
 
@@ -39,11 +37,8 @@ public class ImproveOutcome {
         this.said = said;
     }
 
-    /**
-     * One sentence for the person who asked. An improvement is carried on by the worker (A46), so this
-     * says that it was asked for and where its progress shows, not what it came to: what it comes to
-     * appears on the Learning Status tab as any other run's does.
-     */
+    /// @return One sentence for the person who asked: that the improvement was asked for and where its
+    /// progress will show, or why it was refused.
     public String getSaid() {
         return said;
     }

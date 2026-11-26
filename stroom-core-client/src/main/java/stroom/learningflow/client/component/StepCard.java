@@ -46,14 +46,18 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/// The step of the learning flow chosen on the Setup tab's route map ([RouteMap]), read as sentences: its
-/// number and name, a heading, tags for what it sets of its own, and its tools (move, copy, delete); what is wrong with
-/// it; and its rules ([RuleRow]), with what it does where they say nothing in grey beneath them. Beneath
-/// those, folded away under "Advanced options", is what only this step changes: when it is asked, its
-/// tries and kinds, and the parsers and filters it chooses from. Only the fields its kind uses are shown.
-/// What judges a step is no longer its own: a check applies to every step it can measure, and whether it is
-/// Off, Advice or Gate is set once on the Setup tab's Quality checks.
-/// [ApproachSectionController] fills it from [ApproachFlow].
+/// Shows the learning-flow step chosen on the Setup tab's route map ([RouteMap]), so that it can be read and
+/// edited.
+///
+/// The card shows the step's number and name as a heading, tags for the settings the step overrides, and
+/// tools to move, copy or delete it; any problem with the step; and its rules ([RuleRow]), with what the step
+/// does when no rule applies shown in grey beneath them. Below those, collapsed under "Advanced options", are
+/// the settings specific to this step: which input it applies to, its number of tries and kinds of record,
+/// and the parsers and filters it may choose from. Only the fields the step's kind uses are shown.
+///
+/// A step has no checks of its own. Each check applies to every step it can measure, and whether it is Off,
+/// Advice or a Gate is set once in the Setup tab's Quality checks section. [ApproachSectionController] fills
+/// the card from [ApproachFlow].
 public class StepCard extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -140,8 +144,8 @@ public class StepCard extends Component {
         when.addItems(StepGuard.values());
         tries.setInvalidReason(LearnFlow::limitProblem);
         kinds.setInvalidReason(LearnFlow::limitProblem);
-        // Made here rather than when the step is shown, so that the group is there to name them when it is
-        // shown: a FormGroup makes a group of several controls, named by its label, as it is attached
+        // Create the tick boxes here rather than when a step is shown. A FormGroup groups its controls under
+        // its label when it is attached, so the boxes must already be present at that point.
         for (final String element : FlowStep.LEARNABLE_ELEMENTS) {
             final TickBox box = new TickBox();
             box.setLabel(element);
@@ -164,7 +168,8 @@ public class StepCard extends Component {
         });
         tuneToggle.setOnClick(() -> {
             final boolean open = !tune.isVisible();
-            // A field holding what can't be kept stays in sight until it is put right
+            // Don't collapse the section while one of its fields holds invalid input, so the error stays
+            // visible until it is corrected
             if (open || (tries.getInvalidReason() == null && kinds.getInvalidReason() == null)) {
                 setTuneOpen(open);
                 onTune.accept(open);
@@ -174,16 +179,16 @@ public class StepCard extends Component {
 
     /// Shows which step this is.
     ///
-    /// @param number Its place, counted from one.
-    /// @param name   Its name, e.g. "Write the parser".
+    /// @param number The step's position in the flow, counted from one.
+    /// @param name   The step's name, e.g. "Write the parser".
     public void setStep(final int number, final String name) {
         heading.setInnerSafeHtml(TEMPLATES.heading(String.valueOf(number), name));
         heading.setAttribute("aria-label", "Step " + number + ": " + name);
     }
 
-    /// What the step sets of its own under "Advanced options", shown beside its name.
+    /// Shows tags beside the step's name for the settings it overrides under "Advanced options".
     ///
-    /// @param words A tag each, e.g. "5 tries"; empty for none.
+    /// @param words The text of each tag, e.g. "5 tries"; empty for none.
     public void setTags(final List<String> words) {
         tags.clear();
         for (final String word : words) {
@@ -194,25 +199,25 @@ public class StepCard extends Component {
         }
     }
 
-    /// @param open Whether "Advanced options" is unfolded.
+    /// @param open Whether "Advanced options" is expanded.
     public void setTuneOpen(final boolean open) {
         tune.setVisible(open);
         tuneToggle.setAriaExpanded(open);
     }
 
-    /// Which tools apply to the step; none is shown while read only.
+    /// Sets which tools apply to the step. No tools are shown while read-only.
     ///
-    /// @param up     Whether it can move up.
-    /// @param down   Whether it can move down.
-    /// @param copies Whether it can be copied.
-    /// @param goes   Whether it can be deleted.
+    /// @param up     Whether the step can move up.
+    /// @param down   Whether the step can move down.
+    /// @param copies Whether the step can be copied.
+    /// @param goes   Whether the step can be deleted.
     public void setTools(final boolean up, final boolean down, final boolean copies, final boolean goes) {
         tools = new boolean[]{up, down, copies, goes};
         toolsShown = true;
         showTools();
     }
 
-    /// @param text What is wrong with the step, or null for nothing.
+    /// @param text The problem with the step, or null if there is none.
     public void setProblem(final String text) {
         problem.setText(text == null
                 ? ""
@@ -220,16 +225,16 @@ public class StepCard extends Component {
         problem.setVisible(text != null);
     }
 
-    /// @param shown Whether the step has a guard to choose.
-    /// @param guard When it is asked.
+    /// @param shown Whether the step has a guard (the kind of input it applies to) to choose.
+    /// @param guard The step's guard.
     public void setWhen(final boolean shown, final StepGuard guard) {
         whenGroup.setVisible(shown);
         when.setValue(guard);
     }
 
-    /// @param shown       Whether the step has tries.
-    /// @param text        Its own tries as text, empty for the document's default.
-    /// @param placeholder What the empty field shows: the default.
+    /// @param shown       Whether the step has a number of tries.
+    /// @param text        The step's own number of tries as text, or empty to use the default.
+    /// @param placeholder The text the empty field shows, i.e. the default.
     public void setTries(final boolean shown, final String text, final String placeholder) {
         triesGroup.setVisible(shown);
         tries.setValue(text);
@@ -237,17 +242,17 @@ public class StepCard extends Component {
     }
 
     /// @param shown Whether the step asks about kinds of record.
-    /// @param text  How many, as text, empty for the default.
+    /// @param text  The number of kinds of record as text, or empty to use the default.
     public void setKinds(final boolean shown, final String text) {
         kindsGroup.setVisible(shown);
         kinds.setValue(text);
     }
 
-    /// What is worth saying about the step though the flow can still be held, shown beneath its problem
-    /// and in the warning colour, not the problem's.
+    /// Shows a warning about the step that does not make the flow invalid. It is shown beneath any problem, in
+    /// the warning colour rather than the problem colour.
     ///
-    /// @param text The warning, e.g. that a rule fires on a check the Learning Flow has switched off, or
-    ///             null for nothing.
+    /// @param text The warning, e.g. that a rule is triggered by a check the Learning Flow has switched off,
+    ///             or null for none.
     public void setWarning(final String text) {
         warning.setText(text == null
                 ? ""
@@ -255,13 +260,13 @@ public class StepCard extends Component {
         warning.setVisible(text != null);
     }
 
-    /// The parsers and filters the AI may choose from, a tick box each of [FlowStep#LEARNABLE_ELEMENTS]; only
-    /// a step that chooses the elements has them. Those the step names that the AI can't learn are said
-    /// beneath, since a run passes them over, with a way to remove them.
+    /// Shows the parsers and filters the AI may choose from, with a tick box for each of
+    /// [FlowStep#LEARNABLE_ELEMENTS]. Only a step that chooses the elements has them. Any element the step
+    /// names that the AI cannot learn is listed beneath, because a run ignores it, with a link to remove it.
     ///
     /// @param shown           Whether the step chooses the elements.
-    /// @param ticked          Those ticked.
-    /// @param unlearnableOnes Those the step names that the AI can't learn; empty for none.
+    /// @param ticked          The elements to tick.
+    /// @param unlearnableOnes The elements the step names that the AI cannot learn; empty for none.
     public void setElements(final boolean shown, final List<String> ticked, final List<String> unlearnableOnes) {
         elementsGroup.setVisible(shown);
         elementBoxes.forEach((element, box) -> box.setValue(ticked.contains(element)));
@@ -275,23 +280,23 @@ public class StepCard extends Component {
         removeUnlearnable.setVisible(!isReadOnly());
     }
 
-    /// @param shown Whether the step takes rules.
+    /// @param shown Whether the step can have rules.
     public void setRulesShown(final boolean shown) {
         rulesSection.setVisible(shown);
     }
 
-    /// Removes the rules shown, for [#addRule] to add them again.
+    /// Removes all the rules shown, so that [#addRule] can add them again.
     public void clearRules() {
         ruleRows.clear();
         rules.clear();
     }
 
-    /// Adds a rule.
+    /// Adds a rule to the end of the step's rules.
     ///
-    /// @param conditions   What it may fire on.
-    /// @param chosen       What it fires on.
-    /// @param destinations Where it may go.
-    /// @param goes         Where it goes.
+    /// @param conditions   The conditions the rule may be triggered by.
+    /// @param chosen       The condition the rule is triggered by.
+    /// @param destinations The places the rule may go to.
+    /// @param goes         The place the rule goes to.
     public void addRule(final List<Condition> conditions,
                         final Condition chosen,
                         final List<Destination> destinations,
@@ -307,12 +312,12 @@ public class StepCard extends Component {
         rules.add(row);
     }
 
-    /// @param canAdd Whether another rule may be added: not where every condition has one.
+    /// @param canAdd Whether another rule may be added, i.e. not every condition already has a rule.
     public void setCanAddRule(final boolean canAdd) {
         addRule.setVisible(canAdd && !isReadOnly());
     }
 
-    /// @param lines What the step does where its rules say nothing, a line each.
+    /// @param lines What the step does when none of its rules applies, one line each.
     public void setUsual(final List<String> lines) {
         usual.clear();
         for (final String line : lines) {
@@ -323,63 +328,64 @@ public class StepCard extends Component {
         }
     }
 
-    /// Puts the focus on one of a rule's menus, e.g. after its rules were redrawn under it.
+    /// Puts the keyboard focus on one of a rule's menus, e.g. to restore it after the rules are redrawn.
     ///
     /// @param rule              The rule's index.
-    /// @param onDestinationMenu Whether the destination's menu, else the condition's.
+    /// @param onDestinationMenu True to focus the destination menu, false to focus the condition menu.
     public void focusRule(final int rule, final boolean onDestinationMenu) {
         if (rule >= 0 && rule < ruleRows.size()) {
             ruleRows.get(rule).focus(onDestinationMenu);
         }
     }
 
-    /// Puts the focus on the step's heading, e.g. after it moved.
+    /// Puts the keyboard focus on the step's heading, e.g. after the step has been moved.
     public void focusHeading() {
         heading.focus();
     }
 
-    /// @param onAction Told each tool the user uses (not when read only).
+    /// @param onAction Called with each tool the user uses (never when read-only).
     public void setOnAction(final Consumer<CardAction> onAction) {
         this.onAction = onAction;
     }
 
-    /// @param onWhen Told when the step is now asked.
+    /// @param onWhen Called with the step's new guard when the user changes it.
     public void setOnWhen(final Consumer<StepGuard> onWhen) {
         this.onWhen = onWhen;
     }
 
-    /// @param onTries Told the tries as typed.
+    /// @param onTries Called with the number of tries, as typed, when it changes.
     public void setOnTries(final Consumer<String> onTries) {
         this.onTries = onTries;
     }
 
-    /// @param onKinds Told the kinds as typed.
+    /// @param onKinds Called with the number of kinds of record, as typed, when it changes.
     public void setOnKinds(final Consumer<String> onKinds) {
         this.onKinds = onKinds;
     }
 
-    /// @param onTune Told whether the user unfolds or folds "Advanced options".
+    /// @param onTune Called with true when the user expands "Advanced options" and false when they collapse it.
     public void setOnTune(final Consumer<Boolean> onTune) {
         this.onTune = onTune;
     }
 
-    /// @param onElements Told the parsers and filters ticked, after a box is ticked or unticked or those the AI
-    ///                   can't learn are removed; never none.
+    /// @param onElements Called with the ticked parsers and filters after a box is ticked or unticked, or after
+    ///                   the elements the AI cannot learn are removed. Unticking the last box is refused, so a
+    ///                   tick box change never gives an empty list.
     public void setOnElements(final Consumer<List<String>> onElements) {
         this.onElements = onElements;
     }
 
-    /// @param onRuleCondition Told a rule's index and what it now fires on.
+    /// @param onRuleCondition Called with a rule's index and its new condition.
     public void setOnRuleCondition(final BiConsumer<Integer, Condition> onRuleCondition) {
         this.onRuleCondition = onRuleCondition;
     }
 
-    /// @param onRuleDestination Told a rule's index and where it now goes.
+    /// @param onRuleDestination Called with a rule's index and its new destination.
     public void setOnRuleDestination(final BiConsumer<Integer, Destination> onRuleDestination) {
         this.onRuleDestination = onRuleDestination;
     }
 
-    /// @param onRuleRemove Told the index of a rule the user removes.
+    /// @param onRuleRemove Called with the index of the rule the user removes.
     public void setOnRuleRemove(final Consumer<Integer> onRuleRemove) {
         this.onRuleRemove = onRuleRemove;
     }
@@ -412,7 +418,8 @@ public class StepCard extends Component {
         }
     }
 
-    // A box ticked or unticked: the last one ticked stays ticked, since the AI must have something to choose
+    // Handles a box being ticked or unticked. The last ticked box cannot be unticked, since the AI must have
+    // something to choose from.
     private void elementsChanged(final TickBox changed) {
         final List<String> ticked = tickedElements();
         if (ticked.isEmpty()) {
@@ -450,7 +457,7 @@ public class StepCard extends Component {
 
     interface Templates extends SafeHtmlTemplates {
 
-        // The heading's content: the step's number in a circle, and its name (escaped by the template)
+        // The heading's content: the step's number in a circle, then its name (escaped by the template)
         @Template("<span class=\"step-card__number\">{0}</span><span class=\"step-card__name\">{1}</span>")
         SafeHtml heading(String number, String name);
     }
@@ -459,17 +466,17 @@ public class StepCard extends Component {
     // --------------------------------------------------------------------------------
 
 
-    /// What the tools on a card do.
+    /// The actions the card's tools and Add rule link ask for.
     public enum CardAction {
-        /// The step moved up one.
+        /// Move the step up one place.
         MOVE_UP,
-        /// The step moved down one.
+        /// Move the step down one place.
         MOVE_DOWN,
-        /// A copy of the step after it.
+        /// Insert a copy of the step after it.
         COPY,
-        /// The step deleted.
+        /// Delete the step.
         DELETE,
-        /// A rule added to the step.
+        /// Add a rule to the step.
         ADD_RULE
     }
 }

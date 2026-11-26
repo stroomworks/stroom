@@ -23,9 +23,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// The score of the check that decided a turn (design 06 A144): on a shortfall the check that fell short,
-/// on a pass the check that passed by the least. A turn judged by no check — a chain chosen, a
-/// configuration that did not compile, a refusal — has none.
+/// The score of the check that decided a turn, shown beside the turn in the Supervisor. On a shortfall it is
+/// the check that fell short; on a pass, the check that passed by the smallest margin. A turn judged by no
+/// check (a chain chosen, a configuration that did not compile, a refusal) has none.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TurnScore {
 
@@ -69,7 +69,7 @@ public class TurnScore {
         return score >= threshold;
     }
 
-    /// @return The score as a person reads it beside the turn, e.g. `Coverage 0.41 < 0.8`.
+    /// @return The score as a person reads it beside the turn, e.g. `Input coverage 0.41 < 0.8`.
     public String format() {
         return (check == null
                 ? ""
@@ -78,7 +78,8 @@ public class TurnScore {
                 : " < ") + rounded(threshold);
     }
 
-    // Three places, by arithmetic rather than a formatter, since the client compiles this too.
+    // Rounds to three decimal places by arithmetic rather than with a formatter, because this class is also
+    // compiled to JavaScript for the client.
     private static String rounded(final double value) {
         return Double.toString(Math.round(value * 1000.0) / 1000.0);
     }

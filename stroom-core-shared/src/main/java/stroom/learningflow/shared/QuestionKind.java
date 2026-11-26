@@ -18,35 +18,25 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * The four typed questions a flow is made of (design 01 §10.2): each is a reply grammar and a judge, and
- * they are the vocabulary a learning flow's steps are written in. A new kind is new code.
- */
+/// The kinds of question a learning flow's steps can ask. Each kind has its own expected reply format and its
+/// own way of judging a reply, both in server code, so adding a kind means writing new code.
 public enum QuestionKind implements HasDisplayValue {
-    /**
-     * Which elements, in order: names joined by {@code ->}, checked against the allowed elements.
-     */
+    /// Which elements make up the chain, in order: element type names joined by `->`, checked against the
+    /// document's allowed elements.
     CHAIN("Chain"),
-    /**
-     * What one record is (A31): for raw text a parser configuration that cuts the sample into whole
-     * records; for input that is already XML the element that is one record (A35).
-     */
+    /// What one record is. For raw text, this is a parser configuration that cuts the sample into whole
+    /// records; for input that is already XML or JSON, it is the element that holds one record.
     SPLIT("Split"),
-    /**
-     * What one kind of record should become: an event, or the word none (A31).
-     */
+    /// What one kind of record should become: an example target event, or the word `none`.
     TARGET("Target"),
-    /**
-     * Each element's configuration in turn, judged by the scorecard and held to the targets.
-     */
+    /// Each element's configuration in turn, judged by the document's checks and held to the targets.
     CONFIGURE("Configure"),
-    /**
-     * The exhaustion step (design 04 §4, A51, A53): the transform's configuration once more, for a
-     * session whose candidates are spent with records of the held stream still short — this time with a
-     * match for each record type it cannot translate whose output is the admitted form, an
-     * {@code EventDetail/Unknown} carrying the marker of {@link LearnedUnknown}. The only step that may
-     * ask for that form, and reached only by a transition from a spent step.
-     */
+    /// The fallback (exhaustion) step: the transform's configuration once more, for a session whose
+    /// candidates are spent while some records of the held stream still fall short. This time the model may
+    /// write, for each record type it cannot translate, an `EventDetail/Unknown` carrying the
+    /// [LearnedUnknown] marker. It is the only step that may ask for that output, and it is reached only by a
+    /// transition from another step or by a person sending a parked session to it, never by the step above
+    /// it passing.
     ADMIT("Admit");
 
     private final String displayValue;

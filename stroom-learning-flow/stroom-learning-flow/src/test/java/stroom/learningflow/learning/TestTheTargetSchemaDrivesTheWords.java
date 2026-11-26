@@ -39,17 +39,19 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Task 7's acceptance criterion: changing the one setting changes, together, the namespace, the
-/// `xsi:schemaLocation` and the version in every prompt, and the wrapper the target checks put a
-/// proposed event in. The conformance check is held to the same setting by
-/// `TestConformanceAgainstTheTargetSchema`.
+/// Tests that the document's target schema setting drives the wording of the questions.
+///
+/// Changing the one setting changes, together, the namespace, the `xsi:schemaLocation` and the version in every
+/// prompt, and the wrapper the target checks put a proposed event in. `TestConformanceAgainstTheTargetSchema`
+/// checks that the conformance check follows the same setting.
 class TestTheTargetSchemaDrivesTheWords {
 
     private static final Sample SAMPLE = new Sample("a,b,c\n", Map.of("Feed", "DOOR-ACCESS"));
 
-    /// The transformation rules as one passage, as they were written before the structural paragraph was
-    /// split out of them. Kept here, not read from the templates, so that the two halves are held to a
-    /// text this test owns rather than to themselves.
+    /// The event-logging transformation rules as one passage, with the target placeholders still in it. The
+    /// built-in text is made from two templates, the rules and the target structure paragraph. This copy is
+    /// owned by the test rather than read from the templates, so the two halves are checked against a fixed
+    /// text rather than against themselves.
     private static final String BEFORE_THE_SPLIT = """
             The stylesheet reads records:2 (use xpath-default-namespace="records:2") and writes \
             ${targetNamespace} events: <${targetRoot} xmlns="${targetNamespace}" \
@@ -109,10 +111,9 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void theEventLoggingRulesAreWordForWordWhatTheyWereBeforeTheyWereSplit() {
-        // Task 7 splits the structural paragraph out of the transformation rules so that another schema
-        // can have its own (decision D2 option G). The acceptance criterion is that a document targeting
-        // event-logging, or targeting nothing, is asked exactly what it was asked before — so this holds
-        // the two halves to reassembling into the one text, character for character.
+        // The structural paragraph is a separate template so that another schema can have its own. A
+        // document targeting event-logging, or naming no target, must still be asked exactly the same text, so
+        // this checks the two halves reassemble into the one passage, character for character.
         final String rules = BEFORE_THE_SPLIT
                 .replace("${targetNamespace}", TargetSchema.EVENT_LOGGING)
                 .replace("${targetRoot}", "Events")
@@ -124,8 +125,8 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void aDocumentThatNamesNoTargetIsAskedExactlyAsItWasBefore() {
-        // The acceptance criterion that matters most: a document written before the setting existed must
-        // get the same prompt it got before, word for word.
+        // Most importantly, a document saved before the target schema setting existed must get the same
+        // event-logging prompt, word for word.
         final String text = words(null).render(transform());
 
         assertThat(text)
@@ -140,8 +141,8 @@ class TestTheTargetSchemaDrivesTheWords {
     @Test
     void aProposedEventIsWrappedInTheTargetsOwnRoot() {
         // The target checks judge one proposed event by wrapping it as a document and scoring it as a
-        // transform's output. The wrapper has to be the schema the document actually writes, or the
-        // conformance check refuses every target a non-event-logging document proposes.
+        // transform's output. The wrapper has to be the root of the schema the document actually writes, or the
+        // conformance check would refuse every target a non-event-logging document proposes.
         assertThat(TargetChecks.asDocument("<Sighting><What>owl</What></Sighting>", SIGHTINGS))
                 .startsWith("<Sightings xmlns=\"urn:sightings:2\"")
                 .contains("xsi:schemaLocation=\"urn:sightings:2 file://sightings-v2.4.xsd\"")
@@ -170,8 +171,8 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void aSchemaThatDeclaresNoVersionOrRootFallsBackRatherThanWritingNothing() {
-        // A hand-written XSD need not declare a version, and need not declare a global element. Neither
-        // may leave a hole in the prompt where the model is told what to write.
+        // A hand-written XSD need not declare a version or a global element. Neither may leave a gap in the
+        // prompt where the model is told what to write, so event-logging's values are used instead.
         final TargetSchema bare = new TargetSchema(
                 new DocRef(XmlSchemaDoc.TYPE, "schema-2", "bare"), "bare", "urn:bare:1",
                 "file://bare.xsd", null, null, "<xs:schema/>");
@@ -185,7 +186,7 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void theQuestionsNameTheElementOneRecordBecomesInTheTargetsOwnWords() {
-        // W1-1: the target question and the rules said <Event> whatever the schema. The sightings schema's
+        // The target question and the rules must not say <Event> whatever the schema. The sightings schema's
         // root holds only Sighting, so that is what one record becomes
         final TargetSchema sightings = new TargetSchema(SIGHTINGS.docRef(), SIGHTINGS.name(),
                 SIGHTINGS.namespaceURI(), SIGHTINGS.systemId(), SIGHTINGS.version(), SIGHTINGS.rootElement(),
@@ -200,7 +201,8 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void eventLoggingsRuleAgainstDataAndUnknownIsNotGivenForAnotherSchema() {
-        // W1-4: Data and Unknown are event-logging's; another schema may have a Data that means something
+        // The rule against Data and Unknown is specific to event-logging; in another schema a Data element
+        // may mean something
         assertThat(words(SIGHTINGS).render(transform()))
                 .doesNotContain("Data elements")
                 .doesNotContain("Unknown branch")
@@ -211,7 +213,8 @@ class TestTheTargetSchemaDrivesTheWords {
 
     @Test
     void aRootThatHoldsSeveralKindsOrIsNotDescribedIsNamedAsAPlace() {
-        // SIGHTINGS' XSD here declares nothing, so which element one record becomes isn't plain
+        // SIGHTINGS has an empty XSD here, so it is not clear which element one record becomes, and the
+        // question names a place instead
         assertThat(words(SIGHTINGS).render(targetFor()))
                 .contains("Write the single element under <Sightings> this record should become");
         assertThat(words(SIGHTINGS).render(transform()))

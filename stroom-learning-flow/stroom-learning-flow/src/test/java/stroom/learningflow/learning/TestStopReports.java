@@ -83,7 +83,8 @@ class TestStopReports {
 
     @Test
     void aRefusedReplyBeforeTheLastAnswerIsStillQuoted() {
-        // The model explained what is wrong, then tried again: its explanation is the best diagnosis there is.
+        // The model explained what was wrong and then tried again. Its explanation is the best diagnosis
+        // available, so it is quoted even though it was not the last answer.
         final List<Exchange> transcript = List.of(
                 answer(SPLIT, 1, StepOutcome.WHOLENESS_SHORT, WHOLE_20, "batch"),
                 answer(SPLIT, 2, StepOutcome.REFUSED, null,
@@ -259,9 +260,9 @@ class TestStopReports {
 
     @Test
     void aTranslationRefusedByTheListSaysWhatItUsedAndWhatToDo() {
-        // The promotion-time half of decision N1: a pipeline edited by hand since it was learned, or one
-        // promoted by a route that judged no stylesheet, is still refused — and the person reading the
-        // Learning Status tab is told which element and which function
+        // The list of permitted functions is checked again at promotion, so a pipeline edited by hand since
+        // it was learned, or one promoted by a route that judged no stylesheet, is still refused. The person
+        // reading the Learning Status tab is told which element and which function caused it
         final StopReport report = StopReports.refusedByTheList(List.of(
                 "xsltFilter: A learned stylesheet may not call 'stroom:lookup': it reads reference data "
                 + "beyond this stream."));

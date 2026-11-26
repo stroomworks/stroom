@@ -53,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TestQualityService {
 
     private static final long DAY_MS = 24L * 60 * 60 * 1000;
-    // Noon on a day, so that the day it falls in is plain
+    // Noon on a day, so that which day it falls in is unambiguous
     private static final long NOW = 20_000 * DAY_MS + DAY_MS / 2;
     private static final Learner FIREWALL = new Learner("p-1", "learningFlow");
     private static final Learner GONE = new Learner("p-2", "learningFlow");
@@ -177,8 +177,8 @@ class TestQualityService {
         return context(Set.of(DocumentPermission.VIEW), Set.of(), true);
     }
 
-    // Someone with these permissions on every pipeline and every Learning Flow, and the permission to view data
-    // or not
+    // A user with these permissions on every pipeline and every Learning Flow, with or without the permission
+    // to view data
     private static SecurityContext context(final Set<DocumentPermission> onPipelines,
                                            final Set<DocumentPermission> onFlows,
                                            final boolean viewData) {

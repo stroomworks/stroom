@@ -34,12 +34,14 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.List;
 import java.util.Objects;
 
-/// What a Smart Pipeline element has learned, on its pipeline's Structure tab ([LearnedTranslation]): shown while
-/// such an element is selected, and read only once it is unfolded, and again each time it is, so that a person
-/// who never asks costs nothing. It finds the element's learner among the pipeline's (by the pipeline's
-/// permissions, as Learning Status does), and the learned translation's elements from the fragment pipeline's
-/// layers. The links open the learned translation, a document it uses, or the pipeline's Learning Status, which
-/// its owner shows.
+/// Fills the "What it learned" section ([LearnedTranslation]) of a pipeline's Structure tab, shown while a Smart
+/// Pipeline element is selected. It fetches what was learned only when the section is expanded, and again each
+/// time it is, so that nothing is fetched for a person who never looks.
+///
+/// It finds the element's learner among the pipeline's learners (subject to the pipeline's permissions, as the
+/// Learning Status tab does), and gets the learned translation's elements from the fragment pipeline's layers.
+/// The links open the learned translation, a document it uses, or the pipeline's Learning Status tab, which the
+/// owning screen shows.
 public class LearnedTranslationController extends Controller {
 
     private static final PipelineResource PIPELINE_RESOURCE = GWT.create(PipelineResource.class);
@@ -54,17 +56,17 @@ public class LearnedTranslationController extends Controller {
     private DocRef pipeline;
     private String elementId;
     private DocRef fragment;
-    /// Which read is current, so that a slower earlier reply is ignored.
+    /// A counter identifying the latest request, so that a reply to an earlier, slower request is ignored.
     private int asked;
     private Runnable onOpenStatus = () -> {
     };
 
-    /// Made by GIN, with its view, which its owner shows where an element's properties are.
+    /// Created by GIN. The owning screen shows the view alongside the selected element's properties.
     ///
     /// @param eventBus            The application's event bus.
-    /// @param view                Its component.
-    /// @param restFactory         Makes REST requests.
-    /// @param elementTypesFactory Says what each element type is called.
+    /// @param view                The section's component.
+    /// @param restFactory         Creates REST requests.
+    /// @param elementTypesFactory Supplies the display name of each element type.
     @Inject
     public LearnedTranslationController(final EventBus eventBus,
                                         final LearnedTranslation view,
@@ -85,7 +87,7 @@ public class LearnedTranslationController extends Controller {
         view.setOnOpenStatus(() -> onOpenStatus.run());
     }
 
-    /// Shows what a Smart Pipeline element has learned, read now if it is unfolded.
+    /// Shows what a Smart Pipeline element has learned, fetching it now if the section is expanded.
     ///
     /// @param pipelineRef The pipeline, as saved.
     /// @param element     The element's id.
@@ -98,14 +100,16 @@ public class LearnedTranslationController extends Controller {
         }
     }
 
-    /// Hides it, while an element that isn't a Smart Pipeline is selected, or none.
+    /// Hides the section, for when the selected element isn't a Smart Pipeline, or nothing is selected. Any
+    /// reply still outstanding is ignored.
     public void hide() {
         asked++;
         elementId = null;
         view.setShown(false);
     }
 
-    /// @param onOpenStatus Run when the user asks for the pipeline's Learning Status, at the element shown.
+    /// @param onOpenStatus Run when the user asks to open the pipeline's Learning Status tab at the element
+    ///                     shown.
     public void setOnOpenStatus(final Runnable onOpenStatus) {
         this.onOpenStatus = onOpenStatus;
     }
@@ -115,7 +119,8 @@ public class LearnedTranslationController extends Controller {
         return elementId;
     }
 
-    // The element's learner among the pipeline's, then its learned translation's elements
+    // Fetches the pipeline's learners to find this element's learned translation, then that translation's
+    // elements
     private void read() {
         if (pipeline == null || elementId == null) {
             return;
@@ -147,7 +152,8 @@ public class LearnedTranslationController extends Controller {
                 .exec();
     }
 
-    // The learned translation's elements, from its layers; where they can't be read, its link alone
+    // Fetches the learned translation's elements from its layers. If they can't be fetched, only the link to
+    // the translation is shown
     private void readParts(final int request, final DocRef learned) {
         final String name = Objects.requireNonNullElse(learned.getName(), "Learned translation");
         elementTypesFactory.get(taskMonitor(), types -> restFactory

@@ -23,7 +23,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/// The corpus index as a list: for a node run without a database. Every method is synchronised.
+/// An in-memory [CorpusIndex], held as a list, for a node run without a database. Every method is
+/// synchronised.
 public final class InMemoryCorpusIndex implements CorpusIndex {
 
     private final List<Row> rows = new ArrayList<>();

@@ -36,9 +36,9 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// The content of the dialog of everything a supervisor has said to one learner (A46, A128), oldest
-/// first: what was said, by whom and when, a row each; with buttons to say another thing and to take the
-/// selected one back. Not paged. [GuidanceEditorController] shows it.
+/// The content of the dialog listing the notes (guidance) people have left for one learner, oldest first.
+/// Each row shows what was written, by whom and when. Buttons add a note and withdraw the selected one. The
+/// list is not paged. [GuidanceEditorController] shows it.
 public class GuidanceEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -56,7 +56,7 @@ public class GuidanceEditor extends Component {
     private Runnable onRemove = () -> {
     };
 
-    /// Makes an empty list.
+    /// Creates an empty list.
     public GuidanceEditor() {
         initWidget(BINDER.createAndBindUi(this));
         selectionModel = dataGrid.addDefaultSelectionModel(true);
@@ -65,37 +65,38 @@ public class GuidanceEditor extends Component {
         removeButton.setOnClick(() -> onRemove.run());
     }
 
-    /// Shows what has been said. The selection goes first: it holds the row object it was made from, and
-    /// a rebuilt list makes new ones, so a row taken back would still be offered for taking back again.
+    /// Shows the notes. The selection is cleared first because it holds the row objects it was made from, and
+    /// the new list has new objects; otherwise a note already withdrawn could still be offered for withdrawal.
     ///
-    /// @param said What has been said, oldest first.
+    /// @param said The notes, oldest first.
     public void setGuidance(final List<SupervisorGuidance> said) {
         selectionModel.clear();
         dataGrid.setRowData(0, said);
         dataGrid.setRowCount(said.size(), true);
     }
 
-    /// @return The selection, one thing said at most.
+    /// @return The selection. The grid allows several rows to be selected, but Remove acts only on the one
+    ///         returned by `getSelected()`.
     public MultiSelectionModel<SupervisorGuidance> getSelectionModel() {
         return selectionModel;
     }
 
-    /// @param enabled Whether something else may be said.
+    /// @param enabled Whether a note may be added.
     public void setAddEnabled(final boolean enabled) {
         addButton.setEnabled(enabled);
     }
 
-    /// @param enabled Whether the selected thing said may be taken back.
+    /// @param enabled Whether the selected note may be withdrawn.
     public void setRemoveEnabled(final boolean enabled) {
         removeButton.setEnabled(enabled);
     }
 
-    /// @param onAdd Run when the user asks to say something else.
+    /// @param onAdd Run when the user asks to add a note.
     public void setOnAdd(final Runnable onAdd) {
         this.onAdd = onAdd;
     }
 
-    /// @param onRemove Run when the user asks to take the selected thing back.
+    /// @param onRemove Run when the user asks to withdraw the selected note.
     public void setOnRemove(final Runnable onRemove) {
         this.onRemove = onRemove;
     }

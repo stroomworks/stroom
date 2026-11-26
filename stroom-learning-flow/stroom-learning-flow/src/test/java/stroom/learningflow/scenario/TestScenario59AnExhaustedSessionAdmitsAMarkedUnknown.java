@@ -47,16 +47,16 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 59: **an exhausted session admits a marked Unknown** (A51–A53, A62, A74–A76;
-/// design 04 §4 and its §8 scenarios 4 and 14).
+/// Tests that a session which runs out of transform candidates admits the remaining records as marked
+/// Unknown events.
 ///
-/// A session whose transform candidates are spent with records of the held stream still short reaches
-/// the flow's exhaustion step, which asks for the transform once more with the admitted form in it: an
-/// `EventDetail/Unknown` carrying the marker. The candidate is held to the records that fell short as
-/// every transform candidate is, the marked Unknown clears the bar where a bare one does not, the corpus
-/// holds the admitted records as admissions, and the stream is served with marked Unknown events among
-/// its own. A later stream of the same kinds is served at once and opens no session. A model that offers
-/// the admitted form before the exhaustion step is refused it.
+/// When the transform's candidates are spent with records of the held stream still short of the bar, the
+/// session reaches the flow's exhaustion step. That step asks for the transform once more, allowing the
+/// admitted form: an `EventDetail/Unknown` carrying the marker. The candidate is checked against the records
+/// that fell short like any transform candidate, and the marked Unknown clears the bar where a bare Unknown
+/// does not. The corpus holds the admitted records as admissions, and the stream is served with marked
+/// Unknown events among its translated ones. A later stream with the same kinds of record is served at once
+/// and opens no session. If the model offers the admitted form before the exhaustion step, it is refused.
 class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
 
     private static final String DOC = "doc-1";
@@ -78,11 +78,10 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
         assertThat(scenarios.stage(silent).decide(doc, Scenarios.LEARNER,
                 streamed(1L)).decision()).isInstanceOf(Deferred.class);
 
-        // Round one learns from the sample of logons and is promoted; the full pass finds the logoffs.
-        // Round two is held to them: the model offers the admitted form at the transform's own question —
-        // which the sample, holding no logoff, would never have shown — and is refused for it, which
-        // spends the transform's one candidate; the flow goes to the exhaustion step, whose question
-        // carries the refusal and the admitted form, and the admission clears there.
+        // Round one learns from the sample of logons and is promoted, and the full pass finds the logoffs.
+        // Round two is checked against them. The model offers the admitted form at the transform question and
+        // is refused for it, which spends the transform's one candidate. The flow then goes to the exhaustion
+        // step, whose question carries the refusal and the admitted form, and the admission clears there.
         final Script script = scenarios.script(CSV.configuration(), LOGON_ONLY)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -111,7 +110,7 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
         assertThat(corpus).filteredOn(entry -> entry.kind() == Kind.TRANSLATION).isNotEmpty();
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).contains(1L);
 
-        // Served in full, the admitted records as marked Unknown events.
+        // The stream is served in full, with the admitted records as marked Unknown events.
         final StageRun decided = scenarios.stage(silent).decide(doc, Scenarios.LEARNER, streamed(1L));
         assertThat(decided.decision()).isInstanceOf(Bound.class);
         final TextSink sink = new TextSink();
@@ -122,7 +121,7 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
         assertThat(sink.text()).contains("<Action>Logon</Action>")
                 .contains("Name=\"" + LearnedUnknown.MARKER + "\" Value=\"logoff\"");
 
-        // A marked Unknown is not retried (§8 scenario 14): the next stream of the same kinds is served at
+        // A marked Unknown is not learned again: the next stream with the same kinds of record is served at
         // once and no session opens for it.
         scenarios.inputs.put(streamed(2L));
         final StageRun next = scenarios.stage(silent).decide(doc, Scenarios.LEARNER, streamed(2L));
@@ -136,8 +135,8 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
 
     @Test
     void theAdmittedFormOfferedBeforeTheExhaustionStepIsRefusedOnTheSampleToo() {
-        // The logoffs are in the sample this time, so the admitted form would pass the scorecard: it is
-        // refused at the transform's own question all the same, and accepted at the exhaustion step.
+        // The logoffs are in the sample this time, so the admitted form would pass every check. It is still
+        // refused at the transform question, and accepted at the exhaustion step.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc().copy().sampleSizeLimit(100_000).build();
         final Input whole = new Input(1L, FEED, "Raw Events", Map.of(), STREAM, "pipeline-1");
@@ -164,8 +163,8 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
                 .extracting(Turn::outcome).containsExactly(StepOutcome.PASSED);
     }
 
-    /// The demo document under a flow whose transform has one candidate before the exhaustion step, and
-    /// whose sample holds the header and a few logons.
+    /// Builds the demo document with a flow whose transform step has one candidate before the exhaustion
+    /// step, and whose sample holds the header and a few logons.
     private static LearningFlowDoc doc() {
         return DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
                 .heldOutFraction(0.0)
@@ -193,7 +192,8 @@ class TestScenario59AnExhaustedSessionAdmitsAMarkedUnknown {
         return text.toString();
     }
 
-    /// The stream as a task has it: the logons as the prefix, the whole to be read as a fragment runs.
+    /// Builds the stream as a task has it: the header and logons as the prefix, and a supplier that opens the
+    /// whole stream for a fragment to run over.
     private static Input streamed(final long id) {
         final int prefix = STREAM.indexOf("logoff") - "2020-06-17T08:08:00.000Z,user8,office,".length();
         return Input.streamed(id, FEED, "Raw Events", Map.of(), STREAM.substring(0, prefix), "pipeline-1",

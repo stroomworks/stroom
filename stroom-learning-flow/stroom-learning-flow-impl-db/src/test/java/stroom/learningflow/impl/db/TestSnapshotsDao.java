@@ -27,8 +27,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The snapshots of A61 as rows: kept, found by id and by binding, moved with a draft's approval, and gone
-/// with the binding (A71).
+/// Tests [SnapshotsDao]: snapshots are kept, found by id and by binding, moved to the live binding when a
+/// draft is approved, and deleted with their binding.
 class TestSnapshotsDao {
 
     private static final String DOC = "doc-" + System.nanoTime();

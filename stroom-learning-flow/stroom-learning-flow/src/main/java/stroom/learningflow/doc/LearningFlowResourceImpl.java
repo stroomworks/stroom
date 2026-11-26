@@ -39,9 +39,11 @@ import jakarta.inject.Provider;
 
 import java.util.List;
 
-/// The document's own resource: reading and writing it, and the built-in templates its Setup tab starts
-/// from. What a learner has learned under it is the learner's (design 06 phase J slice 2b), and a person
-/// acts on that from the Supervisor.
+/// The REST resource for the Learning Flow document itself: reading and writing it, and the built-in
+/// templates, example flows and target schemas its editor uses.
+///
+/// What a learner has learned under the document is stored against the learner rather than the document,
+/// so a person acts on it from the Supervisor's resource rather than this one.
 @AutoLogged
 public class LearningFlowResourceImpl implements LearningFlowResource {
 

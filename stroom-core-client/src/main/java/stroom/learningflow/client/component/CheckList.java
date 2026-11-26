@@ -32,10 +32,10 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// A Learning Flow's checks as a grid (the one model of checks): one row for every check that is built,
-/// with whether it is Off, Advice or a Gate, its threshold where it has one, and its own settings; with
-/// Edit. A double click edits a check. When read only, Edit is disabled and a double click does nothing.
-/// [CheckListController] does the work.
+/// A grid of a Learning Flow's quality checks, with an Edit button. It has one row for every check, showing
+/// whether the check is Off, Advice or a Gate, its threshold if it has one, and its own settings. A double
+/// click also edits a check. When read only, Edit is disabled and a double click does nothing.
+/// [CheckListController] wires it.
 public class CheckList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -49,7 +49,7 @@ public class CheckList extends Component {
     private Runnable onEdit = () -> {
     };
 
-    /// Makes an empty list.
+    /// Creates an empty list.
     public CheckList() {
         initWidget(BINDER.createAndBindUi(this));
         selectionModel = dataGrid.addDefaultSelectionModel(true);

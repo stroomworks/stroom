@@ -18,11 +18,11 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/// What a check does on a Learning Flow (the one model of checks, UM-2 and UM-3).
+/// What a check does on a Learning Flow document: nothing, advise, or act as a gate.
 public enum CheckState implements HasDisplayValue {
-    /// Not run, not shown.
+    /// The check is neither run nor shown.
     OFF("Off"),
-    /// Run and shown beside a draft and fed back to the model; a step's rule that names it still fires,
+    /// Run, shown beside a draft and fed back to the model. A step's transition that names it still fires,
     /// but it never refuses a candidate.
     ADVICE("Advice"),
     /// Refuses a candidate that falls below its threshold; one that judges records also holds back a served

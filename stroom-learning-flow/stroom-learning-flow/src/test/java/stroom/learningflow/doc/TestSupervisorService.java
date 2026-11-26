@@ -69,12 +69,14 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// A Supervisor request names a learner and a document separately (design 06 phase J slice 2b). The
-/// learner must be one that runs under that document: otherwise a person could tell, read or relearn
-/// another document's learner by naming it. What may be done to a learner is held to its pipeline's
-/// permissions: a Data Provider who owns a pipeline acts on its learning without needing the document, and
-/// the document's permission alone does nothing to a pipeline's learner (except read one whose pipeline
-/// has been deleted, which has no permissions of its own to ask).
+/// Tests the access rules of the service behind the Supervisor screen.
+///
+/// A Supervisor request names a learner and a document separately, so the service checks that the learner runs
+/// under that document; otherwise a person could give guidance to, read or relearn another document's learner
+/// just by naming it. What may be done to a learner is governed by its pipeline's permissions: a Data Provider
+/// who owns a pipeline can act on its learning without access to the document, and permission on the document
+/// alone gives no access to a pipeline's learner. The exception is a learner whose pipeline has been deleted,
+/// which has no permissions of its own, so it is readable through the document's permission.
 class TestSupervisorService {
 
     private static final LearnerRef OURS = new LearnerRef("pipeline-1", "learningFlow");
@@ -86,13 +88,13 @@ class TestSupervisorService {
     private final InMemoryLearnerBindings learnerBindings = new InMemoryLearnerBindings();
     private final LearningFlowStore store = Mockito.mock(LearningFlowStore.class);
     private final LearningPipelines pipelines = Mockito.mock(LearningPipelines.class);
-    // What every document has spent, against which a test sets a ceiling where it wants one tripped
+    // What every document has spent; a test sets a spend ceiling on a document when it wants the breaker tripped
     private final InMemorySpend spend = new InMemorySpend();
     private final StageFactory stageFactory = Mockito.mock(StageFactory.class);
-    // The streams runs learned from; none is readable unless a test says otherwise
+    // The streams that sessions learned from; none is readable unless a test says otherwise
     private final Inputs inputs = Mockito.mock(Inputs.class);
     private final InMemoryAttempts attempts = new InMemoryAttempts();
-    // Every document targets event-logging, or nothing, unless a test says otherwise
+    // No target schema resolves unless a test sets one
     private TargetSchemas targetSchemas = TargetSchemas.none();
     private final SupervisorService resource = resource(MockSecurityContext::new);
 
@@ -126,10 +128,10 @@ class TestSupervisorService {
                 .containsExactly("Said under doc-2.");
     }
 
-    /// A deleted pipeline's learning is kept to be read until it ages out, and nothing more is done with it
-    /// (design 06 A137): what was said to its learner can still be read from the document its bindings
-    /// were kept under, though the pipeline names no document now, and nothing is said to it, taken back,
-    /// improved, accepted or retracted.
+    /// A deleted pipeline's learning is kept, read only, until it ages out. The guidance given to its learner
+    /// can still be read under the document its bindings were kept under, even though the deleted pipeline no
+    /// longer names a document. No new guidance can be given, and nothing can be withdrawn, improved or
+    /// retracted.
     @Test
     void aDeletedPipelinesLearnerIsReadAndNotChanged() {
         final Learner gone = learner(GONE);
@@ -164,8 +166,8 @@ class TestSupervisorService {
         assertThat(guidance.standing(gone)).hasSize(1);
     }
 
-    /// A person's give up and send back act on a learner of the document they may edit, whose pipeline
-    /// is still there (design 06 A115, A137); giving up says why, since its streams error with the reason.
+    /// A person can give up or send back only a learner of the given document whose pipeline still exists.
+    /// Giving up must state a reason, because the learner's streams then fail with that reason as the error.
     @Test
     void aLearnerIsGivenUpOrSentBackOnlyWithCause() {
         assertThatThrownBy(() -> resource.giveUp("doc-1", new LearnerRequest(OURS, " ")))
@@ -190,9 +192,9 @@ class TestSupervisorService {
                 .hasMessageContaining("has been deleted");
     }
 
-    /// A deleted pipeline's learner is read from the document it is listed under, whether or not it ever
-    /// bound anything (A137): a learner that only had sessions was refused, its waiting streams and what
-    /// had been said to it unreadable from its row.
+    /// A deleted pipeline's learner is readable under the document it is listed under, even if it never had a
+    /// binding. A learner that only ever had sessions must still be readable, so that its waiting streams and
+    /// the guidance given to it can be seen from its row.
     @Test
     void aDeletedPipelinesLearnerIsReadUnderTheDocumentItIsListedUnder() {
         deletedPipelines.deleted(GONE.getPipelineUuid(), 1_000L);
@@ -218,13 +220,13 @@ class TestSupervisorService {
                 .thenReturn(LearningFlowDoc.builder().uuid("doc-1").name("Firewall").build());
         assertThat(provider.settings("doc-1", OURS.getPipelineUuid(), OURS.getElementId()).getName())
                 .isEqualTo("Firewall");
-        // But not another pipeline's learner, under the same document or another
+        // The pipeline's permission does not extend to another pipeline's learner
         assertThatThrownBy(() -> provider.guidance("doc-2", THEIRS.getPipelineUuid(), THEIRS.getElementId()))
                 .isInstanceOf(PermissionException.class);
     }
 
-    /// The document's permission alone does nothing to a pipeline's learner: the pipeline's owner decides
-    /// what its feed is told, approved and relearned with.
+    /// Permission on the document alone gives no access to a pipeline's learner, because it is the pipeline's
+    /// owner who decides what guidance its feed is given and what it approves and relearns.
     @Test
     void theDocumentAloneIsNotEnough() {
         final SupervisorService owner = resource(grants(Map.of(
@@ -288,8 +290,8 @@ class TestSupervisorService {
                 .isInstanceOf(PermissionException.class);
     }
 
-    /// A deleted pipeline has no permissions to ask: its learning is read by its document's VIEW, and
-    /// without that, not at all.
+    /// A deleted pipeline has no permissions to check, so its learning is readable by anyone with VIEW on its
+    /// document, and by nobody else.
     @Test
     void aDeletedPipelinesLearningIsReadByItsDocument() {
         deletedPipelines.deleted(GONE.getPipelineUuid(), 1_000L);
@@ -302,7 +304,8 @@ class TestSupervisorService {
                 .isInstanceOf(PermissionException.class);
     }
 
-    /// A pipeline's own editor lists its learners, under any document, by asking for that pipeline alone.
+    /// Someone who can view a pipeline can list its learners under every document, by asking for that pipeline
+    /// alone, even documents they cannot see.
     @Test
     void aPipelinesLearnersAreListedForItsViewer() {
         Mockito.when(store.listDocuments()).thenReturn(Set.of(new DocRef(LearningFlowDoc.TYPE, "doc-1",
@@ -319,14 +322,14 @@ class TestSupervisorService {
         final List<SupervisorLearner> listed = viewer.pipelineLearners(OURS.getPipelineUuid());
 
         assertThat(listed).isEmpty();
-        // Under every document, not only those the viewer may see
+        // Every document is searched, not only those the viewer may see
         Mockito.verify(pipelines).learners(Mockito.argThat(docs -> docs.contains("doc-1")),
                 Mockito.anySet(), Mockito.anyCollection(), Mockito.eq(false),
                 Mockito.eq(OURS.getPipelineUuid()), Mockito.eq(0L), Mockito.anyInt());
     }
 
-    /// Task 7, W1-3: *Finish with Unknowns* writes event-logging's marked Unknown, so a learner whose
-    /// document targets another schema is listed as having no fallback, and the client offers none.
+    /// *Finish with Unknowns* writes event-logging's marked `Unknown` event, so a learner whose document
+    /// targets another schema is listed as having no fallback, and the client does not offer it.
     @Test
     void aLearnerWhoseDocumentTargetsAnotherSchemaHasNoFallback() {
         final DocRef sightingsRef = new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4");
@@ -363,8 +366,9 @@ class TestSupervisorService {
                 .containsExactly(Tuple.tuple("doc-1", true), Tuple.tuple("doc-2", false));
     }
 
-    /// Track 2 step 4: a learner whose document has reached its spend ceiling is listed saying so, in the
-    /// breaker's own words, and one whose document has not is listed as free to learn.
+    /// A learner whose document has reached its spend ceiling is listed with the spend breaker's message, and
+    /// one whose document has not is listed with no message. Also checks a pipeline with no time zone of its
+    /// own is listed as UTC.
     @Test
     void aLearnerWhoseDocumentHasReachedItsSpendCeilingSaysSo() {
         final DocRef ours = new DocRef(LearningFlowDoc.TYPE, "doc-1", "ours");
@@ -390,8 +394,10 @@ class TestSupervisorService {
         assertThat(listed.get(0).getTimeZoneSource()).isEqualTo(TimeZoneSource.DEFAULT);
     }
 
-    /// N9, Track 2 step 4: the prompt carries the stream's own text, so it is refused to someone who may
-    /// not view data; and a stream since deleted can't be rebuilt from, which is said rather than guessed.
+    /// A turn's prompt is rebuilt on request from the recorded templates and the stream it learned from. The
+    /// prompt contains the stream's own text, so it is refused to someone without permission to view data. If
+    /// the stream has since been deleted the prompt cannot be rebuilt, and the service says so rather than
+    /// guessing at it.
     @Test
     void aPromptIsRefusedWithoutViewDataOrWithoutItsStream() {
         final long id = attemptWithATurn();
@@ -407,7 +413,7 @@ class TestSupervisorService {
         assertThatThrownBy(() -> resource.prompt(id, 9)).isInstanceOf(IllegalArgumentException.class);
     }
 
-    // An attempt of ours, on stream 1, with one turn answered
+    // Opens an attempt for our learner, on stream 1, with one answered turn
     private long attemptWithATurn() {
         final long id = attempts.opened(new Attempts.Attempt(learner(OURS), "doc-1", "F", "T", 1L, "node-1",
                 PromotionMode.AUTOMATIC, Long.MAX_VALUE), 0L).orElseThrow();
@@ -426,7 +432,7 @@ class TestSupervisorService {
         final LearnerDocuments documents = Mockito.mock(LearnerDocuments.class);
         Mockito.when(documents.documentOf(learner(OURS))).thenReturn(Optional.of("doc-1"));
         Mockito.when(documents.documentOf(learner(THEIRS))).thenReturn(Optional.of("doc-2"));
-        // A deleted pipeline names no document; the learning pipelines list says which it is read under.
+        // A deleted pipeline names no document, so the learning pipelines table says which one it is read under.
         Mockito.when(documents.documentOf(learner(GONE))).thenReturn(Optional.empty());
         Mockito.when(pipelines.documentOf(learner(GONE))).thenReturn(Optional.of("doc-1"));
         final DocFinder docFinder = Mockito.mock(DocFinder.class);
@@ -450,7 +456,7 @@ class TestSupervisorService {
                 () -> inputs);
     }
 
-    // A person granted these permissions on these documents (by type and uuid), and none on any other
+    // A user with these permissions on these documents (matched by type and UUID), and none on any other
     private static Supplier<SecurityContext> grants(final Map<DocRef, Set<DocumentPermission>> granted) {
         final SecurityContext context = Mockito.mock(SecurityContext.class);
         Mockito.when(context.getUserIdentityForAudit()).thenReturn("jo");

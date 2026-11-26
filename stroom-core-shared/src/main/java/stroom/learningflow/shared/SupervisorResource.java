@@ -37,15 +37,14 @@ import org.fusesource.restygwt.client.DirectRestService;
 
 import java.util.List;
 
-/**
- * The Supervisor of ruling A28: attempts across every Learning Flow document, not a tab on one. A row
- * opens to the conversation turn by turn, and what a person may do to an attempt they are reading — answer a
- * turn instead, edit one and run it again, approve or reject what it drafted, or send its learner back to
- * be learned afresh — is here rather than spread across the documents.
- * <p>
- * A binding outlives the attempt that wrote it, so what is done to a binding that is serving — improving,
- * accepting or retracting it — begins from the binding rather than from an attempt.
- */
+/// REST resource for the Supervisor, which shows learning across every Learning Flow document rather than on
+/// a tab of one. It lists learners and their sessions; a session opens to its conversation turn by turn. The
+/// actions a person may take are here rather than spread across the documents: answer a turn instead, edit
+/// one and run it again, approve or reject a draft, give a parked session more budget or send it to the
+/// fallback step, leave guidance, and send a learner back to learn afresh or give it up.
+///
+/// A binding outlives the session that wrote it, so actions on a binding that is serving (improving or
+/// retracting it) start from the binding rather than from a session.
 @Tag(name = "Learning Flow Supervisor")
 @Path("/learningFlowSupervisor" + ResourcePaths.V1)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -64,11 +63,11 @@ public interface SupervisorResource extends RestResource, DirectRestService {
             operationId = "fetchLearningFlowAttempt")
     SupervisorAttempt fetch(@PathParam("id") long id);
 
-    /// What a turn was put to the model with (decision N9, Track 2 step 4): rebuilt from the run's own
-    /// words over its stream, for someone who may view data, since it carries the stream's text.
+    /// Rebuilds the prompt a turn sent to the model, from what the session recorded and its stream. Only
+    /// someone with permission to view data may see it, since it contains the stream's text.
     ///
-    /// @param id     The attempt.
-    /// @param number The turn.
+    /// @param id     The session (attempt) id.
+    /// @param number The turn number.
     /// @return The prompt, or why it can't be shown.
     @GET
     @Path("/{id}/turns/{number}/prompt")

@@ -31,25 +31,26 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// The stage pane (A30, design 01 §11.7), [StageDecisionPane]: what a supervised stage did with the
-/// stream at the cursor, where the code pane would be. Registered for the Learning Flow element, whose
-/// stepping controller makes one for each element shown.
+/// Fills the pane ([StageDecisionPane]) that the pipeline stepper shows for a Smart Pipeline element, in
+/// place of a code pane. It is registered for the Smart Pipeline element type, and the stepper makes one for
+/// each such element shown.
 ///
-/// A supervisor has no document to show as code, and what a person selecting it needs is the decision:
-/// what serves this learner, what the scorers made of the stream, and what was said to the model where it
-/// was learned. Stepping is a dry run (A30, A121), so a learner nothing serves shows what the stage
-/// *would* do and the pane says so.
+/// A Smart Pipeline element has no single document to show as code. What a person stepping through it needs
+/// is its decision: which binding serves the learner, how the checks scored the stream, and, if it was learned
+/// from, what was said to the model. Stepping is a dry run that never learns or changes anything, so for a
+/// learner that nothing serves yet, the pane shows what the element *would* do, and says so.
 ///
-/// Read only. Approving, rejecting and retracting are done on the pipeline's Learning Status tab.
+/// The pane is read-only. Approving, rejecting and withdrawing translations are done on the pipeline's
+/// Learning Status tab.
 public class StageDecisionPaneController extends Controller implements ElementStepDetailsPane {
 
     private final StageDecisionPane view;
     private DocRef fragment;
 
-    /// Made by GIN, with its pane.
+    /// Made by GIN.
     ///
     /// @param eventBus The application's event bus.
-    /// @param view     Its component.
+    /// @param view     The pane.
     @Inject
     public StageDecisionPaneController(final EventBus eventBus, final StageDecisionPane view) {
         super(eventBus);
@@ -71,10 +72,9 @@ public class StageDecisionPaneController extends Controller implements ElementSt
             view.setTranscript(stage.getTranscript());
             setFragment(stage.getFragment());
         } else {
-            // A step this element had nothing to say about (one it never ran on, one the parser above it
-            // refused) clears the pane. Left alone it would show the step before as this one, which is
-            // worse than showing nothing: a decision, a binding and a transcript that are not this
-            // record's, presented as though they were.
+            // Clear the pane for a stepping position this element has no details for (e.g. it never ran, or
+            // an earlier element rejected the input). Otherwise the pane would go on showing the previous
+            // position's decision, binding and transcript as though they belonged to this one.
             view.setDecision("");
             view.setSummary(Map.of());
             view.setVerdicts(List.of());

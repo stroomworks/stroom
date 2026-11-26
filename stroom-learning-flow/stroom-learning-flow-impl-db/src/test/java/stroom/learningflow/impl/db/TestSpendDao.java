@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The spend of A44 as rows, against a real database.
+/// Tests [SpendDao] against a real database.
 class TestSpendDao {
 
     private static final long WINDOW_MS = 600_000L;
@@ -48,9 +48,10 @@ class TestSpendDao {
         Guice.createInjector(new TestModule()).injectMembers(this);
     }
 
-    /// Many nodes recording spend for a document nobody has spent on yet, all at once. Made under the
-    /// shared lock an `INSERT ... IGNORE` takes on a duplicate, the `FOR UPDATE` that follows deadlocked
-    /// them and the database killed one; made under the exclusive lock, they queue and every call counts.
+    /// Many nodes record spend at once for a document with no spend row yet. If the row were created with
+    /// `INSERT IGNORE`, which takes a shared lock on a duplicate, the following `FOR UPDATE` would deadlock
+    /// and the database would abort one transaction. Created under the exclusive lock, they queue and every
+    /// call is counted.
     @Test
     void theFirstSpendOfANewDocumentRecordedAtOnceAllCounts() throws Exception {
         final ExecutorService pool = Executors.newFixedThreadPool(THREADS);

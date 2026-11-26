@@ -34,15 +34,17 @@ import jakarta.inject.Singleton;
 import java.util.List;
 import java.util.Optional;
 
-/// A learner's bindings, in front of the rows (design 01 §12 item 8). Every stream a learner meets is
-/// served by one of them, and they change only when something is learned, approved or taken back, so
-/// reading them from the database on the hot path would be a query per stream per node — at hundreds of
-/// threads a node, the first thing to give.
+/// A per-node cache of each learner's bindings, sitting in front of the database rows.
 ///
-/// Held until what writes them says otherwise: every write goes to the rows and then fires an event for
-/// the learner's pipeline, which clears that pipeline's entries on *every* node, since the node that
-/// learns a binding is rarely the only node serving with it. The expiry in the configuration is a
-/// backstop and not the mechanism.
+/// Every stream a learner processes is served by one of its bindings, and bindings change only when
+/// something is learned, approved or retracted. Reading them from the database on the processing path would
+/// cost a query per stream on every node, which at hundreds of processing threads per node would be the
+/// first thing to become a bottleneck.
+///
+/// Entries are kept until a write invalidates them. Every write goes to the rows and then fires an event for
+/// the learner's pipeline, which clears that pipeline's entries on *every* node, because the node that
+/// learns a binding is rarely the only node serving with it. The expiry set in the configuration is only a
+/// backstop.
 @Singleton
 @EntityEventHandler(type = Learner.EVENT_TYPE)
 public class CachedLearnerBindings implements LearnerBindings, Clearable, EntityEvent.Handler {
@@ -63,9 +65,9 @@ public class CachedLearnerBindings implements LearnerBindings, Clearable, Entity
         this.cache = cacheManager.createLoadingCache(
                 CACHE_NAME,
                 () -> configProvider.get().getBindingCache(),
-                // Copied, because the rows hand back a list of their own making and this one is shared
-                // by every serving thread on the node until something invalidates it: a caller that
-                // sorted or added to what it was given would corrupt the serving of every stream.
+                // Copied into an immutable list because the cached list is shared by every serving thread
+                // on the node until it is invalidated. A caller that sorted or added to a mutable list would
+                // corrupt the bindings every other stream is served with.
                 learner -> List.copyOf(rows.forLearner(learner)));
     }
 
@@ -74,7 +76,8 @@ public class CachedLearnerBindings implements LearnerBindings, Clearable, Entity
         return cache.get(learner);
     }
 
-    /// From the rows: a binding looked up by its uuid is a person's act on the Supervisor, not a stream.
+    /// Reads straight from the rows, uncached. A lookup by binding UUID comes from a person acting in the
+    /// Supervisor, not from stream processing, so it is too rare to be worth caching.
     @Override
     public Optional<Held> byUuid(final String bindingUuid) {
         return rows.byUuid(bindingUuid);
@@ -90,8 +93,8 @@ public class CachedLearnerBindings implements LearnerBindings, Clearable, Entity
     @Override
     public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
         final boolean written = rows.replace(learner, docUuid, binding);
-        // Cleared either way: a write that lost to another node's means this node's copy is the stale
-        // one, which is exactly when it must be thrown away.
+        // Invalidated even if the write was refused. A refused write means another node changed the row
+        // first, so this node's cached copy is stale and must be thrown away.
         changed(learner);
         return written;
     }

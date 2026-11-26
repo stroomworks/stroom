@@ -25,8 +25,9 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Widget;
 
-/// The content of the dialog in which the Supervisor asks for something before it acts: a reason for
-/// rejecting, giving up or taking back, or what to tell a learner. [SupervisorPromptController] shows it.
+/// The content of the dialog that asks a person for some text before an action on a learner is taken, such as
+/// the reason for rejecting a draft, giving up a learner or withdrawing a binding, or guidance for a learner.
+/// [SupervisorPromptController] shows it.
 public class SupervisorPrompt extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -41,22 +42,22 @@ public class SupervisorPrompt extends Component {
         initWidget(BINDER.createAndBindUi(this));
     }
 
-    /// @param text What is being asked, and what the answer is used for.
+    /// @param text The question being asked, and what the answer will be used for.
     public void setMessage(final String text) {
         message.setText(text);
     }
 
-    /// @param text The answer to start from.
+    /// @param text The text to pre-fill the answer with.
     public void setReply(final String text) {
         reply.setText(text);
     }
 
-    /// @return The answer, as typed.
+    /// @return The answer exactly as typed.
     public String getReply() {
         return reply.getText();
     }
 
-    /// Puts the focus on the answer.
+    /// Puts the keyboard focus in the answer box.
     public void focus() {
         reply.setFocus(true);
     }

@@ -46,25 +46,33 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/// A Learning Flow's Setup tab (design 07): a route map ([RouteMap]) down the side, and beside it the one part
-/// of the setup chosen on it ([SetupStop]). The map's stops are the sections ([SetupSection]), in the order a
-/// translation meets them, with the learning flow's steps under Learning steps once they are shown; each says
-/// what it is set to or what is wrong in it ([SetupSummary]).
+/// A Learning Flow document's Setup tab, where an administrator configures how the document learns.
 ///
-/// What an Admin needs to configure the AI is in sight; what they rarely change is folded under each section's
-/// "Advanced options" ([Disclosure], [AdvancedSettings]), and the steps are on the map only once someone
-/// customises them, or they are no starting point, or something is wrong with them.
+/// A route map ([RouteMap]) runs down the side, and beside it is the one part of the setup chosen on the map
+/// ([SetupStop]). The map's stops are the sections ([SetupSection]), in the order a translation passes through
+/// them, with the learning flow's steps listed under Learning steps when they are shown. Each stop shows a
+/// summary of its settings or its problem ([SetupSummary]).
 ///
-/// The parts: **AI model and instructions**: whether it learns, the model, the target schema and the instructions.
-/// **Learning steps**:
-/// which starting point the steps are, showing or hiding them, Load default setup (a menu of the starting points,
-/// once they are shown), what is wrong with the flow as a whole, and what a run may spend; under Advanced options,
-/// the tries per step and the largest sample. **A step**: its card and question text ([ApproachSection]).
-/// **Quality checks**: the starting set; under Advanced options, the checks ([CheckList]) and the lines kept back
-/// to test against. **Approving new translations**: the pass mark and whether a person approves; under Advanced
-/// options, how many records before a translation is trusted, and what a feed gets when the transform can't be
-/// finished (the fallback). **Monitoring translations in use**: when a translation in use is flagged; under
-/// Advanced options, how many records are kept to check later ones against, and when a waiting stream is overdue.
+/// The settings most people need are visible; those rarely changed are collapsed under each section's
+/// "Advanced options" ([Disclosure], [AdvancedSettings]). The steps appear on the map only when someone chooses
+/// to customise them, when they do not match one of the built-in flows, or when something is wrong with them.
+///
+/// The parts are:
+/// - **AI model and instructions**: whether learning is on, the model, the target schema and the instructions.
+/// - **Learning steps**: which built-in flow the steps match, a link to show or hide them, Load default setup
+///   (a menu of the built-in flows, once the steps are shown), any problem with the flow as a whole, and the
+///   time and token limits for a run; under Advanced options, the default tries per step and the maximum
+///   sample size.
+/// - **A step**: the step's card and question text ([ApproachSection]).
+/// - **Quality checks**: the preset; under Advanced options, the checks ([CheckList]) and the share of lines
+///   held back for testing.
+/// - **Approving new translations**: whether a person must approve them; under Advanced options, the minimum
+///   records needed to learn from a stream, and what happens when the transform cannot be finished (the
+///   fallback).
+/// - **Monitoring translations in use**: the score below which a translation in use is flagged; under Advanced
+///   options, how many records are kept to check later translations against, and when a waiting stream is
+///   overdue.
+///
 /// Fractions are shown as whole percentages. [SetupTabController] fills it.
 public class SetupTab extends Component {
 
@@ -150,10 +158,11 @@ public class SetupTab extends Component {
 
     private final Map<SetupSection, AriaPanel> parts = new EnumMap<>(SetupSection.class);
     private final Map<SetupSection, Disclosure> advanced = new EnumMap<>(SetupSection.class);
-    /// The durations as read, kept while the pickers still show them ([MillisDurations#toMillis]).
+    /// The durations as read from the document, written back unchanged unless the user changes the pickers
+    /// ([MillisDurations#toMillis]).
     private long readAttemptBudgetMs;
     private long readMaxDeferralAgeMs;
-    /// The stop whose part is shown.
+    /// The stop whose part is currently shown.
     private SetupStop shown;
     private Runnable onChange = () -> {
     };
@@ -229,11 +238,11 @@ public class SetupTab extends Component {
 
     /// Draws the route map.
     ///
-    /// @param steps        The learning flow's steps.
-    /// @param summary      What each section is set to and what is wrong in it.
-    /// @param stepProblems What is wrong with a step, by its index.
-    /// @param stop         The stop chosen.
-    /// @param canAdd       Whether a step may be added after the step chosen, from the map.
+    /// @param steps        The learning flow's steps to show on the map.
+    /// @param summary      Each section's summary and problem.
+    /// @param stepProblems The problem with each step, by index.
+    /// @param stop         The chosen stop.
+    /// @param canAdd       Whether the map offers a button to add a step after the chosen step.
     public void showMap(final List<FlowStep> steps,
                         final SetupSummary summary,
                         final Map<Integer, String> stepProblems,
@@ -242,8 +251,8 @@ public class SetupTab extends Component {
         map.show(steps, summary, stepProblems, stop, canAdd);
     }
 
-    /// Shows the part of the setup a stop on the map is, alone, from its top where it is another stop's. A
-    /// step is shown in the step's part.
+    /// Shows the part of the setup for a stop on the map, hiding all the others. Any step is shown in the
+    /// step part. When the stop changes, the page scrolls back to the top.
     ///
     /// @param stop The stop.
     public void show(final SetupStop stop) {
@@ -255,7 +264,7 @@ public class SetupTab extends Component {
         shown = stop;
     }
 
-    /// Puts the focus on the part shown, e.g. where a readiness check's fix is made.
+    /// Puts the keyboard focus on a stop's part, e.g. to take the user to where a readiness check's fix is made.
     ///
     /// @param stop The stop whose part is shown.
     public void focus(final SetupStop stop) {
@@ -264,29 +273,31 @@ public class SetupTab extends Component {
                 : parts.get(stop.getSection())).getElement().focus();
     }
 
-    /// Puts the focus on the time for each run, among the limits on a learning run under Learning steps,
-    /// where a suggestion says to change them. Learning steps is shown first.
+    /// Puts the keyboard focus on the time limit for a learning run, under Learning steps, e.g. when a
+    /// suggestion says to change the limits. The caller must show Learning steps first.
     public void focusLimits() {
         attemptBudget.focus();
     }
 
     // ---- AI model and instructions ----
 
-    /// @return The model picker, which its controller attaches a document picker's controller to.
+    /// @return The model picker, for a document picker controller to attach to.
     public DropDownBox getModelBox() {
         return model;
     }
 
-    /// @return The target schema's picker, which its controller attaches a document picker's controller to.
+    /// @return The target schema picker, for a document picker controller to attach to.
     public DropDownBox getTargetSchemaBox() {
         return targetSchema;
     }
 
-    /// Warns that the target schema's root may hold more than one kind of element, every one of which
-    /// would be read as a record (task 7, W1-5), or says nothing.
+    /// Shows or hides a warning that the target schema's root element may hold more than one kind of child
+    /// element. Every child of the output's root is treated as one record, so a header or other non-record
+    /// child would be wrongly counted as a record.
     ///
-    /// @param root     The root element's name; null to say nothing.
-    /// @param children The elements it may hold.
+    /// @param root     The root element's name; null to hide the warning.
+    /// @param children The child elements the root may hold. The warning is shown only if there are two or
+    ///                 more.
     public void setRootHoldsSeveralKinds(final String root, final List<String> children) {
         if (root == null || children.size() < 2) {
             targetSchemaNote.setVisible(false);
@@ -299,38 +310,39 @@ public class SetupTab extends Component {
         targetSchemaNote.setVisible(true);
     }
 
-    /// @return Whether the document learns.
+    /// @return Whether learning is switched on.
     public LearningMode getLearningMode() {
         return learningMode.getValue();
     }
 
-    /// @param mode Whether the document learns.
+    /// @param mode Whether learning is switched on.
     public void setLearningMode(final LearningMode mode) {
         learningMode.setValue(mode);
     }
 
-    /// @return The instructions every question carries.
+    /// @return The instructions included in every question to the model.
     public String getInstructions() {
         return instructions.getValue();
     }
 
-    /// @param text The instructions every question carries.
+    /// @param text The instructions included in every question to the model.
     public void setInstructions(final String text) {
         instructions.setValue(text);
     }
 
-    /// Puts the focus on the model picker, where a document with none is sent to choose one.
+    /// Puts the keyboard focus on the model picker, e.g. when the user follows a fix for a missing model.
     public void focusModel() {
         model.focus();
     }
 
     // ---- Learning steps ----
 
-    /// Shows the learning flow's steps on the route map, or hides them.
+    /// Sets whether the learning flow's steps are shown on the route map, updating the show/hide link and the
+    /// Load default setup button to match.
     ///
-    /// @param shown   Whether they are shown.
-    /// @param canHide Whether they may be hidden again: not where they are the document's own, or something
-    ///                is wrong with them.
+    /// @param shown   Whether the steps are shown.
+    /// @param canHide Whether they may be hidden again. They may not if they do not match a built-in flow, or
+    ///                if something is wrong with them.
     public void setStepsShown(final boolean shown, final boolean canHide) {
         stepsToggle.setVisible(!shown || canHide);
         stepsToggle.setText(shown
@@ -342,22 +354,22 @@ public class SetupTab extends Component {
         loadDefault.setVisible(shown);
     }
 
-    /// Opens the Advanced options of some sections, e.g. those holding something not as a new document has it
-    /// ([AdvancedSettings]); the others are left as they are.
+    /// Expands the Advanced options of the given sections, e.g. those with settings that differ from a new
+    /// document's ([AdvancedSettings]). Other sections are left as they are.
     ///
-    /// @param sections The sections.
+    /// @param sections The sections to expand.
     public void openAdvanced(final Set<SetupSection> sections) {
         sections.forEach(section -> NullSafe.consume(advanced.get(section), disclosure -> disclosure.setOpen(true)));
     }
 
-    /// Folds every section's Advanced options, e.g. before another document is read.
+    /// Collapses every section's Advanced options, e.g. before another document is read.
     public void foldAdvanced() {
         advanced.values().forEach(disclosure -> disclosure.setOpen(false));
     }
 
-    /// Says which default setup the flow is exactly, or that it is the document's own.
+    /// Shows which built-in flow the steps match exactly, or that they are the document's own.
     ///
-    /// @param example The example the steps are, or null for none.
+    /// @param example The built-in flow the steps match, or null if they match none.
     public void setStartingPoint(final FlowExample example) {
         approachStatus.setText(example == null
                 ? "This is the document's own approach. Load a default setup to replace it."
@@ -365,9 +377,9 @@ public class SetupTab extends Component {
                   + "document's own.");
     }
 
-    /// What is wrong with the flow as a whole, under Learning steps.
+    /// Shows any problem with the flow as a whole, under Learning steps.
     ///
-    /// @param problem What is wrong, or null for nothing.
+    /// @param problem The problem, or null if there is none.
     public void setFlowProblem(final String problem) {
         flowProblem.setText(problem == null
                 ? ""
@@ -375,33 +387,33 @@ public class SetupTab extends Component {
         flowProblem.setVisible(problem != null);
     }
 
-    /// @return The step's part, which its controller attaches to.
+    /// @return The step part, for its controller to attach to.
     public ApproachSection getApproach() {
         return approach;
     }
 
-    /// @return The tries a step has where it doesn't say.
+    /// @return The default number of tries for a step that does not set its own.
     public int getMaxAttempts() {
         return maxAttempts.getIntValue();
     }
 
-    /// @param value The tries a step has where it doesn't say.
+    /// @param value The default number of tries for a step that does not set its own.
     public void setMaxAttempts(final int value) {
         maxAttempts.setValue(value);
     }
 
-    /// @return The time one run may take, in milliseconds.
+    /// @return The time limit for one learning run, in milliseconds.
     public long getAttemptBudgetMs() {
         return MillisDurations.toMillis(attemptBudget.getValue(), readAttemptBudgetMs);
     }
 
-    /// @param value The time one run may take, in milliseconds.
+    /// @param value The time limit for one learning run, in milliseconds.
     public void setAttemptBudgetMs(final long value) {
         readAttemptBudgetMs = value;
         attemptBudget.setValue(MillisDurations.toDuration(value));
     }
 
-    /// @return The tokens one run may spend, or null for no limit, which the field shows as zero.
+    /// @return The token limit for one learning run, or null for no limit (shown in the field as zero).
     public Long getTokenBudget() {
         final long tokens = tokenBudget.getValue();
         return tokens == 0
@@ -409,33 +421,33 @@ public class SetupTab extends Component {
                 : tokens;
     }
 
-    /// @param value The tokens one run may spend, or null for no limit, shown as zero.
+    /// @param value The token limit for one learning run, or null for no limit (shown in the field as zero).
     public void setTokenBudget(final Long value) {
         tokenBudget.setValue(value == null
                 ? 0
                 : value);
     }
 
-    /// @return The largest sample shown, in bytes.
+    /// @return The maximum size of the sample shown to the model, in bytes.
     public int getSampleSizeLimit() {
         return sampleSizeLimit.getIntValue();
     }
 
-    /// @param value The largest sample shown, in bytes.
+    /// @param value The maximum size of the sample shown to the model, in bytes.
     public void setSampleSizeLimit(final int value) {
         sampleSizeLimit.setValue(value);
     }
 
     // ---- Quality checks ----
 
-    /// @return The checks' list, which its controller attaches to.
+    /// @return The list of checks, for its controller to attach to.
     public CheckList getCheckList() {
         return checkList;
     }
 
-    /// Shows which starting set the checks are, and what it asks.
+    /// Shows which preset the checks match, and its description.
     ///
-    /// @param value The set, or null where the checks are the document's own.
+    /// @param value The preset, or null if the checks match no preset.
     public void setPreset(final CheckPreset value) {
         preset.setValue(value, false);
         presetDescription.setText(value == null
@@ -443,49 +455,49 @@ public class SetupTab extends Component {
                 : value.getDescription());
     }
 
-    /// @return The share of lines kept back, a fraction in [0, 1].
+    /// @return The share of lines held back for testing, a fraction in [0, 1].
     public double getHeldOutFraction() {
         return ScoreValues.fromPercent(heldOutFraction.getIntValue());
     }
 
-    /// @param fraction The share of lines kept back, a fraction in [0, 1].
+    /// @param fraction The share of lines held back for testing, a fraction in [0, 1].
     public void setHeldOutFraction(final double fraction) {
         heldOutFraction.setValue(ScoreValues.toPercent(fraction));
     }
 
     // ---- Approving new translations ----
 
-    /// @return Whether what is learned is approved first.
+    /// @return Whether a new translation is used as soon as it passes or must be approved first.
     public PromotionMode getPromotionMode() {
         return promotionMode.getValue();
     }
 
-    /// @param mode Whether what is learned is approved first.
+    /// @param mode Whether a new translation is used as soon as it passes or must be approved first.
     public void setPromotionMode(final PromotionMode mode) {
         promotionMode.setValue(mode);
     }
 
-    /// @return The least records a stream must bring for its translation to be trusted.
+    /// @return The minimum number of records a stream must have to be learned from.
     public int getMinRecordsToLearn() {
         return minRecordsToLearn.getIntValue();
     }
 
-    /// @param records The least records a stream must bring for its translation to be trusted.
+    /// @param records The minimum number of records a stream must have to be learned from.
     public void setMinRecordsToLearn(final int records) {
         minRecordsToLearn.setValue(records);
     }
 
-    /// @param on Whether the flow has the fallback, serving marked Unknowns when the transform can't be
-    ///           finished; else the feed pauses for a person.
+    /// @param on Whether the flow has the fallback step, which serves marked Unknown events for records the
+    ///           transform cannot handle. Without it, the session pauses for a person.
     public void setFallback(final boolean on) {
         fallback.setValue(on, false);
         fallbackText.setVisible(on);
     }
 
-    /// Says that the fallback doesn't apply to the target schema, or says nothing.
+    /// Shows or hides a note that the fallback does not apply to the target schema. The fallback writes
+    /// event-logging's marked Unknown events, so it cannot be used with any other schema.
     ///
-    /// @param schema The target schema's name, where it isn't event-logging, whose marked Unknowns the
-    ///               fallback writes; null where the fallback applies.
+    /// @param schema The target schema's name if it is not event-logging; null to hide the note.
     public void setFallbackNotApplying(final String schema) {
         if (schema == null) {
             fallbackNote.setVisible(false);
@@ -498,32 +510,34 @@ public class SetupTab extends Component {
 
     // ---- Monitoring translations in use ----
 
-    /// @return The score below which a translation in use is flagged, a fraction in [0, 1].
+    /// @return The rolling score below which a translation in use is flagged, a fraction in [0, 1].
     public double getRelearnThreshold() {
         return ScoreValues.fromPercent(relearnThreshold.getIntValue());
     }
 
-    /// @param fraction The score below which a translation in use is flagged, a fraction in [0, 1].
+    /// @param fraction The rolling score below which a translation in use is flagged, a fraction in [0, 1].
     public void setRelearnThreshold(final double fraction) {
         relearnThreshold.setValue(ScoreValues.toPercent(fraction));
     }
 
-    /// @return The most records kept per translation to check later ones against.
+    /// @return The maximum number of records kept per translation (the regression corpus) to check later
+    ///         translations against.
     public int getRegressionCap() {
         return regressionCap.getIntValue();
     }
 
-    /// @param records The most records kept per translation to check later ones against.
+    /// @param records The maximum number of records kept per translation (the regression corpus) to check
+    ///                later translations against.
     public void setRegressionCap(final int records) {
         regressionCap.setValue(records);
     }
 
-    /// @return How long a stream waits before it is overdue, in milliseconds.
+    /// @return How long a stream may wait before it is flagged as overdue (raised), in milliseconds.
     public long getMaxDeferralAgeMs() {
         return MillisDurations.toMillis(maxDeferralAge.getValue(), readMaxDeferralAgeMs);
     }
 
-    /// @param value How long a stream waits before it is overdue, in milliseconds.
+    /// @param value How long a stream may wait before it is flagged as overdue (raised), in milliseconds.
     public void setMaxDeferralAgeMs(final long value) {
         readMaxDeferralAgeMs = value;
         maxDeferralAge.setValue(MillisDurations.toDuration(value));
@@ -531,24 +545,25 @@ public class SetupTab extends Component {
 
     // ---- Callbacks ----
 
-    /// @param onChange Run when the user changes a setting the controller only reads back.
+    /// @param onChange Run when the user changes a simple setting that needs no special handling; the
+    ///                 controller reads it back with the getters.
     public void setOnChange(final Runnable onChange) {
         this.onChange = onChange;
     }
 
-    /// @param onStop Told the stop chosen on the route map.
+    /// @param onStop Called with the stop the user chooses on the route map.
     public void setOnStop(final Consumer<SetupStop> onStop) {
         map.setOnSelect(onStop);
     }
 
-    /// @param onLoadDefault Given the Load default setup button, where the menu of the default setups opens
-    ///                      (not when read only).
+    /// @param onLoadDefault Called with the Load default setup button's element when it is pressed, so the menu
+    ///                      of built-in flows can be opened next to it (never when read-only).
     public void setOnLoadDefault(final Consumer<Element> onLoadDefault) {
         this.onLoadDefault = onLoadDefault;
     }
 
-    /// @param onAddStep Given the route map's Add step button, where the menu of the kinds of step to add after
-    ///                  the step chosen opens.
+    /// @param onAddStep Called with the route map's Add step button element when it is pressed, so the menu of
+    ///                  kinds of step to add after the chosen step can be opened next to it.
     public void setOnAddStep(final Consumer<Element> onAddStep) {
         map.setOnAdd(onAddStep);
     }
@@ -558,23 +573,23 @@ public class SetupTab extends Component {
         this.onStepsToggle = onStepsToggle;
     }
 
-    /// @param onMaxAttempts Run when the user changes the tries a step has where it doesn't say.
+    /// @param onMaxAttempts Run when the user changes the default number of tries per step.
     public void setOnMaxAttempts(final Runnable onMaxAttempts) {
         this.onMaxAttempts = onMaxAttempts;
     }
 
-    /// @param onPreset Told the starting set of checks the user chooses.
+    /// @param onPreset Called with the preset of checks the user chooses.
     public void setOnPreset(final Consumer<CheckPreset> onPreset) {
         this.onPreset = onPreset;
     }
 
-    /// @param onFallback Told whether the user wants marked Unknowns served when the transform can't be
-    ///                   finished.
+    /// @param onFallback Called with whether the user wants marked Unknown events served when the transform
+    ///                   cannot be finished.
     public void setOnFallback(final Consumer<Boolean> onFallback) {
         this.onFallback = onFallback;
     }
 
-    /// @param onFallbackText Run when the user asks for the fallback's question text.
+    /// @param onFallbackText Run when the user asks to see the fallback step's question text.
     public void setOnFallbackText(final Runnable onFallbackText) {
         this.onFallbackText = onFallbackText;
     }

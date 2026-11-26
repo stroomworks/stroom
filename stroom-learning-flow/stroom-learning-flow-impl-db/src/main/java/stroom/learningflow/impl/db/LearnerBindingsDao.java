@@ -35,9 +35,12 @@ import java.util.UUID;
 
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowBinding.LEARNING_FLOW_BINDING;
 
-/// The bindings of A41 and A124 as rows: a learner's binding, and any draft awaiting review to take its
-/// place. A promotion is one insert and a rebinding one update, so two nodes promoting for two learners
-/// do not contend.
+/// The database implementation of [LearnerBindings], which stores what serves each learner: its live
+/// binding and any draft awaiting review to replace it.
+///
+/// Bindings are kept in their own table rather than in the Learning Flow document, which holds only what a
+/// person authors. A promotion is one insert and a rebinding one update, so two nodes promoting for two
+/// different learners do not contend with each other.
 @Singleton
 public class LearnerBindingsDao implements LearnerBindings {
 
@@ -74,13 +77,14 @@ public class LearnerBindingsDao implements LearnerBindings {
                         binding(record))));
     }
 
-    /// A learner has at most one binding that serves it (audit finding W7-2). Where one already does,
-    /// appending another that would serve it as well returns the one that is there instead of writing a
-    /// second: a node whose cache has not yet seen another node's promotion must not add a rival to it.
+    /// Adds a binding for a learner. A learner has at most one live (non-draft) binding, so if it already
+    /// has a different one, that existing binding is returned and nothing is written. This stops a node
+    /// whose cache has not yet seen another node's promotion from adding a second live binding.
     ///
-    /// The table says the same thing — `learning_flow_binding_live` is unique over the learner while the
-    /// binding is not a draft — so two nodes racing here lose the race in the database rather than
-    /// between these lines. This is what keeps the loser's work out, with the row it lost to in hand.
+    /// The table enforces the same rule: the `learning_flow_binding_live` unique key covers the learner
+    /// while a binding is not a draft, so if two nodes race here the database rejects the second insert.
+    /// The check in this method means the losing node gets back the binding it lost to rather than an
+    /// error.
     @Override
     public Binding append(final Learner learner, final String docUuid, final Binding binding) {
         return JooqUtil.transactionResult(connProvider, context -> {
@@ -100,14 +104,14 @@ public class LearnerBindingsDao implements LearnerBindings {
         });
     }
 
-    /// A binding the learner does not have is appended rather than lost: a promotion must not be dropped
-    /// because its row was pruned between the run and the write.
+    /// Updates a learner's binding. If the learner does not have it, it is inserted instead, so that a
+    /// promotion is not lost because its row was removed between the run and the write.
     ///
-    /// **Checked against the version the binding was read at** (audit finding W7-3). Two writers of one
-    /// binding are serialised on the row, but the lock alone did not stop the second writing every field
-    /// back from a copy taken before the first: a node writing a binding from its cache
-    /// reverted a rebind another node had made to the pipeline and the snapshot. The version in the
-    /// `WHERE` is what makes the second writer see what the first wrote instead of writing over it.
+    /// **The update is checked against the version the binding was read at.** Two writers of one binding
+    /// are serialised by the row lock, but the lock alone would let the second writer overwrite every field
+    /// with a copy taken before the first writer's change. For example, a node writing a binding from its
+    /// cache could revert another node's change to the binding's pipeline and snapshot. If the version has
+    /// moved on, nothing is written and false is returned.
     @Override
     public boolean replace(final Learner learner, final String docUuid, final Binding binding) {
         return JooqUtil.transactionResult(connProvider, context -> {
@@ -118,8 +122,8 @@ public class LearnerBindingsDao implements LearnerBindings {
                     .fetchOptional(LEARNING_FLOW_BINDING.VERSION);
             if (current.isPresent() && binding.getVersion() != null
                 && !binding.getVersion().equals(current.get())) {
-                // The row has moved since this copy was read: what is there now is somebody else's more
-                // recent work, and a stale copy must not be forced over it.
+                // The row has changed since this copy was read. The stored row is more recent, so the
+                // stale copy must not overwrite it.
                 return false;
             }
             final int updated = context.update(LEARNING_FLOW_BINDING)
@@ -207,7 +211,7 @@ public class LearnerBindingsDao implements LearnerBindings {
                 .recordBoundary(recordBoundary(boundaryElement, boundaryChildren, boundaryArray,
                         boundaryDepth))
                 .snapshot(record.get(LEARNING_FLOW_BINDING.SNAPSHOT_ID))
-                // What a later replace checks it against (W7-3)
+                // The version that a later replace checks against.
                 .version(record.get(LEARNING_FLOW_BINDING.VERSION))
                 .build();
     }
@@ -224,9 +228,8 @@ public class LearnerBindingsDao implements LearnerBindings {
         return NullSafe.get(binding, Binding::getPipeline, DocRef::getName);
     }
 
-    /// The boundary a row holds, in whichever of its three shapes it was written
-    /// (`docs/learning-flow-mixed-record-elements.md`): the inverse of writing a boundary's four columns,
-    /// shared by every table that keeps one.
+    /// Rebuilds a record boundary from its four columns, whichever of its three forms (element, children
+    /// or array) it was written in. It is also used by [OutputsDao], which stores a boundary the same way.
     ///
     /// @param element  The element that is one record, or null.
     /// @param children The element whose children are records, or null.
@@ -257,9 +260,9 @@ public class LearnerBindingsDao implements LearnerBindings {
         return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getArray);
     }
 
-    /// How deep the records the boundary names sit, which is part of the boundary and not derivable from
-    /// it: a binding read back without it would write a fragment that splits in the wrong place (§12 item
-    /// 25).
+    /// How deep the records named by the boundary sit. This cannot be derived from the rest of the boundary,
+    /// so it must be stored: a binding read back without it would produce a fragment that splits the input
+    /// in the wrong place.
     private static Integer depth(final Binding binding) {
         return NullSafe.get(binding, Binding::getRecordBoundary, RecordBoundary::getDepth);
     }

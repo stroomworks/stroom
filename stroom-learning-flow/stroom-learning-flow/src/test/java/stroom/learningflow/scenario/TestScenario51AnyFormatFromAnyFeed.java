@@ -33,30 +33,23 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 51: **one document, any format, any feed.**
+/// Tests one Learning Flow document, allowing every parser, learning feeds of several different formats.
 ///
-/// Every format scenario before this one narrows `allowedElements` to the single parser its format
-/// needs — `DSParser` for the text formats, `JSONParser` for JSON — so none of them asks the question
-/// this one does: given every parser it might use, does the stage *choose* the right one for the feed in
-/// front of it, and learn something that scores?
+/// The other format tests narrow `allowedElements` to the one parser their format needs (`DSParser` for
+/// text, `JSONParser` for JSON). This one offers every parser, as a person setting up Learning Flow would,
+/// since they do not know what the next feed will be: they configure one document and point feeds at it.
+/// The document used is the configuration the demo content pack ships, so this test also shows that the
+/// pack's settings work.
 ///
-/// That is what a person setting this up actually has. They do not know what the next feed will be, so
-/// they cannot narrow the list; they configure one document and point feeds at it. This scenario is
-/// that document, and it is the configuration the demo content pack ships — proved here first, so the
-/// pack is a thing that has been seen to work rather than a plausible arrangement of settings.
+/// There are four feeds, each in its own format and with its own pipeline (as a Content Template makes
+/// them), and so its own learner and binding: delimited text with a header, JSON lines, syslog in two forms,
+/// and fixed-width columns with no delimiter. They share one document, one flow and one set of scorers.
 ///
-/// Four feeds, four formats, four pipelines, four bindings, each serving its own traffic: delimited text
-/// with a header, JSON lines, syslog in two forms, and fixed-width columns with nothing to split on.
-/// Each feed has its pipeline, as a Content Template makes them, and so its learner (A114, A127); one
-/// document, one flow, one set of scorers.
-///
-/// **What a scripted model can and cannot prove.** The replies here are canned, so the *choice* of
-/// parser is this scenario's and not a model's. What is proved is everything around that choice: that
-/// the chain question offers the whole list, that the split question is shaped for the input kind that
-/// follows from it, that a `JSONParser` is asked for no configuration while a `DSParser` is, that one
-/// scorer set judges all four, and that each promotes on its own evidence and writes its format's
-/// golden events. Whether a model picks well from that list is the live run's to answer (design 03
-/// §2, phase B), and this scenario is what makes that run worth doing.
+/// The model's replies are scripted, so the choice of parser is made by the test, not by a model. What is
+/// tested is everything around that choice: the chain question offers the whole list, the split question
+/// suits the input kind the chosen parser produces, a `JSONParser` is asked for no configuration while a
+/// `DSParser` is, one set of scorers judges all four, and each promotes on its own evidence and writes its
+/// format's expected events. Whether a real model chooses well is for a live run against a model to show.
 class TestScenario51AnyFormatFromAnyFeed {
 
     private static final String DOC = "doc-1";
@@ -79,11 +72,10 @@ class TestScenario51AnyFormatFromAnyFeed {
     private static final String FIXED_XSLT = Scenarios.resource("fixed-width.xsl");
     private static final String FIXED_EVENTS = Scenarios.resource("fixed-width.events.xml");
 
-    /// Each feed learns its own binding, and each binding writes the format's golden events.
+    /// Each feed's learner learns its own binding, and each binding writes the format's expected events.
     ///
-    /// The document is the same one throughout — each feed's learner binds its own binding (A124) and each
-    /// serves its own feed — so what is proved is not four documents that each work but *one* that works
-    /// four times over, on inputs that share nothing but the schema they must end at.
+    /// The document is the same one throughout, so this shows one document working for four inputs that
+    /// share nothing but the event schema they are translated to, not four documents that each work.
     @Test
     void oneDocumentLearnsEveryFormatItIsPointedAt() {
         final Scenarios scenarios = new Scenarios();
@@ -132,8 +124,7 @@ class TestScenario51AnyFormatFromAnyFeed {
                     return scenarios.learnerBindings.forLearner(learner(feed)).get(0);
                 })
                 .toList();
-        // And none of the four would have waited (design 04 §7, phase 2): every record of every format
-        // cleared the bar, so no stream is left waiting once its task is decided again.
+        // None of the four streams is left waiting, because every record of every format cleared the bar.
         assertThat(scenarios.deferrals.forDocument(DOC))
                 .describedAs("what phase 4 would have deferred")
                 .isEmpty();
@@ -175,12 +166,12 @@ class TestScenario51AnyFormatFromAnyFeed {
                                   final Script script) {
         final long next = scenarios.learnerBindings.all().size() + 1L;
         final StageRun run = scenarios.process(script, learner(feed), doc, stream(next, feed, data)).learned();
-        // Exhausted, or a scripted reply nobody reached would pass in silence and the run would have
-        // asked something other than what this scenario says it asks.
+        // Check every scripted reply was used. Otherwise a reply nobody reached would pass silently, and the
+        // run would have asked something other than what this test says it asks.
         script.verifyExhausted();
-        // And the chain question carried every parser the document allows. This is the part a scripted
-        // model can prove: that the stage *offers* the whole list and shapes everything after it around
-        // the answer. Which one it picks is the model's judgement, and only a live run proves that.
+        // The chain question offered every element the document allows. A scripted model can show that the
+        // stage offers the whole list and shapes everything after it around the answer; which element a real
+        // model picks can only be shown by a live run.
         assertThat(script.asked()).first()
                 .isInstanceOfSatisfying(Chain.class, chain -> assertThat(chain.allowedElements())
                         .containsExactlyInAnyOrderElementsOf(DemoDocument.ALLOWED_ELEMENTS));
@@ -192,11 +183,10 @@ class TestScenario51AnyFormatFromAnyFeed {
         assertThat(Scenarios.canonical(run.output())).isEqualTo(Scenarios.canonical(events));
     }
 
-    /// **The demo document**: the settings the content pack ships, taken from the one place they are
-    /// written down so that the pack cannot drift from the scenario that proves it.
+    /// Builds the demo document: the settings the content pack ships, taken from [DemoDocument], the one
+    /// place they are defined, so that the pack cannot drift from this test.
     ///
-    /// What this test adds to [DemoDocument] is the two things a scenario needs and a pack does not:
-    /// an identity, and no model — the script answers instead.
+    /// This test adds only a UUID and a name. No model is configured, because the script answers instead.
     private static LearningFlowDoc doc() {
         return DemoDocument.configure(Scenarios.document())
                 .uuid(DOC)

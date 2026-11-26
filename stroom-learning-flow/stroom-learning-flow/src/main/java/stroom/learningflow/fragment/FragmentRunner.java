@@ -29,32 +29,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/// Runs a written fragment over an input and says what each of its elements made of it: what the
-/// promotion gate judges (§7.4), and what a bound stream goes through.
+/// Runs a stored fragment over an input and reports what each of its elements made of it. The promotion
+/// gate uses it to judge a candidate fragment, and the Smart Pipeline element uses it to serve streams
+/// with a binding.
 ///
-/// Two implementations, and the difference matters. [PipelineFragmentRunner] runs the fragment as a
-/// pipeline — the real elements, the real pools, the real filters — and is what a node uses, so that
-/// what is judged is what will run. `StandInFragmentRunner`, a test fixture, walks the chain with the
-/// module's step runners instead, which needs no node, no stores beyond the content ones and no pipeline
-/// scope, and is what the Tier 1 scenarios run on (design 02 §2).
+/// There are two implementations. [PipelineFragmentRunner] runs the fragment as a real pipeline, with
+/// the real elements, pools and filters, and is what a node uses, so that what is judged is what will
+/// run. `StandInFragmentRunner`, a test fixture, walks the chain with the module's step runners instead.
+/// It needs no node, no stores beyond the content stores and no pipeline scope, and is used by the
+/// Tier 1 (module-only) scenario tests.
 ///
-/// They are meant to agree, and where they do not the pipeline is right. A Tier 2 scenario holds them to
-/// the same events on the same fragment and input, because a stand-in that has drifted from the thing it
-/// stands in for is worse than no stand-in: it would pass a candidate the pipeline refuses.
+/// The two are meant to agree, and where they do not, the pipeline runner is correct. A Tier 2 scenario
+/// test checks that they produce the same events for the same fragment and input, because a stand-in that
+/// has drifted from the real thing is worse than none: it would pass a candidate the pipeline refuses.
 public interface FragmentRunner {
 
-    /// @param boundary What one record is in the stream (A35), as the binding carries it, for the scorers
-    ///                 that count records; null where none was settled.
-    /// @return One attempted step per element of the chain, in chain order. A step that produced nothing
-    /// leaves the later ones unrun; the caller sees that from the last step's result.
+    /// Runs a fragment over the whole of an input held in memory, for judging.
+    ///
+    /// @param boundary What one record is in the stream, as the binding records it, for the scorers that
+    ///                 count records; null where none was settled.
+    /// @return One attempted step per scored element of the chain, in chain order. A step that produced
+    /// nothing leaves the later ones unrun; the caller sees that from the last step's result.
     List<Attempted> run(DocRef fragment, String input, RecordBoundary boundary);
 
-    /// The same, with each element given the code of a snapshot in place of the document it references
-    /// (A70): how an as-processed reprocess runs what produced an output, after the fragment has moved
-    /// on in place.
+    /// The same as [#run(DocRef, String, RecordBoundary)], but with elements given code from a snapshot
+    /// in place of the documents they reference. This is how an as-processed reprocess runs the exact
+    /// configuration that produced an output, after the fragment's documents have since been changed.
     ///
-    /// @param code Element id to the code it is to run with; an element not named runs what it
-    ///             references.
+    /// @param code A map from element id to the code it is to run with; an element not in the map runs
+    ///             the document it references.
     default List<Attempted> run(final DocRef fragment,
                                 final String input,
                                 final RecordBoundary boundary,
@@ -65,17 +68,18 @@ public interface FragmentRunner {
         return run(fragment, input, boundary);
     }
 
-    /// Serve a stream (design 04 §3, *streams of any size*): run the fragment over it as it is read, judge
-    /// each record of the tail's output as it is produced, hand each that clears the bar on, and stop at
-    /// the first that does not. Nothing larger than a record is held. The stream is read once.
+    /// Serves a stream of any size. The fragment is run over the stream as it is read, each record of the
+    /// chain's output is judged as it is produced, each record that clears the bar is passed on, and the
+    /// run stops at the first record that does not. Nothing larger than a record is held in memory, and
+    /// the stream is read once.
     ///
     /// @param fragment   The fragment.
-    /// @param input      The stream, as bytes, UTF-8.
-    /// @param boundary   What one record is in the stream (A35), as the binding carries it; null where none
-    ///                   was settled.
-    /// @param judge      The bar, record by record.
-    /// @param downstream Where records that clear the bar go; null where nothing is to be handed on.
-    /// @return What the run came to.
+    /// @param input      The stream, as UTF-8 bytes.
+    /// @param boundary   What one record is in the stream, as the binding records it; null where none was
+    ///                   settled.
+    /// @param judge      Applies the bar to each record.
+    /// @param downstream Where records that clear the bar go; null where nothing is to be passed on.
+    /// @return The outcome of the run.
     default ServedStream serve(final DocRef fragment,
                                final InputStream input,
                                final RecordBoundary boundary,
@@ -84,39 +88,38 @@ public interface FragmentRunner {
         throw new UnsupportedOperationException("This runner judges a run and does not serve one");
     }
 
-    /// The events the chain's tail emitted on the run just made, where the runner has a pipeline under
-    /// it to emit them. This is how a stream's output reaches the supervisor's own downstream without
-    /// the fragment being run a second time: the run that is judged is the run that is served.
+    /// The events the end of the chain emitted on the latest run, where the runner runs a real pipeline.
+    /// This is how a stream's output reaches the Smart Pipeline element's own downstream without the
+    /// fragment being run a second time: the run that is judged is the run that is served.
     ///
-    /// A runner keeps one run's events and the next run replaces them, so a caller that wants a
-    /// particular run's output takes it immediately after that run. The stage does: it takes them where
-    /// it builds the judgement they belong to, and carries them with it, because which run is the one
-    /// being served is not known until the decision is made — a candidate that fails the floor is run
-    /// and discarded, and its events must not be the ones played on.
+    /// A runner keeps only the latest run's events, so a caller that wants a particular run's output must
+    /// take it immediately after that run. The stage does this when it builds the judgement the events
+    /// belong to, and keeps them with it, because which run will be served is not known until the decision
+    /// is made. For example, a candidate that fails the floor is run and discarded, and its events must
+    /// not be the ones passed on.
     ///
-    /// Empty from `StandInFragmentRunner`, which has no pipeline and no events: Tier 1 asserts on what
-    /// each step wrote and has no downstream to play anything on to.
+    /// `StandInFragmentRunner` returns empty, because it has no pipeline and so no events; Tier 1 tests
+    /// check what each step wrote and have no downstream.
     default Optional<EventList> lastOutput() {
         return Optional.empty();
     }
 
-    /// What each of the fragment's own elements was given and wrote on the run just made, a list per
-    /// record in record order (A30, design 01 §11.7).
+    /// What each of the fragment's own elements was given and wrote on the latest run, as one entry per
+    /// record in record order.
     ///
-    /// This is what lets a learned chain be stepped. A supervised stage looks, from the outside, like
-    /// one element that takes a stream and emits events; everything that decided the shape of them —
-    /// the parser's records, the transform's output — happens inside it and is invisible. The stepper
-    /// shows these beneath the stage, so that `DSParser → XSLTFilter` steps like any other pair.
+    /// This is what lets a learned chain be stepped. From the outside, the Smart Pipeline element looks
+    /// like one element that takes a stream and emits events; the parser's records and the transform's
+    /// output are produced inside it and would otherwise be invisible. The stepper shows these records
+    /// beneath the element, so that `DSParser → XSLTFilter` steps like any other pair of elements.
     ///
-    /// **Taken**, not read: the capture is handed over once and the runner is left holding nothing.
+    /// The records are **taken**, not just read: they are returned once and the runner is left holding
+    /// nothing. This matters because a stage makes many decisions without running a fragment at all (a
+    /// draft awaiting review, a learner that has given up, a learner nothing serves), and a caller that
+    /// merely read the last capture would be given the previous stream's chain and show it as this one's.
+    /// Taking them means a second call correctly finds nothing.
     ///
-    /// That is the whole of the method's safety. A stage decides many things without running a fragment
-    /// at all — a draft awaiting review, a learner given up, a learner nothing serves — and
-    /// a caller that merely *read* the last capture would be handed the previous stream's chain and
-    /// show it as this one's. Taking it means the second ask finds nothing, which is the truth.
-    ///
-    /// Empty from `StandInFragmentRunner`, which walks the chain rather than running a pipeline and so
-    /// has no elements to name. Tier 1 asserts on what each step wrote; the stepper is Tier 2's.
+    /// `StandInFragmentRunner` returns empty, because it walks the chain rather than running a pipeline
+    /// and so has no elements to name. Stepping is only tested in Tier 2.
     default List<FragmentRecord> takeRecords() {
         return List.of();
     }
@@ -127,9 +130,9 @@ public interface FragmentRunner {
 
     /// What the fragment's elements made of one record of the stream, in chain order.
     ///
-    /// The ids are namespaced by the stage that ran them before they reach a person, because a fragment
-    /// may hold an `XSLTFilter` and so may the pipeline it is running inside; here they are the
-    /// fragment's own.
+    /// The element ids here are the fragment's own. They are prefixed with the id of the Smart Pipeline
+    /// element before they are shown to a person, because a fragment may hold an `XSLTFilter` and so may
+    /// the pipeline it is running inside.
     record FragmentRecord(List<NestedElementData> elements) {
 
     }

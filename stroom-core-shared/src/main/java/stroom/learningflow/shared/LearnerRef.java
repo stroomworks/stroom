@@ -22,10 +22,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// A learner as the Supervisor names it (design 06 §4.7, A114): the pipeline a Learning Flow element
-/// runs in and the element's id in its chain. A row the Supervisor lists carries the learner it belongs
-/// to, and a request about the row sends it back, since what a learner keeps is keyed by it (design 06
-/// phase J slice 2b).
+/// Identifies a learner: the pipeline a Smart Pipeline element runs in and the element's id in that pipeline.
+/// Each row the Supervisor lists carries the learner it belongs to, and a request about the row sends it back,
+/// because everything the server keeps about a learner is keyed by these two values.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LearnerRef {
 

@@ -35,16 +35,16 @@ import java.util.stream.Collectors;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.ParserConfigurationException;
 
-/**
- * What a schema says an element may contain, read from the XSD text and written for a model: the
- * children in order, optional ones marked {@code ?}, repeating ones {@code *} or {@code +}, a choice as
- * {@code (A | B)}, and a required child that is itself complex opened one level so that a candidate can
- * finish the element in one step rather than be told one missing child per turn — the ladder the first
- * live run climbed (design 02 §6.2); a required child whose type is an enumeration carries its values as
- * {@code [A | B]}, so that a candidate is not told the element it added holds a value the schema does
- * not know. Resolves named and inline complex types, simple types, {@code ref}, {@code group} and
- * {@code extension}; anything it cannot follow it leaves out rather than guesses at.
- */
+/// Describes what a schema says an element may contain, read from the XSD text and written for a model
+/// to read when a candidate fails schema validation.
+///
+/// The children are listed in order, with optional ones marked `?`, repeating ones `*` or `+`, and a
+/// choice shown as `(A | B)`. A required child that is itself complex is expanded one level, so that a
+/// candidate can complete the element in one attempt rather than being told about one missing child per
+/// turn. A required child whose type is an enumeration lists its values as `[A | B]`, so that the model
+/// does not add the element with a value the schema does not allow. Named and inline complex types,
+/// simple types, `ref`, `group` and `extension` are resolved; anything it cannot follow is left out
+/// rather than guessed at.
 public final class ContentModels {
 
     private static final String XS = XMLConstants.W3C_XML_SCHEMA_NS_URI;
@@ -52,22 +52,18 @@ public final class ContentModels {
     private static final int PARENTS_SHOWN = 3;
     private static final int VALUES_SHOWN = 8;
 
-    /**
-     * Every element declaration by local name; a name declared in several places has several.
-     */
+    /// Every element declaration by local name; a name declared in several places has several.
     private final Map<String, List<Element>> elements = new HashMap<>();
     private final Map<String, Element> complexTypes = new HashMap<>();
     private final Map<String, Element> groups = new HashMap<>();
-    /**
-     * The values of every named simple type that is an enumeration.
-     */
+    /// The values of every named simple type that is an enumeration.
     private final Map<String, List<String>> enumerations = new HashMap<>();
     private final Set<String> targetNamespaces = new LinkedHashSet<>();
 
-    /**
-     * A schema text that does not parse is left out: the hint is best effort, and the validator has its
-     * own opinion of the group's documents.
-     */
+    /// Indexes the given schema texts. A schema text that does not parse is ignored, because the
+    /// description is only a best-effort hint and the validator reports its own errors.
+    ///
+    /// @param schemaTexts The XSD texts of the schemas to describe.
     public ContentModels(final Collection<String> schemaTexts) {
         for (final String text : schemaTexts) {
             parse(text).ifPresent(document -> {
@@ -80,19 +76,21 @@ public final class ContentModels {
         }
     }
 
-    /**
-     * The namespace the group's elements live in, where the schemas agree on one.
-     */
+    /// The target namespace of the schemas' elements, where the schemas all agree on one.
+    ///
+    /// @return The namespace, or empty where there is none or more than one.
     public Optional<String> namespace() {
         return targetNamespaces.size() == 1
                 ? Optional.of(targetNamespaces.iterator().next())
                 : Optional.empty();
     }
 
-    /**
-     * The content model of every element declared with this name, each placed by the element that
-     * declares it, so that "Door" is told apart where it means two things.
-     */
+    /// Describes the content model of every element declared with this name, each labelled with the
+    /// element or type that contains the declaration, so that an element such as "Door" can be told apart
+    /// where it is declared in two places with different meanings.
+    ///
+    /// @param elementName The element's local name.
+    /// @return One description per distinct declaration.
     public List<String> describe(final String elementName) {
         final List<String> described = new ArrayList<>();
         for (final Element declaration : elements.getOrDefault(elementName, List.of())) {
@@ -112,12 +110,11 @@ public final class ContentModels {
         return described;
     }
 
-    /// The elements a named element may contain, in the order the schema declares them, with the
-    /// alternatives of a choice flattened into the list: enough to walk a schema from its root, which is
-    /// what the generated structural summary does (task 7, decision D2 option G).
+    /// Lists the elements a named element may contain, in the order the schema declares them, with the
+    /// alternatives of a choice flattened into the list. This is enough to walk a schema from its root,
+    /// which is what the generated summary of the target schema's structure does.
     ///
-    /// Only the children themselves, not what they in turn hold: those are found by asking about each
-    /// child in its turn.
+    /// Only the direct children are listed; what they contain is found by calling this for each child.
     ///
     /// @param elementName The element's local name.
     /// @return Its children's names, distinct, in order; empty where the schema declares no such element
@@ -144,18 +141,16 @@ public final class ContentModels {
         }
     }
 
-    /**
-     * How the notation reads, said once alongside the first hint.
-     */
+    /// Explains the notation used in the descriptions, to be given once alongside the first hint.
+    ///
+    /// @return The legend.
     public static String legend() {
         return "? optional, * any number, + one or more, ( | ) one of, { } what a required child holds, "
                + "[ | ] the values allowed";
     }
 
-    /**
-     * Where the element is one option of a choice in its parent, that choice — so that a model told what a
-     * costly element needs can also see what it could have used instead.
-     */
+    /// Where the element is one option of a choice in its parent, describes that choice, so that a model
+    /// told what a complex element needs can also see what it could have used instead.
     private Optional<String> alternativesTo(final Element declaration) {
         for (Node node = declaration.getParentNode(); node != null; node = node.getParentNode()) {
             if (!(node instanceof final Element element) || !XS.equals(element.getNamespaceURI())) {
@@ -181,18 +176,20 @@ public final class ContentModels {
         return holder;
     }
 
-    /**
-     * The content models of the elements that could hold both the child that appeared and the children
-     * the validator expected instead — the parents a message like <i>invalid content starting with
-     * 'Description'; one of {Type} expected</i> does not name.
-     */
+    /// Describes the elements that could contain both the child that appeared and the children the
+    /// validator expected instead. These are the parents that a validation message such as *invalid
+    /// content starting with 'Description'; one of {Type} expected* does not name.
+    ///
+    /// @param child    The child element that appeared.
+    /// @param expected The children the validator expected instead.
+    /// @return Up to three descriptions of likely parents.
     public List<String> describeParentsOf(final String child, final Collection<String> expected) {
         final Set<String> withChild = new LinkedHashSet<>(expected);
         withChild.add(child);
         final Candidates holdingChild = parentsHolding(withChild, expected);
-        // A parent that requires what the validator expected is the likeliest; one that holds the child
-        // that appeared as well is likelier still. A child the model invented is in no parent, and the
-        // expected names alone still say where it stood.
+        // A parent that requires what the validator expected is the most likely; one that can also hold
+        // the child that appeared is more likely still. A child the model invented is in no parent, but
+        // the expected names alone still identify where it was.
         final Candidates holdingExpected = parentsHolding(new LinkedHashSet<>(expected), expected);
         final List<String> described = !holdingChild.required().isEmpty()
                 ? holdingChild.required()
@@ -272,9 +269,8 @@ public final class ContentModels {
         }
     }
 
-    /**
-     * The particles an element declaration holds: through its inline type or the named one it points at.
-     */
+    /// The particles an element declaration holds, through its inline type or the named type it refers
+    /// to.
     private List<Particle> particles(final Element declaration) {
         final Element type = declaration.hasAttribute("type")
                 ? complexTypes.get(local(declaration.getAttribute("type")))
@@ -319,7 +315,7 @@ public final class ContentModels {
                             continue;
                         }
                         if ("sequence".equals(alternative.getLocalName()) || "all".equals(alternative.getLocalName())) {
-                            // One alternative that is itself a run of children stays a run, not more alternatives.
+                            // An alternative that is itself a sequence stays a sequence, not more alternatives.
                             final List<Particle> run = new ArrayList<>();
                             collect(alternative, run, depth);
                             if (run.size() == 1) {
@@ -355,7 +351,7 @@ public final class ContentModels {
         final String name = declaration.hasAttribute("ref")
                 ? local(declaration.getAttribute("ref"))
                 : declaration.getAttribute("name");
-        // A required complex child is opened one level, so that finishing the parent does not stop at it.
+        // A required complex child is expanded one level, so that completing the parent does not stop at it.
         List<Particle> within = null;
         if (depth == 0 && minOccurs(declaration) > 0) {
             final Element type = declaration.hasAttribute("type")
@@ -369,9 +365,7 @@ public final class ContentModels {
                 valuesOf(declaration));
     }
 
-    /**
-     * The values a required element may hold where its type is an enumeration, named or inline.
-     */
+    /// The values a required element may hold where its type is an enumeration, named or inline.
     private List<String> valuesOf(final Element declaration) {
         if (minOccurs(declaration) == 0) {
             return List.of();
@@ -401,9 +395,8 @@ public final class ContentModels {
         return values;
     }
 
-    /**
-     * A single particle of a choice, collected through the same walk as a container holds it.
-     */
+    /// Wraps a single alternative of a choice in a container, so it can be collected by the same walk as
+    /// any other container.
     private static Element wrap(final Element alternative) {
         final Element holder = alternative.getOwnerDocument().createElementNS(XS, "xs:sequence-alternative");
         holder.appendChild(alternative.cloneNode(true));
@@ -499,10 +492,8 @@ public final class ContentModels {
         }
     }
 
-    /**
-     * One thing an element may contain: a named child, a choice among {@code options}, or — as one option
-     * of a choice — a {@code run} of children in order.
-     */
+    /// One thing an element may contain: a named child, a choice among `options`, or, as one option of a
+    /// choice, a `run` of children in order.
     private record Particle(String name,
                             List<Particle> options,
                             int minOccurs,

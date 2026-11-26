@@ -52,12 +52,16 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/// One pipeline's learning, on its Learning Status tab: its name and feed; where it stands, said in a sentence
-/// with a chip, and what can be done about it as buttons, the rest under More ([FeedSituation]); the learned
-/// translation it runs, as a link; and a note to the AI. Folded under **Learning history** ([Disclosure]),
-/// which is open while a run needs someone ([FeedSituation#needsHistory]): which learning run is shown, how far
-/// it has got ([FeedProgress]) and its conversation ([ConversationList]), and, on a second tab shown only where
-/// streams wait, the streams waiting for the feed. [FeedDetailController] fills it.
+/// Shows one pipeline's learning, on the pipeline's Learning Status tab. [FeedDetailController] fills it.
+///
+/// At the top are the pipeline's name and feed; its state as a chip and a sentence, with the actions that
+/// apply as buttons and the rest under More ([FeedSituation]); the learned translation it uses, as a link;
+/// how a new translation was judged and who reviewed it; and a box for leaving a note to the AI.
+///
+/// Beneath, the collapsible **Learning history** section ([Disclosure]), which is expanded automatically while
+/// a run needs someone ([FeedSituation#needsHistory]), holds a choice of learning run, how far the chosen run
+/// got ([FeedProgress]) and its conversation with the AI ([ConversationList]). A second tab, shown only while
+/// streams are waiting, lists the streams waiting for the feed.
 public class FeedDetail extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -150,7 +154,7 @@ public class FeedDetail extends Component {
     private String toneClass;
     private String chipClass;
 
-    /// Makes the detail, showing no feed.
+    /// Creates the detail, showing no feed.
     public FeedDetail() {
         initWidget(BINDER.createAndBindUi(this));
         tabBar.addTab(CONVERSATION);
@@ -168,7 +172,7 @@ public class FeedDetail extends Component {
         showNothing();
     }
 
-    /// Shows that no feed is chosen.
+    /// Shows that no feed is selected.
     public void showNothing() {
         nothing.setVisible(true);
         content.setVisible(false);
@@ -176,8 +180,8 @@ public class FeedDetail extends Component {
 
     /// Shows a feed.
     ///
-    /// @param name        Its name.
-    /// @param feed Its feed and type, or empty where not known yet.
+    /// @param name The pipeline's name.
+    /// @param feed The feed and stream type, or empty if not known yet.
     public void showFeed(final String name, final String feed) {
         nothing.setVisible(false);
         content.setVisible(true);
@@ -185,10 +189,10 @@ public class FeedDetail extends Component {
         subtitle.setInnerText(feed);
     }
 
-    /// Shows where the feed stands: its chip and sentences, and its main actions as buttons, with More where
-    /// there are others.
+    /// Shows the feed's situation: its chip and sentences, any report on why its run stopped, and its main
+    /// actions as buttons, with a More button if there are others.
     ///
-    /// @param situation Where it stands.
+    /// @param situation The feed's situation.
     public void setSituation(final FeedSituation situation) {
         if (toneClass != null) {
             status.removeStyleName(toneClass);
@@ -206,7 +210,8 @@ public class FeedDetail extends Component {
         boolean first = true;
         for (final FeedAction action : situation.getPrimary()) {
             final Button button = new Button(action.getLabel());
-            // The first is what the situation most asks for; the others are Stroom's plain buttons
+            // The first button is the action the situation most calls for, so it is styled as the primary
+            // button; the others are Stroom's plain buttons
             if (first) {
                 button.addStyleName("button--contained-primary");
             }
@@ -224,9 +229,9 @@ public class FeedDetail extends Component {
         }
     }
 
-    /// Says which zone the pipeline reads timestamps in, and where it comes from, or nothing.
+    /// Shows which time zone the pipeline reads timestamps in, and what set it, or hides the line.
     ///
-    /// @param said The sentence, or null to say nothing.
+    /// @param said The sentence, or null to hide the line.
     public void setTimeZone(final String said) {
         timeZone.setText(said == null
                 ? ""
@@ -234,11 +239,11 @@ public class FeedDetail extends Component {
         timeZone.setVisible(said != null);
     }
 
-    /// Shows how the run's translation was judged, one line per check, and who approved or rejected it
-    /// (Track 2 step 4), or hides them where there is nothing to say.
+    /// Shows how the run's translation was judged, one line per check, and who approved or rejected it, so
+    /// that a person deciding whether to approve it can see the evidence. Hidden if there is nothing to show.
     ///
     /// @param lines      One line per check.
-    /// @param reviewedBy Who decided about it and when, or null where nobody has.
+    /// @param reviewedBy Who approved or rejected it and when, or null if nobody has.
     public void setEvidence(final List<String> lines, final String reviewedBy) {
         evidence.clear();
         for (final String line : lines) {
@@ -251,10 +256,10 @@ public class FeedDetail extends Component {
         evidencePart.setVisible(!lines.isEmpty() || reviewedBy != null);
     }
 
-    /// Shows the learned translation the feed runs, as a link that opens it, or hides the line where it
-    /// has none.
+    /// Shows the learned translation the feed uses, as a link that opens it, or hides the line if it has
+    /// none.
     ///
-    /// @param name The translation's name, or null where there is none.
+    /// @param name The translation's name, or null if there is none.
     public void setTranslation(final String name) {
         translationLine.setVisible(name != null);
         if (name != null) {
@@ -263,16 +268,17 @@ public class FeedDetail extends Component {
         }
     }
 
-    /// @param onOpenTranslation Told when the learned translation's link is pressed.
+    /// @param onOpenTranslation Run when the learned translation's link is pressed.
     public void setOnOpenTranslation(final Runnable onOpenTranslation) {
         translation.setOnClick(onOpenTranslation);
     }
 
-    /// The learning runs to choose from, newest first.
+    /// Sets the learning runs to choose from, newest first. The choice and the progress strip are hidden if
+    /// there are none.
     ///
-    /// @param runs   The runs; empty where it has had none.
-    /// @param shown  The id of the run shown, or null for none.
-    /// @param labels What each run is called in the list.
+    /// @param runs   The runs; empty if the feed has had none.
+    /// @param shown  The id of the run to select, or null for none.
+    /// @param labels Gives the text shown for each run in the list.
     public void setRuns(final List<SupervisorAttempt> runs,
                         final Long shown,
                         final Function<SupervisorAttempt, String> labels) {
@@ -300,7 +306,7 @@ public class FeedDetail extends Component {
             step.addStyleName("feed-detail__step");
             step.addStyleName(stepClass(item.getState()));
             step.setTitle(stateWords(item));
-            // Where it stands, for a screen reader, which is not shown the step's colour
+            // The step's state as text for screen readers, since the colour that shows it is not announced
             final InlineLabel state = new InlineLabel(stateWords(item) + ": ");
             state.addStyleName("sr-only");
             step.add(state);
@@ -311,10 +317,11 @@ public class FeedDetail extends Component {
         progressNote.setVisible(shown.getNote() != null);
     }
 
-    /// Whether there is any learning history to show, and whether streams wait, whose tab is shown only then.
+    /// Sets whether the Learning history section is shown at all, and whether the waiting streams' tab is
+    /// shown, which it is only while streams are waiting.
     ///
-    /// @param shown   Whether Learning history is shown at all: not for a feed with no runs and nothing waiting.
-    /// @param waiting Whether any streams wait for the feed.
+    /// @param shown   Whether Learning history is shown; it is not for a feed with no runs and nothing waiting.
+    /// @param waiting Whether any streams are waiting for the feed.
     public void setHistory(final boolean shown, final boolean waiting) {
         history.setVisible(shown);
         tabBarPanel.setVisible(waiting);
@@ -323,7 +330,7 @@ public class FeedDetail extends Component {
         }
     }
 
-    /// @param open Whether Learning history is unfolded.
+    /// @param open Whether Learning history is expanded.
     public void setHistoryOpen(final boolean open) {
         history.setOpen(open);
         if (open && isWaitingShown()) {
@@ -333,14 +340,15 @@ public class FeedDetail extends Component {
 
     /// Shows the run's conversation.
     ///
-    /// @param rows       Its questions, in order.
-    /// @param fresh      Whether they are another run's than shown before.
-    /// @param answerable Whether a question may be answered.
+    /// @param rows       The run's questions, in order.
+    /// @param fresh      Whether they belong to a different run from the one shown before.
+    /// @param answerable Whether questions may be answered.
     public void setConversation(final List<Row> rows, final boolean fresh, final boolean answerable) {
         conversation.setRows(rows, fresh, answerable);
     }
 
-    /// The note box: hidden for a feed nothing can be said to (its pipeline deleted).
+    /// Shows or hides the note box, and shows the number of notes in use on its View notes button. The box is
+    /// hidden when no note can be left, e.g. because the pipeline has been deleted.
     ///
     /// @param shown Whether a note can be left.
     /// @param notes How many notes are in use.
@@ -354,13 +362,14 @@ public class FeedDetail extends Component {
                 : "View notes, " + PlainWords.count(notes, "note") + " in use");
     }
 
-    /// Brings the note box into view, and puts the focus in it, where a suggestion says to leave the AI a note.
+    /// Scrolls the note box into view and puts the focus in it, for when a suggestion says to leave the AI a
+    /// note.
     public void focusNote() {
         note.getElement().scrollIntoView();
         note.setFocus(true);
     }
 
-    /// Empties the note box, once its note is sent.
+    /// Empties the note box, once its note has been sent.
     public void clearNote() {
         note.setValue("");
     }
@@ -370,37 +379,39 @@ public class FeedDetail extends Component {
         waitingPane.setWidget(waitingList);
     }
 
-    /// @param onAction Told each action the user takes.
+    /// @param onAction Called with each action the user takes.
     public void setOnAction(final Consumer<FeedAction> onAction) {
         this.onAction = onAction;
     }
 
-    /// @param onSuggestion Told the action of each suggestion the user follows.
+    /// @param onSuggestion Called with the action of each suggestion the user follows.
     public void setOnSuggestion(final Consumer<SuggestionAction> onSuggestion) {
         this.onSuggestion = onSuggestion;
     }
 
-    /// @param onMore Given the More button, where the menu of the other actions opens.
+    /// @param onMore Called with the More button's element, at which to open the menu of other actions.
     public void setOnMore(final Consumer<Element> onMore) {
         this.onMore = onMore;
     }
 
-    /// @param onRun Told the learning run the user chooses.
+    /// @param onRun Called with the learning run the user chooses.
     public void setOnRun(final Consumer<SupervisorAttempt> onRun) {
         this.onRun = onRun;
     }
 
-    /// @param onShowPrompt Told the number of a question whose prompt, as it was sent, the user asks for.
+    /// @param onShowPrompt Called with the number of a question when the user asks to see the prompt exactly
+    ///                     as it was sent to the AI.
     public void setOnShowPrompt(final Consumer<Integer> onShowPrompt) {
         conversation.setOnShowPrompt(onShowPrompt);
     }
 
-    /// @param onAnswer Told the number of a question the user answers or changes the answer of.
+    /// @param onAnswer Called with the number of a question the user wants to answer, or whose answer they
+    ///                 want to change.
     public void setOnAnswer(final Consumer<Integer> onAnswer) {
         conversation.setOnAnswer(onAnswer);
     }
 
-    /// @param onSendNote Told the note the user sends.
+    /// @param onSendNote Called with the note the user sends.
     public void setOnSendNote(final Consumer<String> onSendNote) {
         this.onSendNote = onSendNote;
     }
@@ -410,17 +421,18 @@ public class FeedDetail extends Component {
         this.onShowNotes = onShowNotes;
     }
 
-    /// @param onWaitingShown Run when the waiting streams' tab is shown, for them to be read.
+    /// @param onWaitingShown Run when the waiting streams' tab comes into view, so that they can be fetched.
     public void setOnWaitingShown(final Runnable onWaitingShown) {
         this.onWaitingShown = onWaitingShown;
     }
 
-    /// @return Whether the waiting streams' tab is shown, and Learning history open to show it.
+    /// @return Whether the waiting streams' tab is selected and Learning history is shown and expanded, so
+    ///         that the tab is in view.
     public boolean isWaitingShown() {
         return waitingPane.isVisible() && history.isOpen() && history.isVisible();
     }
 
-    // Why the run stopped, under Details and Suggestions; a suggestion the tab can act on is a link
+    // Shows why the run stopped, under Details and Suggestions. A suggestion the tab can act on is a link
     private void showReport(final FeedSituation situation) {
         details.clear();
         for (final String line : situation.getDetails()) {
@@ -441,14 +453,15 @@ public class FeedDetail extends Component {
         suggestionsPart.setVisible(!situation.getSuggestions().isEmpty());
     }
 
-    // A line of a report as text that wraps: its own class, in place of a label's, which doesn't
+    // A line of a report as text. It replaces the label's own style with one that lets the text wrap, which
+    // the label's style does not
     private static Label text(final String line) {
         final Label text = new Label(line);
         text.setStyleName("feed-detail__report-text");
         return text;
     }
 
-    // One line of a list, as a list's item
+    // Wraps a widget as an item of an ARIA list
     private static AriaPanel item(final Widget content) {
         final AriaPanel item = new AriaPanel();
         item.setRole("listitem");

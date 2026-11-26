@@ -51,11 +51,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// Design 02 §5, scenario 46 (design 03 §3): JSON, as lines and as one document with an array of records. The
-/// chain is a JSONParser, which takes no configuration, so no configuration question is asked for it; the
-/// split question asks which array holds the records — root for the lines — and the transform is asked with
-/// the parser's real XML. The lines promote outright; the document, whose records sit inside an array, binds
-/// provisionally until the record boundary reaches the stage's count (design 01 §10.1).
+/// Tests learning JSON, both as JSON lines and as one document holding an array of records.
+///
+/// The chain uses a JSONParser, which takes no configuration, so no configuration question is asked for it.
+/// The split question asks which array holds the records (`root` for JSON lines), and the transform question
+/// shows the parser's real XML output. Both forms are promoted outright, because the record boundary the split
+/// names is what the records are counted by. The tests also check that the transform is run one record at a
+/// time, which stops it producing one event for a whole document or reading values from outside its record.
 class TestScenario46Json {
 
     private static final String XSLT = Scenarios.resource("records.xsl");
@@ -108,8 +110,8 @@ class TestScenario46Json {
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
         assertThat(Scenarios.canonical(run.output())).isEqualTo(Scenarios.canonical(EVENTS));
-        // Chain, split, two targets — a login and a logout, told apart by their keys — and the transform; nothing
-        // for the parser, which takes no configuration.
+        // Chain, split, two targets (a login and a logout, told apart by their keys) and the transform. Nothing
+        // is asked for the parser, which takes no configuration.
         assertThat(script.asked()).hasSize(5);
         assertThat(script.asked()).noneMatch(question -> question instanceof Configuration c
                                                          && c.elementType().equals("JSONParser"));
@@ -124,12 +126,10 @@ class TestScenario46Json {
 
     @Test
     void theOneEventTransformOfRunSevenCannotBeWrittenOnceTheTransformSeesOneRecord() {
-        // Run 7 (design 02 §6.3): counted as one record, a transform emitting one event from the array's
-        // first item scored a yield of one per record and was promoted. Slice 19 made the count the
-        // array's items, so it read as one in twelve and was re-asked. Item 25 dissolves the trap
-        // altogether: the transform is shown one record and run over every record, so "the first item"
-        // *is* the record it was given, and the same stylesheet writes twelve events. A whole class of
-        // degeneracy stops being expressible when the transform can no longer see past its own record.
+        // A transform that emits one event from only the first item of the array would score well if the whole
+        // document were counted as one record. Because the transform is shown one record and run over every
+        // record, "the first item" is always the record it was given, so the same stylesheet writes twelve
+        // events. A transform that cannot see beyond its own record cannot make this mistake.
         final String firstItem = XSLT.replace("select=\"//map[string/@key = 'time']\"",
                 "select=\"(//map[string/@key = 'time'])[1]\"");
         assertThat(firstItem).describedAs("the stylesheet's loop was narrowed to the first item")
@@ -151,10 +151,9 @@ class TestScenario46Json {
 
     @Test
     void whereTheFlowHasNoTargetsYetTheTransformIsShownOneRecordOfEachKind() {
-        // A47: the escalating flow asks for a configuration before any target exists, so a stream of
-        // logins and logouts would otherwise show the model a login and a sentence saying the rest
-        // differ. Saying a second kind exists is not the same as showing it, and a stylesheet written
-        // from a login alone drops the logouts.
+        // The escalating flow asks for a configuration before any target exists. Without an example of each
+        // kind, the model would see a login and only a note that other records differ. A stylesheet written
+        // from a login alone drops the logouts, so one record of each other kind is shown as well.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.jsonScript("events", XSLT)
                 .expect(QuestionMatcher.chain()).reply("JSONParser -> XSLTFilter")
@@ -179,9 +178,9 @@ class TestScenario46Json {
 
     @Test
     void whereTheTargetsAlreadyShowEachKindTheQuestionDoesNotShowThemAgain() {
-        // A47's other half: under target-first every kind is already in front of the model as a record
-        // beside the event it must become, so repeating them in the question is a budget (A44) spent
-        // saying the same thing twice.
+        // Under the target-first flow every kind of record is already shown to the model beside the event it
+        // must become, so repeating the records in the question would spend tokens from the budget saying the
+        // same thing twice.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.jsonScript("events", XSLT)
                 .expect(QuestionMatcher.chain()).reply("JSONParser -> XSLTFilter")
@@ -200,8 +199,9 @@ class TestScenario46Json {
 
     @Test
     void aTransformThatWritesNothingForItsRecordIsStillShortOnYield() {
-        // What the yield scorer is still for: a transform run one record at a time can no longer emit one
-        // event and ignore the rest, but it can still write nothing at all for the record it was given.
+        // This is what the yield scorer is still needed for. A transform run one record at a time cannot emit
+        // one event and ignore the other records, but it can still write nothing at all for the record it is
+        // given.
         final String nothing = XSLT.replace("select=\"//map[string/@key = 'time']\"",
                 "select=\"(//map[string/@key = 'time'])[2]\"");
         final Scenarios scenarios = new Scenarios();
@@ -222,26 +222,26 @@ class TestScenario46Json {
 
     @Test
     void aTransformThatReachesOutsideItsRecordIsCaughtBecauseThePipelineWillNotGiveItThat() {
-        // §12 item 25, and the mistake it exists to catch: a stylesheet that reaches into the document's
-        // envelope for a value. Over the whole document the envelope is there, every event names its user
-        // and the candidate is perfect; the filter the fragment carries replicates the structure above a
-        // record but not the envelope's other contents, so run as the pipeline will run it every event
-        // names nobody and the document's own business rule refuses it. Scored over the whole document
-        // this would have been promoted and then produced nameless events for ever.
+        // A stylesheet that reaches outside its record into the document's envelope for a value. Over the whole
+        // document the envelope is there, every event names its user and the candidate looks perfect. But the
+        // split filter in the fragment keeps the structure above a record and not the envelope's other
+        // contents, so when run as the pipeline will run it every event names nobody, and the document's
+        // business rule refuses it. If it were scored over the whole document instead, it would be promoted and
+        // then produce events with no user for ever.
         final Scenarios scenarios = new Scenarios();
         final String readsTheEnvelope = XSLT.replace(
                 "select=\"string[@key = 'user']\"",
                 "select=\"//string[@key = 'source']\"");
-        // The targets come from this stylesheet run over the whole document, as the conversation runs it, so
-        // it answers every question the conversation puts: what it does not survive is the promotion gate,
-        // which runs the chain the way the fragment will.
+        // The script's targets are derived from this same stylesheet. The candidate is still refused the first
+        // time it is judged, because the session runs the transform over one record at a time, where the
+        // envelope is missing.
         final Script script = scenarios.jsonScript("events", readsTheEnvelope)
                 .expect(QuestionMatcher.chain()).reply("JSONParser -> XSLTFilter")
                 .expect(QuestionMatcher.split()).reply("events")
                 .expect(QuestionMatcher.configuration("XSLTFilter"))
                 .reply(Scenarios.fenced(readsTheEnvelope))
-                // The candidate spent, the flow's exhaustion step asks once more (design 04 §4): the same
-                // stylesheet fails the same way, and that is the end of it.
+                // With the only candidate spent, the flow's exhaustion step asks once more. The same stylesheet
+                // fails in the same way, and the session stops.
                 .expect(QuestionMatcher.admission("XSLTFilter"))
                 .reply(Scenarios.fenced(readsTheEnvelope));
 
@@ -249,7 +249,7 @@ class TestScenario46Json {
                 stream(1, DOCUMENT)).learned();
 
         script.verifyExhausted();
-        // Its candidates spent, the session parks for a person (A65): nothing is bound and the stream waits.
+        // With its candidates spent, the session is parked for a person: nothing is bound and the stream waits.
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Parked.class);
         assertThat(((Parked) run.decision()).reason())
                 .describedAs("caught where it is written rather than at the gate: the conversation shows the "
@@ -265,7 +265,7 @@ class TestScenario46Json {
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.jsonScript("events", XSLT)
                 .expect(QuestionMatcher.chain()).reply("JSONParser -> XSLTFilter")
-                // A key that is not an array's is refused; the array of records is accepted.
+                // A key that does not name an array is refused; the array of records is accepted.
                 .expect(QuestionMatcher.split().withoutFeedback()).reply("client")
                 .expect(QuestionMatcher.split().withFeedbackMentioning("No array with the key \"client\""))
                 .reply("events")
@@ -274,10 +274,10 @@ class TestScenario46Json {
         final StageRun run = scenarios.process(script, doc(), stream(1, DOCUMENT)).learned();
 
         script.verifyExhausted();
-        // Learned whole; the array the split named reaches the stage's count and the yield scorer (A35): the
-        // document brings twelve records, not the root's one map, so twelve events is a yield of one per
-        // record and the stream is promoted outright — where run 7 (design 02 §6.3) had one record, and a
-        // one-event transform promoted on it. The binding carries the array for the streams it will serve.
+        // The array the split named is what the stage and the yield scorer count records by. The document has
+        // twelve records, not one root map, so twelve events is a yield of one per record and the stream is
+        // promoted outright. A one-event transform cannot pass on a single-record count. The binding keeps the
+        // array as its record boundary for the streams it will serve.
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         assertThat(((Promoted) run.decision()).score()).isEqualTo(1.0);
         assertThat(((Promoted) run.decision()).binding().getRecordBoundary())
@@ -289,10 +289,10 @@ class TestScenario46Json {
         final List<Exchange> turns = run.transcript();
         assertThat(turns.get(1).question()).isInstanceOf(Split.class);
 
-        // §12 item 25: the fragment that will run this in a pipeline splits at the array's items, so the
-        // stylesheet sees one record and memory is bounded by the record and not by the stream. The depth
-        // is read from the parsed document, not assumed: the items of an array under a key sit one deeper
-        // than the children of a root.
+        // The fragment that runs this in a pipeline splits at the array's items, so the stylesheet sees one
+        // record at a time and memory use is bounded by the record rather than the stream. The depth is read
+        // from the parsed document, not assumed: the items of an array under a key sit one level deeper than
+        // the children of a root.
         assertThat(((Promoted) run.decision()).binding().getRecordBoundary().splitDepth()).hasValue(3);
         assertThat(((Promoted) run.decision()).binding().getRecordBoundary().getDepth())
                 .describedAs("the parser wraps its output in a records root, so an item of an array under "
@@ -309,10 +309,9 @@ class TestScenario46Json {
                 .extracting(property -> property.getName(), property -> property.getValue().getInteger())
                 .containsExactly(tuple("splitDepth", 3), tuple("splitCount", 1));
 
-        // And the fragment that now carries a filter is still a fragment this stage can run: the next
-        // stream of the learner is served by it, with no model call. The filter is the pipeline's to run —
-        // the runner passes over it, and running the chain per record as the pipeline does is what item
-        // 25 still owes — but a fragment it refused to run would break every bound markup feed on its
+        // A fragment containing a split filter must still be one the stage can run: the learner's next stream
+        // is served by it with no model call. The fragment runner here skips the filter and leaves it to the
+        // pipeline, but if it refused to run such a fragment, every bound XML or JSON feed would fail on its
         // second stream.
         final Script silent = Script.of();
         final StageRun served = scenarios.process(silent, run.doc(), stream(2, DOCUMENT)).learned();

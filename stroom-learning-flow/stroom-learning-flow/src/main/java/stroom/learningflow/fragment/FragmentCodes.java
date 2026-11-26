@@ -33,9 +33,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
-/// What a fragment is made of, as text (A61, A70): its structure, the code each of its elements runs
-/// with, and the versions of the documents all of that was read from. A snapshot is this, kept; a hand
-/// edit is this, differing from the snapshot in a version (A72).
+/// Reads a fragment as text: its structure, the code each of its elements runs with, and the versions of
+/// the documents all of that was read from. A snapshot, kept at each promotion so that a stream can be
+/// reprocessed exactly as it was first processed, is a stored copy of this. A hand edit of the fragment
+/// shows up as a version that differs from the snapshot's.
 public final class FragmentCodes {
 
     private final PipelineStore pipelineStore;
@@ -51,10 +52,10 @@ public final class FragmentCodes {
         this.xsltStore = xsltStore;
     }
 
-    /// Read a fragment as it stands.
+    /// Reads a fragment as it currently stands.
     ///
     /// @param fragment The fragment.
-    /// @return Its codes.
+    /// @return Its structure, code and document versions.
     public Codes read(final DocRef fragment) {
         final PipelineDoc pipeline = pipelineStore.readDocument(fragment);
         final PipelineData data = pipeline.getPipelineData();
@@ -74,20 +75,21 @@ public final class FragmentCodes {
                     versions.put(referenced.getUuid(), converter.getVersion());
                 }
                 default -> {
-                    // A document the fragment references that no element runs as code: a schema, a
-                    // feed. Its version is not what a hand edit of the fragment's code changes.
+                    // A document the fragment references that no element runs as code, such as a schema
+                    // or a feed. A hand edit of the fragment's code does not change its version, so it is
+                    // not recorded.
                 }
             }
         });
         return new Codes(JsonUtil.writeValueAsString(data, false), code, versions);
     }
 
-    /// The stylesheets a fragment's elements run, for the check of what a learned translation may use
-    /// (decision N1). [#read] loses which code is a stylesheet and which a text converter, and only a
-    /// stylesheet has a function library to reach anything with.
+    /// Reads the stylesheets a fragment's elements run, for the check that a learned translation uses only
+    /// permitted XSLT/XPath functions and instructions. [#read] does not record which code is a stylesheet
+    /// and which a text converter, and only a stylesheet can call functions.
     ///
     /// @param fragment The fragment.
-    /// @return Element id to the stylesheet it runs; empty where it runs none.
+    /// @return A map from element id to the stylesheet it runs; empty where it runs none.
     public Map<String, String> stylesheets(final DocRef fragment) {
         final PipelineDoc pipeline = pipelineStore.readDocument(fragment);
         final Map<String, String> stylesheets = new LinkedHashMap<>();
@@ -99,9 +101,9 @@ public final class FragmentCodes {
         return stylesheets;
     }
 
-    /// Each document the fragment's own properties reference, with the id of the element whose property
-    /// references it, in the order the properties are held. A property that references nothing is passed
-    /// over.
+    /// Calls the action for each document the fragment's own properties reference, with the id of the
+    /// element whose property references it, in the order the properties are held. A property that
+    /// references nothing is skipped.
     private static void eachReference(final PipelineData data, final BiConsumer<String, DocRef> action) {
         for (final PipelineProperty property : data.getAddedProperties()) {
             final DocRef referenced = property.getValue() == null
@@ -113,10 +115,12 @@ public final class FragmentCodes {
         }
     }
 
-    /// The versions alone, for asking whether a fragment has moved since a snapshot was taken.
+    /// Reads just the document versions, for checking whether a fragment has changed since a snapshot was
+    /// taken.
     ///
     /// @param fragment The fragment.
-    /// @return Document uuid to version, for the fragment and each document its elements run as code.
+    /// @return A map from document UUID to version, for the fragment and each document its elements run
+    /// as code.
     public Map<String, String> versions(final DocRef fragment) {
         return read(fragment).versions();
     }
@@ -126,8 +130,8 @@ public final class FragmentCodes {
     /// A fragment as text.
     ///
     /// @param structure The pipeline data, as JSON.
-    /// @param code      Element id to the code that element runs with.
-    /// @param versions  Document uuid to the version of it this was read from.
+    /// @param code      A map from element id to the code that element runs with.
+    /// @param versions  A map from document UUID to the version this was read from.
     public record Codes(String structure, Map<String, String> code, Map<String, String> versions) {
 
         public Codes {

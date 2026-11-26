@@ -20,12 +20,11 @@ import stroom.util.pipeline.scope.PipelineScoped;
 
 import org.xml.sax.ContentHandler;
 
-/**
- * Where a fragment's output goes when it is run as a nested pipeline: set by
- * {@link PipelineFragmentRunner} before each run and read by the {@link FragmentOutputFilter} it puts
- * at the fragment's tail. Pipeline-scoped because the nested pipeline is built in the supervisor's
- * scope and its elements are handed nothing else.
- */
+/// Holds the handler that a fragment's output goes to when it is run as a nested pipeline. It is set by
+/// [PipelineFragmentRunner] before each run and read by the [FragmentOutputFilter] that the runner adds
+/// to the end of the fragment. It is pipeline-scoped because the nested pipeline is built in the Smart
+/// Pipeline element's scope, and this is the only way to pass the handler to an element the pipeline
+/// factory creates.
 @PipelineScoped
 public class FragmentOutput {
 

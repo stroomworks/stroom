@@ -70,39 +70,40 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/// The fragment run as a pipeline (§12 item 2): the real elements, the real pools, the real filters, and
-/// what each of them made of the stream taken from the capture the build was given.
+/// The [FragmentRunner] used on a real node. It runs a fragment as a real Stroom pipeline, with the real
+/// elements, pools and filters, and reads what each element made of the stream from a capture.
 ///
-/// This is what a node judges a candidate and serves a binding with, and the reason it exists is that
-/// a stand-in can only be as right as the person who wrote it. The pipeline runs a `SplitFilter` for
-/// real, compiles a stylesheet through the pool for real, and applies whatever the fragment inherits
-/// from its parent — none of which the module's step runners do, and all of which decide whether a
-/// promoted binding works on the next stream.
+/// A node uses this both to judge a candidate fragment and to serve streams with a binding. Running the
+/// real pipeline matters because a stand-in is only as accurate as whoever wrote it: the pipeline really
+/// runs a `SplitFilter`, compiles a stylesheet through the pool, and applies whatever the fragment
+/// inherits from its parent. The module's step runners do none of these, and all of them decide whether
+/// a promoted binding works on the next stream.
 ///
-/// Each element's *input* is taken as the one before it wrote rather than from the capture, because the
-/// recorders above the parser report what they read by source span and a headless run has no span to ask
-/// for (see [HeadlessCapture]). The first element's input is the stream itself, which is what the
-/// input-coverage scorer needs (A11), and every element after it is given what its predecessor wrote —
-/// exactly the chain the scorers already read.
+/// When judging, each element's *input* is taken to be what the element before it wrote, rather than
+/// read from the capture, because the recorders above the parser report what they read by source
+/// location and a headless run has no source locations to ask for (see [HeadlessCapture]). The first
+/// element's input is the stream itself, which is what the input coverage scorer needs, and every later
+/// element is given its predecessor's output, which is the same chain the scorers read.
 public final class PipelineFragmentRunner implements FragmentRunner {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PipelineFragmentRunner.class);
 
-    /// What turns the text a stage is given into the events every element of a transformation-stage
-    /// fragment expects. A fragment learned over markup input (A35) holds no parser of its own — the
-    /// input is records already — but it is still handed a stream of bytes here, so one stands in front
-    /// of it. It is no part of the chain: the walk that says what each element made of
-    /// the input reads the fragment as the fragment has it.
+    /// The id of the XML parser added in front of a fragment that has no parser of its own. A fragment
+    /// learned over XML input holds no parser, because its input is already records, but this runner
+    /// still hands it a stream of bytes, so an XML parser is put in front to turn the text into events.
+    /// It is not part of the fragment's chain as far as scoring and stepping are concerned: those read
+    /// the fragment's own elements only.
     private static final String XML_PARSER_ID = "learningFlowFragmentParser";
 
-    /// Where the chain's tail writes, so that the events it makes can be played on to the supervisor's
-    /// own downstream rather than made a second time (see [FragmentRunner#lastOutput]).
+    /// The id of the [FragmentOutputFilter] added to the end of the chain, which captures the events the
+    /// chain produces so that they can be replayed to the Smart Pipeline element's own downstream rather
+    /// than produced a second time (see [FragmentRunner#lastOutput]).
     private static final String OUTPUT_ID = "learningFlowOutput";
-    /// Where a serving run taps the parser's records (design 04 §4).
+    /// The id of the [FragmentTapFilter] that a serving run adds below the parser to see each record.
     private static final String TAP_ID = "learningFlowTap";
 
-    /// Elements that shape the stream into records without changing what any record says: run by the
-    /// pipeline, not a step anything scores (§12 item 25).
+    /// Element types that divide the stream into records without changing what any record says. They
+    /// are run by the pipeline but are not treated as steps that are scored.
     private static final Set<String> SHAPING = Set.of(PipelineRuns.SPLIT_FILTER);
 
     private final PipelineStore pipelineStore;
@@ -117,8 +118,8 @@ public final class PipelineFragmentRunner implements FragmentRunner {
     private final TaskContextFactory taskContextFactory;
 
     private SimpleEventList lastOutput;
-    /// What the fragment's own elements made of the run just made, for a caller that must show it
-    /// (A30). Replaced by the next run, as [#lastOutput] is.
+    /// What the fragment's own elements were given and wrote on the latest run, for a caller that shows
+    /// the chain in the stepper. Replaced by the next run, as [#lastOutput] is.
     private List<FragmentRecord> lastRecords = List.of();
 
     @Inject
@@ -160,40 +161,40 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         final Map<String, PipelineElement> elements = elements(merged);
         final Map<String, String> next = next(fragment, merged);
 
-        // One capture per run: what this fragment did with this stream and nothing else.
+        // A new capture for each run, so it holds only what this fragment did with this stream.
         final HeadlessCapture capture = captureProvider.get();
         capture.setMaxRecords(PipelineRuns.MOST_RECORDS);
-        // Emptied before the run rather than after it, so that a run that throws leaves nothing of the
-        // run before it to be shown as though it were this one's.
+        // Cleared before the run rather than after it, so that if this run throws, the previous run's
+        // records are not shown as though they were this run's.
         lastRecords = List.of();
 
-        // And one recorder per run, for the caller that means to play the tail's events on rather than
-        // run the fragment again. Kept whatever the run came to, since a run that stopped has an empty
-        // list and not a stale one.
+        // A new event recorder for each run, for a caller that wants to replay the chain's output rather
+        // than run the fragment again. It is kept however the run ends, since a run that stopped leaves an
+        // empty list rather than a stale one.
         final SimpleEventListBuilder emitted = new SimpleEventListBuilder();
         lastOutput = (SimpleEventList) emitted.getEventList();
         final FragmentOutput fragmentOutput = fragmentOutputProvider.get();
         final ContentHandler borrowed = fragmentOutput.getHandler();
         fragmentOutput.setHandler(emitted);
 
-        // Somewhere for the elements to log. A candidate that will not compile says so through the
-        // receiver, and without one in place the first thing it says is a NullPointerException that
-        // takes the attempt with it. The one that was there is put back: this run is a judgement made
-        // inside somebody else's pipeline, and its errors are not theirs.
+        // Give the elements an error receiver to log to. A candidate that will not compile reports that
+        // through the receiver, and without one in place the report becomes a NullPointerException that
+        // fails the whole attempt. The previous receiver is restored afterwards, because this run happens
+        // inside another pipeline and its errors are not that pipeline's errors.
         final ErrorReceiverProxy errorReceiverProxy = errorReceiverProvider.get();
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
         final LoggingErrorReceiver logging = new LoggingErrorReceiver();
         errorReceiverProxy.setErrorReceiver(logging);
-        // And no code anybody is editing, for the same reason and with more teeth. Injected code is
+        // Likewise, clear any code injected by a person stepping the outer pipeline. Injected code is
         // keyed by element id and scoped to the pipeline, so a person stepping a pipeline whose
-        // XSLTFilter happens to be called `xsltFilter` — which is exactly what this feature names the
-        // transform in every fragment it writes — would have their edit compiled into the fragment in
-        // place of what was learned. The fragment runs what the fragment says. Put back afterwards:
-        // this run is made inside somebody else's pipeline and their edits are still theirs.
+        // XSLTFilter happens to be called `xsltFilter` (which is the id this feature gives the transform
+        // in every fragment it writes) would have their edit compiled into the fragment in place of what
+        // was learned. The fragment must run what its own documents say. The injected code is restored
+        // afterwards so that the person's edits are kept.
         final InjectedCode injectedCode = injectedCodeProvider.get();
         final Map<String, String> borrowedCode = injectedCode.asMap();
-        // Nothing anybody is editing — and, for a reprocess as it was processed, a snapshot's code in
-        // place of what the fragment's documents say today (A70).
+        // Replace it with no code, or, for an as-processed reprocess, with the code from the snapshot
+        // that originally produced the output, in place of what the fragment's documents say today.
         injectedCode.set(code);
         String failure = null;
         try {
@@ -202,12 +203,13 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             pipeline.process(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),
                     StandardCharsets.UTF_8.name());
         } catch (final LoggedException e) {
-            // Already said through the receiver, which is where the diagnostics are read from. A
-            // candidate that will not compile stops the pipeline in exactly this way, and stopping is
-            // the answer to the question being asked, not a failure of the asking.
+            // The error has already been reported through the receiver, which is where the diagnostics
+            // are read from. A candidate that will not compile stops the pipeline in exactly this way,
+            // and that is a valid result of the judgement, not a failure to make it.
             LOGGER.debug("Fragment {} stopped: {}", fragment.getName(), e.getMessage());
         } catch (final RuntimeException e) {
-            // Something nobody recorded. Kept, so that a step reporting nothing is not also silent.
+            // An error that no element reported. It is kept so that a step that produced nothing still
+            // has a reason to show.
             LOGGER.debug(() -> LogUtil.message("Fragment {} failed: {}", fragment.getName(), e.getMessage()), e);
             failure = e.getClass().getSimpleName() + ": " + e.getMessage();
         } finally {
@@ -232,11 +234,11 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                 continue;
             }
             final String output = written(capture, id);
-            // A step that produced nothing stops the chain, as the stand-in does — and takes the reason
-            // with it. Where a pipeline stops, the element that stopped it is often not the one that
-            // produced nothing: a stylesheet that will not compile refuses before the parser it sits
-            // below has written a single record. So the step that stops carries what every element from
-            // here on said, or the run would report a chain that stopped for no stated reason.
+            // A step that produced nothing ends the chain, as it does in the stand-in runner, and must
+            // carry the reason. The element that stopped the pipeline is often not the one that produced
+            // nothing: a stylesheet that will not compile fails before the parser above it has written a
+            // single record. So the stopping step carries the diagnostics of every element from here on,
+            // otherwise the run would report a chain that stopped for no stated reason.
             final List<String> speaking = output == null
                     ? remaining(id, next, elements)
                     : List.of(id);
@@ -244,11 +246,11 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                     PipelineRuns.diagnostics(capture, speaking, logging, output == null
                             ? failure
                             : null));
-            // Asked of the node's own element registry and not of the step runners, for the reason
-            // `parses` states: a fragment may hold a parser no runner stands in for — stroom's XML
-            // parser, the combined parser, anything a person put there by hand — and one mistaken for a
-            // filter has its output judged against the target schema by the scorers of meaning, which
-            // fails every stream of a chain that is working.
+            // Whether the element is a parser is asked of the node's element registry rather than the
+            // step runners (see `parses`). A fragment may hold a parser that no step runner covers
+            // (Stroom's XML parser, the combined parser, anything a person added by hand), and a parser
+            // mistaken for a filter would have its output judged against the target schema, which would
+            // fail every stream of a working chain.
             steps.add(new Attempted(element.getType(), parses(element), current, result, boundary, null));
             if (output == null) {
                 break;
@@ -266,9 +268,10 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return elements;
     }
 
-    /// The fragment's links, as what each element hands on to.
+    /// The fragment's links, as a map from each element's id to the id of the element it feeds.
     ///
-    /// @throws IllegalStateException Where an element hands on to more than one: a fragment is a chain.
+    /// @throws IllegalStateException If an element feeds more than one element, since a fragment must be a
+    /// single chain.
     private static Map<String, String> next(final DocRef fragment, final PipelineData merged) {
         final Map<String, String> next = new HashMap<>();
         for (final PipelineLink link : merged.getAddedLinks()) {
@@ -290,16 +293,17 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         final PipelineData merged = pipelineDataCache.get(fragmentDoc);
         final Map<String, PipelineElement> elements = elements(merged);
         final Map<String, String> next = next(fragment, merged);
-        // No capture: a serving run keeps nothing of what it read, which is the point of it. The tail's
-        // events go to the gate, which judges each record and hands on what clears.
+        // No capture is used, because a serving run must not hold the stream in memory. The chain's
+        // output goes to the record gate, which judges each record and passes on those that clear the bar.
         lastRecords = List.of();
         lastOutput = null;
-        // The parser's records, tapped as they are cut, so that a record whose output falls short can be
-        // shown to a session as the parser had it. Only where the fragment has a parser: a fragment fed
-        // records has nothing of its own to tap.
+        // Tap the parser's records as they are produced, so that a record whose output falls short can be
+        // shown to a learning session as the parser produced it. This is only done where the fragment has
+        // its own parser; a fragment that is given records has nothing of its own to tap.
         final boolean parsed = parses(elements.get(next.get(PipelineRuns.SOURCE)));
-        // Cut where the split cuts, so that what the tap counts is what the transform was asked to turn
-        // into events — the two ends of the completeness sum (Track 1 task 2, fix 1)
+        // Divide records at the same depth as the split does, so that the records the tap counts are the
+        // ones the transform was asked to turn into events. The two counts are compared when checking
+        // completeness.
         final RecordTap tap = new RecordTap(boundary == null
                 ? 1
                 : boundary.splitDepth().orElse(1));
@@ -323,22 +327,23 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         injectedCode.set(Map.of());
         RecordShortfall shortfall = null;
         String failure = null;
-        // What the run read, so that a stream the parser made nothing of can be told from an empty one
+        // Count the content the run reads, so that a stream the parser made nothing of can be told apart
+        // from an empty one.
         final ContentCountInputStream counted = new ContentCountInputStream(input);
         try {
             final Pipeline pipeline = pipelineFactoryProvider.get()
                     .create(tapped(runnable(fragment, merged, elements, next), next.get(PipelineRuns.SOURCE), parsed),
                             taskContextFactory.current());
-            // A byte order mark is not content, and the whole-text path has always taken it off before the
-            // fragment saw the stream; a fragment given the bytes as they are is given them without it.
+            // A byte order mark is not content. The path that reads the whole stream as text removes it
+            // before the fragment sees it, so it is removed here too.
             pipeline.process(new BOMRemovalInputStream(counted, StandardCharsets.UTF_8.name()),
                     StandardCharsets.UTF_8.name());
             gate.finish();
         } catch (final SAXException e) {
             failure = e.getClass().getSimpleName() + ": " + e.getMessage();
         } catch (final RuntimeException e) {
-            // The gate stops the run by throwing the shortfall out of the pipeline, which may wrap it;
-            // it is a deferral by type, so the layers that let deferrals through let it through.
+            // The gate stops the run by throwing a RecordShortfall out of the pipeline, which may wrap it.
+            // It is a DeferTaskException, so the layers that let deferrals through also let it through.
             final DeferTaskException deferral = DeferTaskException.unwrap(e);
             if (deferral instanceof final RecordShortfall stopped) {
                 shortfall = stopped;
@@ -372,18 +377,18 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                 read(parsed, tap, logging, next.get(PipelineRuns.SOURCE), counted.content()));
     }
 
-    /// What the parser made of the input.
+    /// Summarises what the parser made of the input.
     ///
     /// The parser's errors are counted from its own indicators rather than from the diagnostics, because
-    /// those are de-duplicated and capped at twenty before anyone outside sees them (audit finding
-    /// W4-2): a stream with a hundred unmatched lines would otherwise report twenty.
+    /// the diagnostics are de-duplicated and capped at twenty: a stream with a hundred unmatched lines
+    /// would otherwise report twenty errors.
     ///
     /// @param parsed  Whether the fragment has a parser of its own.
-    /// @param tap     The tap on the parser's fork, which counted the records it cut.
-    /// @param logging What the run's elements said.
+    /// @param tap     The tap below the parser, which counted the records it produced.
+    /// @param logging The error receiver the run's elements logged to.
     /// @param parser  The parser's element id.
-    /// @param bytes   How many bytes the run read.
-    /// @return What went in, or [InputRead#UNKNOWN] for a fragment handed records somebody else cut.
+    /// @param bytes   How many bytes of non-whitespace content the run read.
+    /// @return What the parser read, or [InputRead#UNKNOWN] for a fragment with no parser of its own.
     private static InputRead read(final boolean parsed,
                                   final RecordTap tap,
                                   final LoggingErrorReceiver logging,
@@ -403,8 +408,8 @@ public final class PipelineFragmentRunner implements FragmentRunner {
     // --------------------------------------------------------------------------------
 
 
-    /// Handed over and let go of: see [FragmentRunner#takeRecords]. A decision that runs no fragment
-    /// must not be given the chain of the one before it.
+    /// Returns the latest run's records and clears them (see [FragmentRunner#takeRecords]), so that a
+    /// decision that runs no fragment is not given the chain of the decision before it.
     @Override
     public List<FragmentRecord> takeRecords() {
         final List<FragmentRecord> taken = lastRecords;
@@ -412,15 +417,14 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return taken;
     }
 
-    /// The fragment as a chain of elements a person would recognise: what the fragment itself holds,
-    /// in the order it runs them, and nothing this runner added. The parser spliced in front of a
-    /// parser-less chain and the filter added at the tail are this runner's scaffolding and are no part
-    /// of what was learned, so they are not shown — exactly as the walk that scores the chain reads the
-    /// fragment as the fragment has it.
+    /// The fragment's own elements in the order they run, as a person would recognise the chain. The
+    /// parser this runner adds in front of a chain without one, and the output filter it adds at the end,
+    /// are scaffolding and not part of what was learned, so they are not included. The scored walk in
+    /// [#run] leaves them out in the same way.
     ///
-    /// The shaping elements are kept, unlike in the scored walk: a `SplitFilter` is not a step anything
-    /// judges, but it is an element that ran and a person stepping the chain should see where the
-    /// records were cut.
+    /// Unlike in the scored walk, elements such as `SplitFilter` that only divide the stream are kept: a
+    /// `SplitFilter` is not judged, but it did run, and a person stepping the chain should see where the
+    /// records were divided.
     private static List<PipelineElement> chain(final DocRef fragment,
                                                final Map<String, PipelineElement> elements,
                                                final Map<String, String> next) {
@@ -457,18 +461,17 @@ public final class PipelineFragmentRunner implements FragmentRunner {
                         io == null
                                 ? null
                                 : io.output(),
-                        // Everything below the chain's parser is handed markup, which the stepper
-                        // pretty-prints as it does anywhere else. The first element is handed the text
-                        // the stage was given, and that is left as it arrived.
+                        // formatInput: every element after the first is given XML, which the stepper
+                        // pretty-prints as it does anywhere else. The first element is given the text the
+                        // stage was given, and that is shown as it arrived.
                         !chain.isEmpty() && !element.equals(chain.get(0)),
-                        // Everything below a parser writes XML, and the stepper formats it as it does
-                        // anywhere else. The first element of a chain is given text and writes markup;
-                        // what it was given is left as it arrived.
+                        // formatOutput: every element, including the first, writes XML, so the stepper
+                        // always formats the output.
                         true,
-                        // Whether one run covered the whole stream, and so whether what it read and
-                        // wrote has to be cut down before it is carried, is not the runner's to say: it
-                        // depends on what the stage that called it was given. Set as the records are
-                        // handed out.
+                        // wholeStream and truncated: whether one run covered the whole stream, and so
+                        // whether its input and output must be truncated before they are sent, depends on
+                        // what the calling stage was given, not on the runner. They are set later, when
+                        // the records are handed out.
                         false,
                         false));
             }
@@ -479,21 +482,21 @@ public final class PipelineFragmentRunner implements FragmentRunner {
 
     @Override
     public Optional<EventList> lastOutput() {
-        // A run that emitted nothing has nothing to serve, and an empty list is not an output: firing it
-        // at a downstream would write an empty stream, which reads as a feed that had nothing in it. The
-        // caller is told there are no events and says why.
+        // A run that emitted nothing has nothing to serve. Sending an empty event list downstream would
+        // write an empty stream, which looks like a feed that had nothing in it, so the caller is told
+        // there are no events and reports why.
         return Optional.ofNullable(lastOutput)
                 .filter(events -> !events.getEvents().isEmpty())
                 .map(EventList.class::cast);
     }
 
-    /// The fragment as a pipeline that can be handed a stream. Two elements are added to what the
-    /// fragment itself holds, and neither belongs to the chain: a parser in front where the chain has
-    /// none, because a fragment learned over markup input is given text here; and an output filter at
-    /// the tail, so that the events the last element makes are kept.
+    /// Builds the fragment as a pipeline that can be given a stream. Two elements are added to what the
+    /// fragment itself holds: an XML parser in front where the chain has no parser, because a fragment
+    /// learned over XML input is given text here; and a [FragmentOutputFilter] at the end, so that the
+    /// events the last element produces are kept.
     ///
-    /// The walk that says what each element made of the input reads the fragment as the fragment has
-    /// it, so nothing added here is scored, re-asked or shown to anyone.
+    /// The walk that reports what each element made of the input reads only the fragment's own elements,
+    /// so nothing added here is scored, sent back to the model or shown to anyone.
     private PipelineData runnable(final DocRef fragment,
                                   final PipelineData merged,
                                   final Map<String, PipelineElement> elements,
@@ -504,9 +507,10 @@ public final class PipelineFragmentRunner implements FragmentRunner {
             throw new IllegalStateException("Fragment " + fragment.getName() + " links nothing to its source");
         }
         if (!parses(elements.get(first))) {
-            // Out of the add list, not onto the remove list: `removeLink` records a link taken away from
-            // an *inherited* pipeline, and this one is not inherited from anywhere. Left on, the source
-            // would still be linked straight to an element that cannot take a stream.
+            // The link is taken out of the add list rather than put on the remove list, because
+            // `removeLink` records a link removed from an *inherited* pipeline, and this one is not
+            // inherited. If it were left, the source would still be linked straight to an element that
+            // cannot take a stream.
             builder.getLinks().getAddList()
                     .removeIf(link -> PipelineRuns.SOURCE.equals(link.getFrom()) && first.equals(link.getTo()));
             builder.addElement(new PipelineElement(XML_PARSER_ID, PipelineRuns.XML_PARSER));
@@ -524,8 +528,8 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return builder.build();
     }
 
-    /// The runnable fragment with a tap branched off its parser (design 04 §4): a second child of the
-    /// parser, beside the split and the transform, which the parser's events reach as they do them.
+    /// Adds a [FragmentTapFilter] to the runnable fragment as a second child of its parser, beside the
+    /// split and the transform, so that the tap receives the parser's events as they are produced.
     private static PipelineData tapped(final PipelineData runnable, final String parser, final boolean parsed) {
         if (!parsed) {
             return runnable;
@@ -536,18 +540,18 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return builder.build();
     }
 
-    /// Whether an element of a fragment turns raw input into records, as the node's own element registry
-    /// has it — the same answer [ReplayUnits] derives a fragment's replay unit from, asked the same way.
+    /// Whether an element of a fragment turns raw input into records, according to the node's element
+    /// registry. This is the same test [ReplayUnits] uses to derive a fragment's replay unit.
     ///
-    /// The step runners are not asked. A fragment may hold a parser no runner stands in for — stroom's
-    /// XML parser, the combined parser, anything a person put there by hand — and a parser mistaken for
-    /// a filter gets another parser spliced in front of it and a pipeline that cannot be linked.
+    /// The step runners are not asked, because a fragment may hold a parser that no step runner covers
+    /// (Stroom's XML parser, the combined parser, anything a person added by hand). A parser mistaken for
+    /// a filter would get another parser added in front of it, giving a pipeline that cannot be linked.
     private boolean parses(final PipelineElement element) {
         return element != null && ReplayUnits.parses(elementRegistryFactory.get(), element.getType());
     }
 
-    /// This element and every one after it in the chain: who might have something to say about a run
-    /// that stopped here.
+    /// The ids of this element and every scored element after it in the chain: the elements that might
+    /// have reported why a run stopped here.
     private static List<String> remaining(final String from,
                                           final Map<String, String> next,
                                           final Map<String, PipelineElement> elements) {
@@ -561,8 +565,8 @@ public final class PipelineFragmentRunner implements FragmentRunner {
         return ids;
     }
 
-    /// What one element wrote for the whole stream: each record's output joined back into one document,
-    /// since that is what the scorers and the goldens read (see [RecordJoin]).
+    /// What one element wrote for the whole stream, with each record's output joined back into one
+    /// document, since that is what the scorers and the golden test files read (see [RecordJoin]).
     private static String written(final HeadlessCapture capture, final String elementId) {
         return RecordJoin.join(capture.outputOf(elementId));
     }

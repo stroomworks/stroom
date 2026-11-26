@@ -12,8 +12,9 @@
     </Events>
   </xsl:template>
 
-  <!-- The admitted form (A53, A62): a learned Unknown, marked, for a record kind the model could not
-       translate. Everything else is the logon-only stylesheet, kept as it was. -->
+  <!-- The form the exhaustion step admits: a marked Unknown event, for a kind of record the model could
+       not translate. The marker is a named Data item in Unknown, so that the quality check accepts it.
+       The rest is the same as csv-logon-only.xsl. -->
   <xsl:template match="record[data[@name='what']/@value != 'logon']">
     <Event>
       <EventTime>

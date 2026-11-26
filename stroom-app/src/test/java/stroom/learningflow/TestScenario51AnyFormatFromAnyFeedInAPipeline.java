@@ -73,23 +73,20 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenario 51 at Tier 2: <strong>one document, a pipeline per feed, any format</strong>,
- * processed as processor tasks against real feeds and real streams.
- * <p>
- * Tier 1 proves the stage reaches the right decisions. What only this tier can claim is that the whole
- * arrangement works: a pipeline per feed, as a Content Template makes them, each with its supervised
- * element attached to one document, and four feeds of four unrelated formats in turn — delimited text
- * with a header, JSON lines, syslog in two forms, and fixed-width columns with nothing to split on. Each
- * is learned, each writes a fragment that
- * is a real pipeline document, each produces an events stream equal to its format's golden, and each
- * output carries the bindings that say what produced it.
- * <p>
- * This is the demo, run. The document, the pipelines and the filters are {@link DemoContentPack}'s own, so
- * what is proved here is the thing the content pack ships rather than a rehearsal of it. Only the model
- * is different: the advisor is scripted, as every Tier 2 scenario's is, and what a model chooses from
- * the list this document allows is the live run's to answer.
- */
+/// Tests that one Learning Flow document, with one pipeline per feed, learns four unrelated formats in a
+/// running node, processed as processor tasks against real feeds and streams.
+///
+/// The module's own tests check that the element makes the right decisions. This test checks that the
+/// whole arrangement works: one pipeline per feed, each with a Learning Flow element using the same
+/// document, and four feeds in four unrelated formats in turn. The formats are delimited text with a
+/// header, JSON lines, syslog in two forms, and fixed-width columns with no delimiter. Each is learned, each
+/// writes a fragment that is a real pipeline document, each produces an events stream equal to its
+/// format's expected output, and each output's attributes record what produced it.
+///
+/// This is the demo, run as a test. The document's configuration, the pipelines and the filters come from
+/// [DemoContentPack], so the test checks what the content pack ships. Only the model differs: the advisor
+/// is scripted, so which elements a real model would choose from the allowed list is only tested by a
+/// live run.
 class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -110,7 +107,7 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
     private static final String FIXED_XSLT = Scenarios.resource("fixed-width.xsl");
     private static final String FIXED_EVENTS = Scenarios.resource("fixed-width.events.xml");
 
-    /// Each feed's learner: its pipeline's Learning Flow element (A114, A127).
+    /// Each feed's learner, identified by the feed's pipeline and its Learning Flow element.
     private final Map<String, Learner> learners = new LinkedHashMap<>();
 
     @Inject
@@ -155,7 +152,7 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                         .expect(QuestionMatcher.configuration("XSLTFilter"))
                         .reply(Scenarios.fenced(CSV_XSLT)));
 
-        // JSON, one object per line, and no configuration question for the parser.
+        // JSON, one object per line. The JSON parser needs no configuration, so the model is not asked for one.
         learn(DemoContentPack.FEEDS.get(1), JSON_LINES, JSON_EVENTS,
                 jsonScript("root", JSON_XSLT)
                         .expect(QuestionMatcher.chain()).reply("JSONParser -> XSLTFilter")
@@ -180,7 +177,7 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                         .expect(QuestionMatcher.configuration("XSLTFilter"))
                         .reply(Scenarios.fenced(FIXED_XSLT)));
 
-        // One document, a binding per feed's learner — and every binding bound to a fragment that is a real
+        // One document, with one binding for each feed's learner, and each binding's fragment is a real
         // pipeline document in the store.
         final List<Binding> table = DemoContentPack.FEEDS.stream()
                 .map(feed -> {
@@ -200,9 +197,8 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .describedAs("A41: learning writes bindings, not documents — the demo document is untouched")
                 .isEqualTo(DemoContentPack.document().getFlow());
 
-        // And a second stream of a format already learned is served by its binding without the model being
-        // asked. The one that matters here is JSON, since it is the only format whose parser the demo
-        // configures nothing for.
+        // A second stream in a format already learned is served by its binding without asking the model.
+        // JSON is used because it is the only format whose parser has no learned configuration.
         final Script silent = Script.of();
         advisor.set(silent);
         rawStream(DemoContentPack.FEEDS.get(1), JSON_LINES);
@@ -217,9 +213,8 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .hasSize(1);
     }
 
-    /**
-     * One feed's stream, learned and translated, checked against that format's golden events.
-     */
+    /// Loads a stream for one feed, lets the worker learn it, processes it, and checks the output against
+    /// that format's expected events.
     private void learn(final String feed, final String data, final String expected, final Script script) {
         advisor.set(script);
         rawStream(feed, data);
@@ -240,17 +235,15 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .containsEntry(Produced.DOC_ATTRIBUTE, document.getUuid());
     }
 
-    /**
-     * The pack's document, built from what the pack ships. The model is left off: this run's model is the
-     * script.
-     */
+    /// Creates a document configured as the content pack's document is, but with no model, because the
+    /// scripted advisor supplies the answers.
     private DocRef document() {
         final LearningFlowDoc shipped = DemoContentPack.document();
         final DocRef docRef = learningFlowStore.createDocument(shipped.getName());
         learningFlowStore.writeDocument(DemoDocument
                 .configure(learningFlowStore.readDocument(docRef).copy())
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .description(shipped.getDescription())
                 .build());
@@ -267,10 +260,8 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
         return pipelineRef;
     }
 
-    /**
-     * The pack's own filter over one feed, with this installation's pipeline in place of the uuid the
-     * pack names.
-     */
+    /// Creates the content pack's processor filter for one feed, but over this test's pipeline instead of
+    /// the pipeline UUID the pack names.
     private void filter(final String feed, final DocRef pipeline) {
         final ProcessorFilter shipped = DemoContentPack.filter(feed);
         final QueryData queryData = shipped.getQueryData().copy()
@@ -283,12 +274,10 @@ class TestScenario51AnyFormatFromAnyFeedInAPipeline extends AbstractProcessInteg
                 .build());
     }
 
-    /**
-     * The split and target questions are answered from the configurations the script will give, as the
-     * module's scenarios do; each script states only what its format is about. The runners are built when
-     * a question is asked, inside the processing pipeline's scope, so they reach the node's parser
-     * factory the way the element does.
-     */
+    /// Creates the step runners the scripts use to answer the split and target questions from the
+    /// configurations each script will give, as the module's scenarios do, so each script only lists the
+    /// answers its format is about. The Data Splitter compiler uses the node's parser factory, as the
+    /// element does.
     private List<StepRunner> runners() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep());
