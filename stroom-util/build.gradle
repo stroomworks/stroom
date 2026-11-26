@@ -30,7 +30,8 @@ dependencies {
     implementation libs.guice
     implementation libs.jackson.annotations
     implementation libs.jackson.dataformat.yaml
-    implementation libs.jaxb.api
+    api libs.jakarta.validation.api
+    api libs.jaxb.api
     implementation libs.quartz
     implementation libs.saxon.he
     implementation libs.xerces

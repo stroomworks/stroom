@@ -35,7 +35,7 @@ dependencies {
 
     implementation libs.flyway.mysql
     implementation libs.guice
-    implementation libs.jaxb.api
+    api libs.jaxb.api
     implementation libs.slf4j.api
 
     // Java migrations use JAXB to read legacy XML, so they need an impl at runtime
