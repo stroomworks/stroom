@@ -301,7 +301,7 @@ class TestScenario16AServingRunWritesAsItGoes extends AbstractCoreIntegrationTes
     }
 
     private List<StepRunner> runners() {
-        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
+        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, ErrorReceiverProxy::new);
         return List.of(new DataSplitterStep(compiler), new JsonStep(), new XmlFragmentStep(), new StandInXsltStep());
     }
 

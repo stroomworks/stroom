@@ -40,9 +40,11 @@ import java.util.List;
 /// The configuration is compiled straight from text and nothing is written to a document store, so a
 /// candidate can be judged before anything is saved.
 ///
-/// `DS3ParserFactory` and the `ErrorReceiverProxy` it reports through are pipeline-scoped, so an instance must
-/// be used inside a pipeline scope. It must not be shared between threads, because the proxy swap in
-/// [#compile] is not synchronised.
+/// `DS3ParserFactory` and the `ErrorReceiverProxy` it reports through are pipeline-scoped, so [#compile] must
+/// be called inside a pipeline scope. Both are resolved when [#compile] is called, not when an instance is
+/// built, so an instance can be built outside a pipeline scope, e.g. by a REST request that needs the
+/// [stroom.learningflow.element.StageFactory] holding it. An instance must not be shared between threads,
+/// because the proxy swap in [#compile] is not synchronised.
 public class DataSplitterCompiler {
 
     /// The element id the diagnostics are attributed to. It is the element that would run the configuration
@@ -50,17 +52,18 @@ public class DataSplitterCompiler {
     static final ElementId ELEMENT_ID = new ElementId("DS3Parser");
 
     private final Provider<DS3ParserFactory> parserFactoryProvider;
-    private final ErrorReceiverProxy errorReceiverProxy;
+    private final Provider<ErrorReceiverProxy> errorReceiverProxyProvider;
 
-    /// @param parserFactoryProvider Supplies a fresh Data Splitter parser factory for each compile.
-    /// @param errorReceiverProxy    The proxy the schema validation behind the factory reports through. It is
-    ///                              pipeline-scoped, so a compile points it at its own receiver for the
-    ///                              duration, as a pipeline run does.
+    /// @param parserFactoryProvider      Supplies a fresh Data Splitter parser factory for each compile.
+    /// @param errorReceiverProxyProvider Supplies the proxy the schema validation behind the factory reports
+    ///                                   through. It is pipeline-scoped, so it is resolved for each compile in
+    ///                                   the scope the compile runs in, and the compile points it at its own
+    ///                                   receiver for the duration, as a pipeline run does.
     @Inject
     public DataSplitterCompiler(final Provider<DS3ParserFactory> parserFactoryProvider,
-                                final ErrorReceiverProxy errorReceiverProxy) {
+                                final Provider<ErrorReceiverProxy> errorReceiverProxyProvider) {
         this.parserFactoryProvider = parserFactoryProvider;
-        this.errorReceiverProxy = errorReceiverProxy;
+        this.errorReceiverProxyProvider = errorReceiverProxyProvider;
     }
 
     public Compilation compile(final String configuration) {
@@ -72,6 +75,7 @@ public class DataSplitterCompiler {
 
         // Each factory holds the compiled state of one configuration, so a fresh one is taken per compile.
         final DS3ParserFactory parserFactory = parserFactoryProvider.get();
+        final ErrorReceiverProxy errorReceiverProxy = errorReceiverProxyProvider.get();
         // The proxy is pipeline-scoped and may already point at a running pipeline's receiver, so the
         // previous receiver is put back afterwards rather than cleared.
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();

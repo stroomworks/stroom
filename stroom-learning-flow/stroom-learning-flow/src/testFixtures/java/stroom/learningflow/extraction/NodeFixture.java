@@ -108,7 +108,7 @@ public final class NodeFixture {
                         new PipelineContext())));
         this.errorReceiverProxy = errorReceiverProxy;
         this.schemaFilters = injector.getProvider(SchemaFilter.class);
-        compiler = new DataSplitterCompiler(injector.getProvider(DS3ParserFactory.class), errorReceiverProxy);
+        compiler = new DataSplitterCompiler(injector.getProvider(DS3ParserFactory.class), () -> errorReceiverProxy);
     }
 
     public DataSplitterCompiler compiler() {
@@ -128,7 +128,7 @@ public final class NodeFixture {
     /// Returns a schema conformance scorer that uses a new schema filter for each run and reports errors
     /// through the fixture's proxy, as a node's scorer does.
     public SchemaConformanceScorer schemaConformanceScorer() {
-        return new SchemaConformanceScorer(schemaFilters, errorReceiverProxy, schemaStore, securityContext);
+        return new SchemaConformanceScorer(schemaFilters, () -> errorReceiverProxy, schemaStore, securityContext);
     }
 
     /// Returns target schemas backed by the fixture's own store, which holds event-logging 3.0.0, so that

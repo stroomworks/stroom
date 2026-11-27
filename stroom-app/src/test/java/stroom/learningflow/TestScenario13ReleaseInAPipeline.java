@@ -206,7 +206,7 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
     /// answered from the configurations given to [Structure], so the script only lists the chain and
     /// configuration answers this test is about.
     private Script script() {
-        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
+        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, ErrorReceiverProxy::new);
         return Script.of()
                 .structure(new Structure(
                         List.of(new DataSplitterStep(compiler), new StandInXsltStep()), CSV.configuration(), XSLT))

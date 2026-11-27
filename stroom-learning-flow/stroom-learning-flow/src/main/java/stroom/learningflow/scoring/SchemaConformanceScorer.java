@@ -70,8 +70,10 @@ import java.util.regex.Pattern;
 /// follow the input's structure and are judged by the stream-level scorers.
 ///
 /// The schema filter is pipeline-scoped on a node and reports through the pipeline's error receiver,
-/// which is swapped for a recording one for the length of the run. This is the same arrangement as
-/// `DataSplitterCompiler`, with the same consequence: an instance must only be used by one thread.
+/// which is swapped for a recording one for the length of the run. Both are resolved when a score is
+/// taken, inside the pipeline scope the scoring runs in, so an instance can be built outside a pipeline
+/// scope. This is the same arrangement as `DataSplitterCompiler`, with the same consequence: an instance
+/// must only be used by one thread.
 public final class SchemaConformanceScorer implements Scorer {
 
     /// The schema group of the event-logging schemas in Stroom's content packs, which is what a document
@@ -87,18 +89,18 @@ public final class SchemaConformanceScorer implements Scorer {
     private static final int HINTS_SHOWN = 3;
 
     private final Provider<SchemaFilter> schemaFilters;
-    private final ErrorReceiverProxy errorReceiverProxy;
+    private final Provider<ErrorReceiverProxy> errorReceiverProxyProvider;
     private final XmlSchemaStore schemaStore;
     private final SecurityContext securityContext;
     private final Map<String, ContentModels> contentModels = new HashMap<>();
 
     @Inject
     public SchemaConformanceScorer(final Provider<SchemaFilter> schemaFilters,
-                                   final ErrorReceiverProxy errorReceiverProxy,
+                                   final Provider<ErrorReceiverProxy> errorReceiverProxyProvider,
                                    final XmlSchemaStore schemaStore,
                                    final SecurityContext securityContext) {
         this.schemaFilters = schemaFilters;
-        this.errorReceiverProxy = errorReceiverProxy;
+        this.errorReceiverProxyProvider = errorReceiverProxyProvider;
         this.schemaStore = schemaStore;
         this.securityContext = securityContext;
     }
@@ -121,6 +123,7 @@ public final class SchemaConformanceScorer implements Scorer {
         final int total = parsed.get().records().size();
         final RecordErrors errors = new RecordErrors();
         final RecordCounter counter = new RecordCounter(errors);
+        final ErrorReceiverProxy errorReceiverProxy = errorReceiverProxyProvider.get();
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
         errorReceiverProxy.setErrorReceiver(errors);
         try {

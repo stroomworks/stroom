@@ -180,7 +180,7 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
     /// configuration answers this test is about. The Data Splitter compiler uses the node's parser factory,
     /// as the element does.
     private Script script() {
-        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
+        final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, ErrorReceiverProxy::new);
         return Script.of().structure(new Structure(
                 List.of(new DataSplitterStep(compiler), new StandInXsltStep()), CSV.configuration(), XSLT));
     }
