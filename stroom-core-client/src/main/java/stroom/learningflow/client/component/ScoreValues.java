@@ -23,9 +23,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-/// How the Score tab and the scorer editor show the document's values in their fields, and read
-/// them back: fractions as whole percentages, lists as one item per line, numbers without a needless
-/// `.0`, and the checks of a number typed.
+/// Converts a Learning Flow document's scoring values to the text shown in form fields, and back again. It is
+/// used by the Setup tab, the check editor and the advanced settings.
+///
+/// Fractions are shown as whole percentages, lists as one item per line, and whole numbers without a
+/// trailing `.0`. It also provides the validation checks for numbers typed into those fields.
 public final class ScoreValues {
 
     private static final int PERCENT = 100;
@@ -35,13 +37,13 @@ public final class ScoreValues {
     }
 
     /// @param fraction A fraction in [0, 1].
-    /// @return It as a whole percentage, e.g. 80 for 0.8.
+    /// @return The fraction as a whole percentage, e.g. 80 for 0.8.
     public static long toPercent(final double fraction) {
         return Math.round(fraction * PERCENT);
     }
 
     /// @param percent A whole percentage.
-    /// @return It as a fraction, e.g. 0.8 for 80.
+    /// @return The percentage as a fraction, e.g. 0.8 for 80.
     public static double fromPercent(final int percent) {
         return percent / (double) PERCENT;
     }
@@ -54,8 +56,8 @@ public final class ScoreValues {
                 : String.join("\n", items);
     }
 
-    /// @param text Text, one item per line, or null.
-    /// @return The items, trimmed, without blank lines; never null.
+    /// @param text Text with one item per line, or null.
+    /// @return The items, trimmed, with blank lines dropped; never null.
     public static List<String> fromLines(final String text) {
         final List<String> lines = new ArrayList<>();
         if (text != null) {
@@ -70,14 +72,16 @@ public final class ScoreValues {
     }
 
     /// @param number A number.
-    /// @return It as text, `1` rather than `1.0`.
+    /// @return The number as text, with whole numbers shown without a decimal point, e.g. `1` rather than
+    ///         `1.0`.
     public static String format(final double number) {
         return number == Math.rint(number) && !Double.isInfinite(number)
                 ? String.valueOf((long) number)
                 : String.valueOf(number);
     }
 
-    /// @return A check that text is a number above zero, e.g. a yield's expected ratio.
+    /// @return A field check that the text is a number greater than zero, e.g. for a yield's expected ratio.
+    ///         The check returns the reason the text is invalid, or null if it is valid.
     public static Function<String, String> aboveZero() {
         return text -> {
             final Double number = InputChecks.parseNumber(text);

@@ -43,18 +43,16 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenarios 8 and 9: a bound learner relearning against an incumbent. A candidate that
- * looks better on the learning sample but is worse on the held-out stream is not promoted (A15); one
- * that is worse on a record the binding was accepted on is not promoted either (A18); and one that is better
- * on both replaces the incumbent's fragment under the same binding. Scenario 10, a pinned binding, went with
- * pinning (design 06 A138).
- * <p>
- * The incumbent is the golden transform with an empty device name, which the document weighs, so it
- * scores well but not perfectly and its records still clear the bar. A person marks the learner for
- * relearning, as the Supervisor's serving list would lead them to, and the next stream of it opens the
- * session while the incumbent serves it (A100).
- */
+/// Tests a bound learner relearning while its existing binding (the incumbent) keeps serving.
+///
+/// A candidate that does well on the learning sample but falls short on the rest of the stream is not
+/// promoted, and nor is one that is worse on a record the binding was accepted on. A candidate that passes
+/// both replaces the incumbent's fragment content under the same binding.
+///
+/// The incumbent is the expected transform with an empty device name, a field the document requires, so it
+/// scores well but not perfectly and its records still clear the bar. A person marks the learner for
+/// relearning, as the Supervisor's serving list would lead them to, and the learner's next stream opens the
+/// session while the incumbent serves it.
 class TestScenariosIncumbent {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -71,10 +69,8 @@ class TestScenariosIncumbent {
             "            <Id><xsl:value-of select=\"data[@name='who']/@value\"/></Id>",
             "          </User>",
             "        </Authenticate>");
-    /**
-     * The golden transform with an empty device name: schema-valid — the 3.0.0 schema wants a Device — but
-     * short of a field the document requires.
-     */
+    /// The expected transform with an empty device name. It is schema-valid (the 3.0.0 schema needs a
+    /// `Device` element) but lacks a field the document requires.
     private static final String V1 = CsvLines.replacing(XSLT, DEVICE_NAME, "          <Name/>");
     private static final String DOC = "doc-1";
 
@@ -120,10 +116,9 @@ class TestScenariosIncumbent {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(xslt));
     }
 
-    /**
-     * A transform that names the user — at the source and on the logon — only for records the predicate
-     * admits: right on the records it was shown, wrong on the ones it was not.
-     */
+    /// Builds a transform that names the user, at the source and on the logon, only for records matching the
+    /// predicate. Tests use it to make a transform that is right on the records it was shown and wrong on
+    /// others.
     private static String userOnlyWhen(final String stylesheet, final String predicate) {
         final String source = CsvLines.replacing(stylesheet, SOURCE_USER, String.join("\n",
                 "        <xsl:if test=\"" + predicate + "\">",
@@ -140,10 +135,10 @@ class TestScenariosIncumbent {
                 "        </Authenticate>"));
     }
 
-    /**
-     * Learns v1, serves one stream with it — which marks the learner, v1 scoring below the relearn threshold
-     * — and returns the document as it then stands.
-     */
+    /// Learns v1, serves one stream with it, and then marks the learner for relearning by hand, as a person
+    /// would on seeing v1 score below the relearn threshold.
+    ///
+    /// @return The run that served the second stream, whose document later runs use.
     private static StageRun incumbentMarked(final Scenarios scenarios, final String users) {
         final Script script = learning(scenarios, V1);
         final StageRun learned = scenarios.process(script, doc(), stream(1, CsvLines.lines(7, users, 0))).learned();
@@ -157,8 +152,8 @@ class TestScenariosIncumbent {
                 0))).learned();
         assertThat(served.decision()).isInstanceOf(Bound.class);
         assertThat(silent.asked()).isEmpty();
-        // The score is kept for the Supervisor's list and is no longer a trigger (design 04 §6): the mark
-        // is a person's, from reading it.
+        // The score is shown in the Supervisor's list but does not trigger relearning itself: a person marks
+        // the learner after reading it.
         scenarios.states.markForRelearning(Scenarios.LEARNER, DOC,
                 "Scored " + v1Score + " below the threshold: improve it");
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isPresent();
@@ -171,10 +166,10 @@ class TestScenariosIncumbent {
         final StageRun marked = incumbentMarked(scenarios, "user");
         final Binding v1 = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        // v2 names the user for everyone but user6 — the one record in the held-out fifth of a seven-line
-        // stream — and, like v1, has no device: it passes every threshold on the six records it is shown.
-        // It is not compared with v1's score (the one model of checks, D2); over the seven records it is
-        // held to the bar it would be served to, and user6's record falls short of it.
+        // v2 names the user for everyone but user6 (the one record in the held-out fifth of a seven-line
+        // stream) and, like v1, has no device, so it passes every threshold on the six records it is shown.
+        // It is not compared with v1's score. Instead, over all seven records it is held to the bar it would
+        // be served to, and user6's record falls short of it.
         final String v2 = userOnlyWhen(V1, "not(data[@name='who']/@value = 'user6')");
         final Script relearn = learning(scenarios, v2);
         final StageRun run = scenarios.process(relearn, marked.doc(), stream(3, CsvLines.lines(7, "user",
@@ -194,9 +189,9 @@ class TestScenariosIncumbent {
 
     @Test
     void scenario8ACandidateWorseOnAnAcceptedRecordIsNotPromoted() {
-        // A18: v1 was accepted on a stream of users; the marking stream and the relearning stream are of
-        // staff. v2 names the user only for staff, so it beats v1 on the stream it is judged on and would
-        // have been promoted on A15 alone — and scores far below v1's recorded score on the accepted stream.
+        // v1 was accepted on a stream of users, and the relearning stream is of staff. v2 names the user only
+        // for staff, so it does well on the stream it is judged on and would be promoted on that alone, but
+        // it falls short of the bar on the records v1 was accepted on.
         final Scenarios scenarios = new Scenarios();
         final StageRun marked = incumbentMarked(scenarios, "user");
         final Binding v1 = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
@@ -238,8 +233,8 @@ class TestScenariosIncumbent {
         assertThat(v2.getScore()).isEqualTo(1.0);
         assertThat(v2.getPromotedTimeMs()).isEqualTo(Scenarios.NOW.toEpochMilli());
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).containsExactly(v2);
-        // One fragment and one stylesheet per learner, growing as the session learns (A58): what ran before
-        // is the snapshot's to keep, not a sibling document's.
+        // One fragment and one stylesheet per learner, edited in place as the learner relearns. What ran
+        // before is kept by the earlier snapshot, not by a separate document.
         assertThat(scenarios.stores.pipelines.list()).hasSize(1);
         assertThat(scenarios.stores.xslts.list()).hasSize(1);
         assertThat(scenarios.snapshots.forBinding(v1.getUuid())).hasSize(2);

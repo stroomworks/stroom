@@ -21,12 +21,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * The strict grammar for a reply to the chain question (A21 step 1): element type names, in chain order,
- * separated by newlines, commas or arrows, and drawn only from the allowed set. Anything else — prose, an
- * element the document does not allow, an empty chain — is refused rather than guessed at, exactly as
- * {@link ConfigurationReply} refuses an ambiguous document.
- */
+/// Parses the model's reply to the chain question, the first question of a learning session, which asks
+/// which pipeline elements the stream should pass through.
+///
+/// The reply must be element type names, in chain order, separated by whitespace, commas, hyphens or arrows,
+/// and drawn only from the allowed set. Anything else (prose, an element the document does not allow, an
+/// empty chain) is refused rather than guessed at, as [ConfigurationReply] refuses an ambiguous document.
 public final class ChainReply {
 
     private static final String SEPARATORS = "[\\s,>\\u2192-]+";

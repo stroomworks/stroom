@@ -31,15 +31,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/// The dialog that loads a built-in text into one of a step's texts (design 05 §3) ([BuiltInText]):
-/// the built-ins whose variables the text allows, chosen from a list with the words shown, so that a
-/// person sees what they are about to load before it replaces the document's own words.
+/// Shows the dialog ([BuiltInText]) that replaces one of the texts a Learning Flow sends to the AI with one
+/// of Stroom's built-in texts. It offers only the built-ins whose variables that text allows, and previews
+/// the one chosen, so that a person sees what they are about to load before it replaces the document's own
+/// words.
 public class BuiltInTextController extends Controller {
 
     private final BuiltInText view;
     private Map<Template, String> builtIns = Map.of();
 
-    /// Made by GIN, with its content.
+    /// Created by GIN.
     ///
     /// @param eventBus The application's event bus.
     /// @param view     The dialog's content.
@@ -51,14 +52,14 @@ public class BuiltInTextController extends Controller {
         view.setOnChoice(this::preview);
     }
 
-    /// Shows the dialog, owned by `opener` until it is closed. OK gives the words of the built-in
-    /// chosen to `onLoad`; nothing chosen loads nothing.
+    /// Shows the dialog, owned by `opener` until it is closed. OK passes the words of the chosen built-in
+    /// to `onLoad`; if nothing is chosen, nothing is loaded.
     ///
-    /// @param opener   What shows it.
-    /// @param slot     The text being loaded into, offered first and chosen to begin with.
+    /// @param opener   The screen that opens the dialog.
+    /// @param slot     The text being loaded into. Its own built-in is selected to begin with.
     /// @param suitable The built-ins whose variables the slot allows, the slot's own among them.
-    /// @param builtIns The built-in texts the node serves.
-    /// @param onLoad   Given the words to load.
+    /// @param builtIns The built-in texts fetched from the server, by the text they are for.
+    /// @param onLoad   Called with the words to load.
     public void load(final HasControllerNode opener,
                      final Template slot,
                      final List<Template> suitable,
@@ -72,7 +73,8 @@ public class BuiltInTextController extends Controller {
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(PopupSize.resizable(640, 460))
                 .caption("Load a built-in text")
-                // Its choice goes back into the text it was opened from, which must not change under it
+                // Modal because the choice is written into the text the dialog was opened from, and that text
+                // must not be edited while the dialog is open
                 .modal()
                 .onShow(e -> view.focus())
                 .onHideRequest(e -> {

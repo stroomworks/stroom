@@ -23,9 +23,10 @@ import stroom.util.shared.DocPath;
 import java.util.HashMap;
 import java.util.Map;
 
-/// Places as a scenario sets them. A learner it was told nothing of has no pipeline here to sit beside,
-/// so its content goes in a `Learning Flow` folder under its pipeline's uuid, which is the name the
-/// scenarios read. Every method is synchronised.
+/// An in-memory [Places], which says where each learner's learned content is written, as a scenario sets
+/// it. A learner the scenario has not set has no real pipeline here to put content beside, so its content
+/// goes in a `Learning Flow` folder, named after its pipeline's UUID, which is the name the scenarios
+/// expect. Every method is synchronised.
 public final class InMemoryPlaces implements Places {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow");
@@ -37,10 +38,11 @@ public final class InMemoryPlaces implements Places {
         return places.getOrDefault(learner, new Place(FOLDER, learner.pipelineUuid()));
     }
 
-    /// What the learner's element says, as a factory or a person would set it.
+    /// Sets where the learner's content goes, as its element's properties would, set by a Content Template
+    /// or a person.
     ///
     /// @param learner The learner.
-    /// @param place   Where what it learns goes.
+    /// @param place   Where what it learns is written.
     public synchronized void put(final Learner learner, final Place place) {
         places.put(learner, place);
     }

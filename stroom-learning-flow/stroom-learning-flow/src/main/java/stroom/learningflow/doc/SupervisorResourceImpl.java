@@ -41,8 +41,8 @@ import jakarta.inject.Provider;
 
 import java.util.List;
 
-/// The Supervisor's REST resource (A28): audited by Stroom's REST logging, and otherwise
-/// [SupervisorService]'s, which holds what each request does and who may make it.
+/// The REST resource behind the Supervisor screen. Requests are audited by Stroom's REST logging; everything
+/// else, including what each request does and who may make it, is in [SupervisorService].
 @AutoLogged
 public class SupervisorResourceImpl implements SupervisorResource {
 

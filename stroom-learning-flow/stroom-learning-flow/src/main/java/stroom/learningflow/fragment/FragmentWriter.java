@@ -44,15 +44,15 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Turns a learned chain into content: one configuration document per document-bearing step, and a
- * pipeline fragment (proposed ruling A20) whose elements reference them. The fragment starts at the
- * explicit {@code Source} element every base pipeline carries and ends at the last step, with no writer
- * or destination; the supervisor attaches its own capture when it runs one.
- * <p>
- * Every document is new (design §7.3 rule 1): a learned chain never overwrites what an earlier one wrote.
- * Where the documents go is the {@link ContentCreator}'s business; what they hold is this class's.
- */
+/// Turns a learned chain into Stroom content: one configuration document (text converter or XSLT) for
+/// each step that needs one, and a pipeline fragment whose elements reference them. The fragment starts
+/// at the explicit `Source` element every base pipeline has and ends at the last step, with no writer or
+/// destination; [PipelineFragmentRunner] adds its own output element when it runs one.
+///
+/// [#write] always creates new documents, so writing a learned chain never overwrites what an earlier one
+/// wrote. [#copyInto] is the one operation that overwrites, when a draft is copied into the fragment that
+/// serves. Where the documents are created is the [ContentCreator]'s responsibility; what they hold is
+/// this class's.
 public final class FragmentWriter {
 
     private static final String SPLIT = "splitFilter";
@@ -76,24 +76,25 @@ public final class FragmentWriter {
         this.xsltStore = xsltStore;
     }
 
-    /// Make the folder learned content goes in, or find it, before anything is learned for it: a folder
-    /// that cannot be made is found out while nothing has been spent on what would go in it.
+    /// Creates the folder learned content goes in, if it does not exist, before anything is learned for
+    /// it. This way a folder that cannot be created is discovered before anything has been spent on the
+    /// model.
     ///
     /// @param folder The folder.
     public void ensure(final DocPath folder) {
         creator.ensure(folder);
     }
 
-    /// Copy a draft fragment into the fragment that serves, and delete the draft's documents (A58,
-    /// simplification option A).
+    /// Copies a draft fragment into the fragment that serves, and deletes the draft's documents.
     ///
-    /// Every result is written as a draft fragment of its own, whatever the Learning Flow's mode, so that
-    /// what serves goes on serving until the draft is approved. Approving it must not leave the learner
-    /// with two fragments: the serving pipeline keeps its own `DocRef` — so every output ever recorded
-    /// against the binding still names the pipeline that serves it — and takes the draft's shape, with
-    /// the draft's text copied into its own configuration documents. A document for an element the
-    /// serving fragment did not have is written in the folder; one it had and the draft does not is left,
-    /// since the pipeline no longer references it and a person may want to read it.
+    /// Every learning result is written as a separate draft fragment, whatever the Learning Flow's
+    /// promotion mode, so that the serving fragment carries on serving until the draft is approved.
+    /// Approving it must not leave the learner with two fragments. So the serving pipeline keeps its own
+    /// `DocRef`, which means every output ever recorded against the binding still names the pipeline that
+    /// serves it, and takes the draft's structure, with the draft's text copied into its own configuration
+    /// documents. A document for an element the serving fragment did not have is created in the folder. A
+    /// document the serving fragment had but the draft does not is left in place, since the pipeline no
+    /// longer references it and a person may want to read it.
     ///
     /// @param serving The fragment that serves, which keeps its identity.
     /// @param draft   The draft fragment, whose documents are deleted once copied.
@@ -106,8 +107,8 @@ public final class FragmentWriter {
                            final String name) {
         final PipelineDoc from = pipelineStore.readDocument(draft);
         final PipelineDoc into = pipelineStore.readDocument(serving);
-        // What the serving fragment already has for each element, so that the copy overwrites a document
-        // rather than making another beside it.
+        // The documents the serving fragment already references for each element, so that the copy
+        // overwrites a document rather than creating another beside it.
         final Map<String, DocRef> existing = referenced(into.getPipelineData());
         final PipelineDataBuilder builder = new PipelineDataBuilder();
         builder.addElements(from.getPipelineData().getAddedElements());
@@ -130,13 +131,13 @@ public final class FragmentWriter {
                     new PipelinePropertyValue(target)));
         }
         pipelineStore.writeDocument(into.copy().pipelineData(builder.build()).build());
-        // The draft is spent: its documents go, so that the learner is left with one fragment (A58).
+        // The draft has been used, so its documents are deleted, leaving the learner with one fragment.
         copied.forEach(creator::delete);
         creator.delete(draft);
         return serving;
     }
 
-    /// What a fragment's elements reference, by element id and property name.
+    /// The documents a fragment's elements reference, keyed by `elementId/propertyName`.
     private static Map<String, DocRef> referenced(final PipelineData pipelineData) {
         final Map<String, DocRef> referenced = new HashMap<>();
         for (final PipelineProperty property : pipelineData.getAddedProperties()) {
@@ -147,13 +148,13 @@ public final class FragmentWriter {
         return referenced;
     }
 
-    /// A configuration document copied into the folder under its own name, for an element the serving
-    /// fragment did not have.
+    /// Creates a copy of a configuration document in the folder under a new name, for an element the
+    /// serving fragment did not have.
     private DocRef copy(final DocPath folder, final String name, final DocRef source) {
         return overwrite(creator.create(folder, source.getType(), creator.unused(folder, name)), read(source));
     }
 
-    /// What a configuration document holds.
+    /// Reads what a configuration document holds.
     private Content read(final DocRef docRef) {
         return switch (docRef.getType()) {
             case TextConverterDoc.TYPE -> {
@@ -166,7 +167,7 @@ public final class FragmentWriter {
         };
     }
 
-    /// A configuration document's text replaced with what another holds.
+    /// Replaces a configuration document's content with the given content.
     private DocRef overwrite(final DocRef docRef, final Content content) {
         switch (docRef.getType()) {
             case TextConverterDoc.TYPE -> textConverterStore.writeDocument(textConverterStore.readDocument(docRef)
@@ -186,19 +187,22 @@ public final class FragmentWriter {
         return docRef;
     }
 
-    /**
-     * @param folder Where the fragment and its configuration documents are created.
-     * @param name   The name for the fragment, or the first free number after it where the folder has one
-     *               by that name; configuration documents take it with the element id appended.
-     * @param chain  The learned steps in chain order.
-     * @return The fragment's DocRef, for the binding.
-     */
+    /// Writes a learned chain as a new fragment and new configuration documents.
+    ///
+    /// @param folder   Where the fragment and its configuration documents are created.
+    /// @param name     The name for the fragment, followed by the first free number where the folder already
+    ///                 has something by that name; configuration documents use it with the element id
+    ///                 appended.
+    /// @param chain    The learned steps in chain order.
+    /// @param boundary What one record is in the stream, which sets the depth of any split filter; null
+    ///                 where none was settled.
+    /// @return The fragment's DocRef, for the binding.
     public DocRef write(final DocPath folder,
                         final String name,
                         final List<LearnedStep> chain,
                         final RecordBoundary boundary) {
-        // Checked for the whole chain before anything is created: a step whose document this writer
-        // cannot write must not leave the earlier steps' documents behind.
+        // Check the whole chain before anything is created, so that a step whose document this writer
+        // cannot write does not leave the earlier steps' documents behind.
         chain.stream()
                 .map(step -> step.runner().configured())
                 .flatMap(Optional::stream)
@@ -208,27 +212,29 @@ public final class FragmentWriter {
                 .ifPresent(type -> {
                     throw new IllegalArgumentException("No store to write a " + type + " document");
                 });
-        // One name for the fragment and every document it references, found once: a second fragment of a
-        // learner's takes the first free number (A132), and its documents go with it.
+        // Find one name for the fragment and every document it references. A learner's second fragment
+        // takes the first free number, and its documents use the same numbered name.
         final String named = creator.unused(folder, name);
         final PipelineDataBuilder builder = new PipelineDataBuilder()
                 .addElement(new PipelineElement(PipelineRuns.SOURCE, PipelineRuns.SOURCE));
         String previous = PipelineRuns.SOURCE;
-        // No depth, no filter: a boundary from a binding learned before the depth was recorded cannot say
-        // where to split, and a guessed depth splits nothing (see RecordBoundary#splitDepth).
+        // Without a depth, no split filter is added: a boundary from a binding learned before the depth was
+        // recorded cannot say where to split, and a guessed depth would split nothing
+        // (see RecordBoundary#splitDepth).
         final OptionalInt depth = boundary == null
                 ? OptionalInt.empty()
                 : boundary.splitDepth();
         boolean split = false;
         final Map<String, Integer> idsUsed = new HashMap<>();
         for (final LearnedStep step : chain) {
-            // Stroom's own shape for markup is parser, then split, then transform (§12 item 25): the
-            // filter cuts the parsed stream into one document per record, so the stylesheet sees one
-            // record as a person writing one is shown one, memory is bounded by the record rather than
-            // the stream, and an error is isolated to the record that raised it. It goes in front of the
-            // first element that is not a parser — after the parser where there is one, and straight
-            // after the source where the input is already markup. Raw text needs none: the Data Splitter
-            // *is* the splitter, and a chain that cuts with a configuration has no boundary of this kind.
+            // Stroom's usual arrangement for XML is parser, then split filter, then transform. The split
+            // filter divides the parsed stream into one document per record, so the stylesheet sees one
+            // record at a time, just as the model was shown one when writing it; memory is bounded by the
+            // record rather than the stream; and an error is isolated to the record that raised it. The
+            // filter goes in front of the first element that is not a parser: after the parser where there
+            // is one, and straight after the source where the input is already XML. Raw text needs no split
+            // filter, because the Data Splitter divides the records itself, and a chain that divides
+            // records with a configuration has no split depth.
             if (!split && !step.runner().parser() && depth.isPresent()) {
                 builder.addElement(new PipelineElement(SPLIT, PipelineRuns.SPLIT_FILTER));
                 builder.addLink(previous, SPLIT);
@@ -259,10 +265,9 @@ public final class FragmentWriter {
         return fragment;
     }
 
-    /**
-     * A chain may hold the same element type twice — two transforms in a row, say — and element ids are
-     * unique within a pipeline, so the second and later take a suffix.
-     */
+    /// Makes an element id unique within the fragment. A chain may hold the same element type twice (e.g.
+    /// two transforms in a row), and element ids must be unique within a pipeline, so the second and later
+    /// ones get a numeric suffix.
     private static String uniqueId(final String elementId, final Map<String, Integer> idsUsed) {
         final int count = idsUsed.merge(elementId, 1, Integer::sum);
         return count == 1
@@ -277,11 +282,11 @@ public final class FragmentWriter {
         // The type is checked before anything is created, so an unsupported one leaves no orphan behind.
         return switch (configured.documentType()) {
             case TextConverterDoc.TYPE -> {
-                // The kind comes from the step, because the element that will read it refuses one of
-                // the wrong kind: XMLFragmentParser throws "The assigned text converter is not an XML
-                // fragment". Written as Data Splitter for everything, a learned XMLFragmentParser chain
-                // passes every scorer — the stand-in reads only the text — and then fails on every
-                // stream a node gives it.
+                // The converter type comes from the step, because the element that reads the converter
+                // refuses one of the wrong type: XMLFragmentParser throws "The assigned text converter is
+                // not an XML fragment". If every converter were written as Data Splitter, a learned
+                // XMLFragmentParser chain would pass every scorer (the stand-in runner reads only the
+                // text) and then fail on every stream a node gives it.
                 if (configured.converterType() == null) {
                     throw new IllegalArgumentException("Step configuration of type "
                                                        + configured.documentType() + " does not say which "
@@ -312,11 +317,11 @@ public final class FragmentWriter {
     // --------------------------------------------------------------------------------
 
 
-    /// What a configuration document holds: its text, and for a text converter the kind it is, since the
-    /// element that reads one refuses a converter of the wrong kind.
+    /// What a configuration document holds: its text and, for a text converter, its converter type, since
+    /// the element that reads a converter refuses one of the wrong type.
     ///
     /// @param data          The document's text.
-    /// @param converterType The kind of text converter, or null for a document that is not one.
+    /// @param converterType The text converter type, or null for a document that is not a text converter.
     private record Content(String data, TextConverterType converterType) {
 
     }

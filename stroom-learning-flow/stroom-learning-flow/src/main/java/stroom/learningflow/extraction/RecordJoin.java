@@ -33,28 +33,29 @@ import java.util.List;
 import java.util.Map;
 import javax.xml.transform.sax.TransformerHandler;
 
-/// What a transform wrote for each record, back as one document (§12 item 25).
+/// Joins the documents a transform wrote, one per record, back into one document. [PerRecord] uses it
+/// after running a step one record at a time.
 ///
-/// A pipeline does not join these: each record's output goes downstream on its own and the writer
-/// segments them into a stream. This is for what comes *after* running — the scorers, the goldens and
-/// what a person reads — which want one document, and the events in it are the same events in the same
-/// order. The first record's root is the document's root; each record's output contributes its root's
+/// A pipeline does not join these: each record's output goes downstream on its own and the writer segments
+/// them into a stream. The join is for what reads the result afterwards (the scorers, expected test outputs
+/// and the person reviewing it), which want one document with the same events in the same order. The first
+/// document's root becomes the root of the joined document, and each document contributes its root's
 /// children.
 public final class RecordJoin {
 
     private RecordJoin() {
     }
 
-    /// A stream of one record goes through the same parse as a stream of many, and is not handed back
-    /// as it came. Null means "this step produced nothing that is a document", and a caller reads it as
-    /// the reason to stop and say so ([PerRecord]); short-circuiting a single record past the parse let
-    /// a stylesheet that wrote bare text report success with non-XML output and no diagnostic at all —
-    /// the blind re-ask that check exists to stop, met on the one stream shape where it is easiest to
-    /// miss.
+    /// Joins the documents into one.
+    ///
+    /// A single document is parsed like any number of them, rather than being returned as it came, so that
+    /// output that is not XML (for example, bare text from a stylesheet whose templates match nothing) is
+    /// caught even for a stream of one record. A null result tells the caller ([PerRecord]) that the step
+    /// produced no document, so that it can tell the model why.
     ///
     /// @param documents What the transform wrote, one per record, in order.
-    /// @return The one document they make between them, or null where there is nothing to join or a
-    /// piece of it will not parse — which the scorers see as a step that produced nothing.
+    /// @return The joined document, or null if there is nothing to join or any piece will not parse. The
+    /// scorers treat null as a step that produced nothing.
     public static String join(final List<String> documents) {
         final List<String> written = documents.stream()
                 .filter(document -> document != null && !document.isBlank())
@@ -64,15 +65,14 @@ public final class RecordJoin {
         }
         final StringWriter writing = new StringWriter();
         try {
-            // Laid out as the transform would have laid out the one document, had it been given the
-            // stream whole: the same serialiser with the same indentation, so that what a chain run per
-            // record produces reads the same as what the chain run over the whole text did, and a golden
-            // written against the one holds against the other.
+            // Use the same serialiser and indentation that the transform would use for the whole stream, so
+            // that the output of a per-record run reads the same as a run over the whole text, and an
+            // expected output written for one matches the other.
             final TransformerHandler handler = ConfinedXml.serialiser(writing, true, false);
             handler.startDocument();
-            // What the first document declared stays open for all of them; a later document that
-            // declares something of its own — a skip marker's namespace, say — carries it itself, or the
-            // element is written with no binding and comes back in whatever namespace was in force.
+            // The namespaces the first document declares stay in scope for all of them. A later document that
+            // declares one of its own (a skip marker's namespace, for example) must declare it itself, or its
+            // elements would be written with no binding and read back in whatever namespace was in scope.
             final Map<String, String> opened = new HashMap<>();
             for (int i = 0; i < written.size(); i++) {
                 final XMLReader reader = ConfinedXml.reader();
@@ -90,18 +90,18 @@ public final class RecordJoin {
     // --------------------------------------------------------------------------------
 
 
-    /// One document's contents forwarded into the joined one: the first keeps its root's start, the last
-    /// its root's end, and every document contributes what is inside it.
+    // Forwards one document's contents into the joined document. The first document supplies the root's
+    // start tag, the last supplies its end tag, and every document contributes what is inside its root.
     private static final class Contents extends DefaultHandler {
 
         private final TransformerHandler joined;
         private final boolean first;
         private final boolean last;
-        /// What the first document declared, which stays open for the whole of the joined document.
+        // The prefix mappings the first document declared, which stay in scope for the whole joined document.
         private final Map<String, String> opened;
-        /// The prefixes this document declared that the first did not, so that each is closed again when
-        /// this document ends: a start passed on without its end leaves the joined document's namespace
-        /// stack one deep in the wrong place.
+        // The prefixes this document declared that the first did not. Each is ended again when this document
+        // ends, because a prefix mapping started without its end would corrupt the joined document's
+        // namespace scoping.
         private final Deque<String> ownPrefixes = new ArrayDeque<>();
         private int depth;
 
@@ -123,7 +123,7 @@ public final class RecordJoin {
                 return;
             }
             if (!uri.equals(opened.get(prefix))) {
-                // This document's own: without it the element is written with no binding at all
+                // A mapping of this document's own; without it the element would be written with no binding
                 ownPrefixes.addLast(prefix);
                 joined.startPrefixMapping(prefix, uri);
             }
@@ -160,9 +160,9 @@ public final class RecordJoin {
 
         @Override
         public void characters(final char[] ch, final int start, final int length) throws SAXException {
-            // Everything inside the root, including the text directly in it: a record's own content is
-            // not only its elements. The one exception is the whitespace directly under the root, which
-            // is each piece's indentation and not content: the joined document is indented afresh.
+            // Forward all text inside the root, including text directly in it, since a record's content is
+            // not only its elements. The exception is whitespace directly under the root, which is each
+            // piece's indentation rather than content; the joined document is indented afresh.
             if (depth >= 1 && !(depth == 1 && blank(ch, start, length))) {
                 joined.characters(ch, start, length);
             }

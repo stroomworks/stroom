@@ -20,11 +20,12 @@ import stroom.learningflow.learning.Advisor;
 import stroom.learningflow.learning.Advisors;
 import stroom.learningflow.shared.LearningFlowDoc;
 
-/**
- * The advisors a node under test is bound to: whichever {@link Script} the running scenario has set,
- * whatever the document. A Tier 2 scenario cannot hand its script to the element, which the pipeline
- * factory builds, so it hands it to this and the element finds it here.
- */
+/// The [Advisors] that a Stroom node under test is bound to. It returns whichever advisor (usually a
+/// [Script]) the running scenario has set, whatever the document.
+///
+/// A scenario that runs in a real node cannot pass its script to the Smart Pipeline element directly,
+/// because Stroom's pipeline factory creates the element. So the scenario sets the script here, and the
+/// element finds it here.
 public final class AdvisorHolder implements Advisors {
 
     private volatile Advisor advisor = Script.of();

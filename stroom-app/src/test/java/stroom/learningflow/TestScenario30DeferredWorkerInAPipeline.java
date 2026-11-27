@@ -82,20 +82,20 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenario 30 (Tier 2; A5, A28): deferred learning in a real pipeline. The processing task
- * asks the model nothing — it parks an attempt and writes an error stream — and the node's job carries
- * the attempt on afterwards, with no task in front of it, reading the stream back out of the store by
- * the id the attempt kept. What Tier 1 cannot claim is claimed here: the worker's seams are the node's
- * stores, the binding it writes is a row, and the fragment it wrote is a pipeline document.
- */
+/// Tests deferred learning in a real pipeline in a running node.
+///
+/// The processing task never asks the model. It opens an attempt that waits for the model, defers the
+/// stream and writes no output. The node's deferred learning job then resumes the attempt outside any
+/// task, reading the stream back from the store by the id the attempt recorded. Unlike the module's own
+/// tests, this checks that the worker uses the node's real stores, that the binding it writes is a
+/// database row, and that the fragment it writes is a pipeline document.
 class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-DEFERRED";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -139,7 +139,8 @@ class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegration
                         .build())
                 .priority(1)
                 .build());
-        // The script is set, and the task must not touch it: that is what deferred means.
+        // The script is set, but the processing task must not use it, because learning is deferred to the
+        // worker.
         final Script script = script()
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -163,16 +164,17 @@ class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegration
                 .describedAs("naming the stream it was raised on, which is how the job finds it again")
                 .isEqualTo(raw.getId());
 
-        // A second stream of the same learner while the attempt waits: deferred behind it — scenario 13's
-        // two streams, which the promotion must wake together.
+        // A second stream for the same learner arrives while the attempt waits. It is deferred behind the
+        // same attempt, and the promotion must wake both streams together, as in
+        // `TestScenario13ReleaseInAPipeline`.
         final Meta second = rawStream();
         processOne();
         assertThat(attempts.forDocument(doc.getUuid(), 10)).describedAs("one attempt for one learner")
                 .hasSize(1);
         assertThat(second.getId()).isNotEqualTo(raw.getId());
 
-        // The job, with no task and no pipeline around it: it reads the document and the stream back out
-        // of the node's own stores and carries the attempt on.
+        // The job runs outside any task or pipeline. It reads the document and the stream from the node's
+        // own stores and resumes the attempt.
         deferredLearning.exec();
 
         script.verifyExhausted();
@@ -183,14 +185,14 @@ class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegration
         final Binding binding = learnerBindings.forLearner(learner).get(0);
         assertThat(pipelineStore.readDocument(binding.getPipeline()))
                 .describedAs("and the fragment it learned is a pipeline document").isNotNull();
-        // Scenario 13's substance in a node: *both* streams waited on this learner and one promotion
-        // woke them together, as the pipeline's deferred tasks (design 06 A129).
+        // Both waiting streams' tasks were woken together by the one promotion, which the processing below
+        // shows.
 
-        // The next stream of the learner is bound in the task, with no model call and no worker.
+        // The learner's next stream is served in the task, with no model call and no worker.
         final Script silent = Script.of();
         advisor.set(silent);
         rawStream();
-        // The two that waited, woken by the promotion, and the new one: all three bound in the task.
+        // The two woken streams and the new one are all served by the binding in their tasks.
         final List<ProcessorResult> served = commonTranslationTestHelper.processAll();
 
         assertThat(silent.asked()).isEmpty();
@@ -214,10 +216,11 @@ class TestScenario30DeferredWorkerInAPipeline extends AbstractProcessIntegration
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
-                // What this scenario is about: nothing is asked in the task (A5).
+                // Learning never runs in a processing task. The task only defers the stream, and the
+                // deferred learning job asks the model.
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(5)

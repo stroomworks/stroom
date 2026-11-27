@@ -23,10 +23,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/**
- * What one check made of one step of a chain, as a surface shows it (design 01 §8): the number, what it
- * was measured against, and whether that was a gate it failed or a threshold it merely fell short of.
- */
+/// The result of one check on one element of a chain, as the stepper's Learning Flow pane shows it: the
+/// value, the threshold it was measured against, and whether the check is a gate (so falling short refuses the
+/// candidate) or only advice.
 @JsonInclude(Include.NON_NULL)
 public class StageScore {
 

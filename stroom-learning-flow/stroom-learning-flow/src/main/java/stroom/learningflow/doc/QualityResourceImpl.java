@@ -27,8 +27,8 @@ import jakarta.inject.Provider;
 
 import java.util.List;
 
-/// A Smart Pipeline's Quality Assurance tab's resource ([QualityResource]): what a QA person reads and records
-/// of one pipeline's translated output, through [QualityService], which holds it to the pipeline's permissions.
+/// The REST resource behind a Smart Pipeline's Quality Assurance tab, which shows one pipeline's translated
+/// output and how it was judged. It delegates to [QualityService], which checks the pipeline's permissions.
 @AutoLogged
 public class QualityResourceImpl implements QualityResource {
 

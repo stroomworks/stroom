@@ -29,9 +29,9 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.function.Consumer;
 
-/// One text the node selected on the Learn tab's chart is asked with (A85, A86): its name, where its
-/// words come from, the words themselves to edit, and a button to load a built-in's in their place.
-/// [ApproachSection] shows one for each of the selected step's texts.
+/// One of the question texts that the step selected on the Setup tab's route map is asked with (or one of the
+/// texts every step shares). It shows the text's name, where its words come from, the words themselves to
+/// edit, and a button to replace them with a built-in text. [ApproachSection] shows one for each text.
 public class LearnQuestionText extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -50,7 +50,7 @@ public class LearnQuestionText extends Component {
     private Runnable onLoad = () -> {
     };
 
-    /// Makes an empty text.
+    /// Creates an empty text.
     public LearnQuestionText() {
         initWidget(BINDER.createAndBindUi(this));
         text.addValueChangeHandler(event -> onEdit.accept(event.getValue()));
@@ -67,19 +67,19 @@ public class LearnQuestionText extends Component {
         text.setAriaLabel(name);
     }
 
-    /// @param words  The words the text has, the document's own or the built-in's.
-    /// @param source Where they come from.
+    /// @param words  The words of the text: the document's own, or the built-in text's.
+    /// @param source A status line saying where the words come from.
     public void setWords(final String words, final String source) {
         text.setValue(words);
         status.setText(source);
     }
 
-    /// @param variables What the words may use, shown as the text's tooltip.
+    /// @param variables The variables the words may use, shown as the text box's tooltip.
     public void setVariables(final String variables) {
         text.setTitle(variables);
     }
 
-    /// @param onEdit Told the words when the user edits them.
+    /// @param onEdit Called with the words when the user edits them.
     public void setOnEdit(final Consumer<String> onEdit) {
         this.onEdit = onEdit;
     }

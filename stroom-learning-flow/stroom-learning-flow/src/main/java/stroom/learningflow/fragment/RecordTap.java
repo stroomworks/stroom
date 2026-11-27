@@ -36,19 +36,20 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
-/// The parser's output, one record at a time: the record being transformed, held until the next begins,
-/// so that when the record's output falls short the record itself — as the parser cut it, as a document
-/// of its own — can be shown to the session. Nothing larger than one record is held.
+/// Receives the parser's output during a serving run (via [FragmentTapFilter]) and holds the record
+/// currently being transformed, so that when that record's output falls short of the bar the record
+/// itself, as the parser produced it, can be shown to a learning session as a document of its own. It
+/// also counts the records the parser produced. Nothing larger than one record is held.
 ///
-/// The split hands a record to the transform as the record's last event reaches it, and the transform's
-/// output is judged there and then — before the next record's events arrive, and before the tap, which
-/// sits beside the split on the parser's fork, has necessarily been told the record ended. So the record
-/// the tap shows at a judgement is the one it is in the middle of, where it is in one: what it has of it,
-/// closed, which at the record's last event is the whole record.
+/// The split filter passes a record to the transform as soon as the record's last event reaches it, and
+/// the transform's output is judged at once. That happens before the next record's events arrive, and
+/// possibly before the tap (which sits beside the split as a second child of the parser) has been told
+/// the record ended. So at a judgement, the tap shows the record it is in the middle of, if any, closing
+/// any open elements; at the record's last event, that is the whole record.
 public final class RecordTap implements ContentHandler {
 
-    /// The SAX depth a record sits at: one deeper than the number of elements above it, which is what a
-    /// `SplitFilter` is set to split at. A root's child is depth 2.
+    /// The SAX element depth of a record: one more than the number of elements above it, which is the
+    /// split depth a `SplitFilter` is set to. A child of the root is at depth 2.
     private final int recordDepth;
     private int records;
     private final SimpleEventListBuilder opening = new SimpleEventListBuilder();
@@ -59,24 +60,24 @@ public final class RecordTap implements ContentHandler {
     private String rootUri;
     private String rootLocalName;
     private String rootQName;
-    /// The elements open within the record being built, innermost last, for closing a record read mid-way.
+    /// The elements open within the record being built, used to close a record that is only partly read.
     private final Deque<String[]> open = new ArrayDeque<>();
 
-    /// @param splitDepth How deep a record sits, as `RecordBoundary#splitDepth` counts it: the number of
-    ///                   elements above it. One for the children of a root; three for the items of an
+    /// @param splitDepth How deep a record sits, as `RecordBoundary#splitDepth` counts it, i.e. the number
+    ///                   of elements above it. One for the children of a root; three for the items of an
     ///                   array under a key.
     public RecordTap(final int splitDepth) {
         this.recordDepth = splitDepth + 1;
     }
 
-    /// How many records the parser cut, which is what a served stream is held to account for: every one
-    /// of them must become an event or a declared skip (Track 1 task 2, fix 1).
+    /// How many records the parser produced. A served stream must account for every one of them, as
+    /// either an event or a declared skip.
     public int records() {
         return records;
     }
 
-    /// The record being cut, or where none is open the record most recently cut, as a document of its
-    /// own; empty where there has been none.
+    /// The record currently being read or, where none is open, the most recently completed record, as a
+    /// document of its own; empty where there has been none.
     public Optional<String> current() {
         final List<Event> events = record != null
                 ? ((SimpleEventList) record.getEventList()).getEvents()
@@ -110,7 +111,7 @@ public final class RecordTap implements ContentHandler {
 
     @Override
     public void setDocumentLocator(final Locator locator) {
-        // Not kept.
+        // Not needed.
     }
 
     @Override
@@ -122,7 +123,7 @@ public final class RecordTap implements ContentHandler {
 
     @Override
     public void endDocument() {
-        // The parser's one document; nothing to do.
+        // The parser emits one document, and nothing needs doing at its end.
     }
 
     @Override

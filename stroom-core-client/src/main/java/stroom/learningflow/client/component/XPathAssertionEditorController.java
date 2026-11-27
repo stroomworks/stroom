@@ -32,13 +32,14 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// Adds or edits one of a business rules scorer's assertions in a dialog ([XPathAssertionEditor]): its
-/// name and its XPath, which must be given. Both are trimmed.
+/// Shows a dialog ([XPathAssertionEditor]) to add or edit one of the business rules scorer's assertions.
+///
+/// The XPath is required; the name is optional. Both are trimmed of surrounding whitespace.
 public class XPathAssertionEditorController extends Controller {
 
     private final XPathAssertionEditor view;
 
-    /// Made by GIN, with its content.
+    /// Made by GIN.
     ///
     /// @param eventBus The application's event bus.
     /// @param view     The dialog's content.
@@ -50,12 +51,12 @@ public class XPathAssertionEditorController extends Controller {
         watch(Contexts.READ_ONLY, view::setReadOnly);
     }
 
-    /// Shows the editor as a dialog, owned by `opener` until it is closed. OK gives the assertion to
-    /// `onOk` if it has an XPath; otherwise it says so and the dialog stays open.
+    /// Shows the editor as a dialog, owned by `opener` until it is closed. On OK, if an XPath has been
+    /// entered the assertion is passed to `onOk`; otherwise an error is shown and the dialog stays open.
     ///
-    /// @param opener    What shows it.
-    /// @param assertion The assertion to edit, or a new one.
-    /// @param onOk      What to do with the assertion when OK is pressed.
+    /// @param opener    The controller that opens the dialog and owns it while it is shown.
+    /// @param assertion The assertion to edit, or a new, empty one.
+    /// @param onOk      Called with the edited assertion when OK is pressed and the input is valid.
     public void edit(final HasControllerNode opener,
                      final XPathAssertion assertion,
                      final Consumer<XPathAssertion> onOk) {

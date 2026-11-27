@@ -20,53 +20,56 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/// The snapshots of a fragment's configuration (A61, A70): one per promotion, keyed by a version id —
-/// what a binding points at, what a deferral row is stamped with, what an output records, and what an
-/// as-processed reprocess runs. A snapshot is text: the fragment's structure and each element's code, and
-/// the versions of the documents it was taken from, by which a hand edit is noticed (A72). It lives as
-/// long as its binding (A71). In-memory in scenarios; a table in a node.
+/// Storage for immutable snapshots of a fragment's configuration, one per promotion, each keyed by a version
+/// id. A binding points at its snapshot, a deferral row and an output record the snapshot in force, and an
+/// as-processed reprocess runs the recorded snapshot, so that a stream can be reprocessed exactly as it was
+/// first processed.
+///
+/// A snapshot is text: the fragment's structure, each element's code, and the versions of the documents it
+/// was taken from, which is how a hand edit to the fragment is noticed. A snapshot lasts as long as its
+/// binding. Tests keep snapshots in memory; a node uses a table.
 public interface Snapshots {
 
-    /// Keep a snapshot.
+    /// Stores a snapshot.
     ///
     /// @param snapshot The snapshot, with the id it is to be known by.
     void keep(Snapshot snapshot);
 
-    /// One snapshot by its id.
+    /// Gets one snapshot by its id.
     ///
-    /// @param snapshotId The id.
-    /// @return The snapshot, where it still exists.
+    /// @param snapshotId The snapshot's id.
+    /// @return The snapshot, if it still exists.
     Optional<Snapshot> byId(String snapshotId);
 
-    /// A binding's snapshots, oldest first.
+    /// Gets a binding's snapshots, oldest first.
     ///
-    /// @param bindingUuid The binding.
+    /// @param bindingUuid The binding's UUID.
     /// @return Its snapshots.
     List<Snapshot> forBinding(String bindingUuid);
 
-    /// A binding has gone, and its snapshots with it (A71).
+    /// Deletes the snapshots of a binding that has been removed.
     ///
-    /// @param bindingUuid The binding.
+    /// @param bindingUuid The binding's UUID.
     void discard(String bindingUuid);
 
-    /// Approve rebinds the incumbent to a draft's fragment, and the draft's snapshots become the
-    /// incumbent's.
+    /// Moves a draft's snapshots to the serving binding when the draft is approved, since approval rebinds
+    /// the serving binding to the draft's fragment.
     ///
-    /// @param fromBindingUuid The draft.
-    /// @param toBindingUuid   The binding it replaced.
+    /// @param fromBindingUuid The UUID of the approved draft.
+    /// @param toBindingUuid   The UUID of the serving binding it replaces.
     void move(String fromBindingUuid, String toBindingUuid);
 
     // --------------------------------------------------------------------------------
 
-    /// One snapshot.
+    /// One snapshot of a fragment's configuration.
     ///
-    /// @param id           Its id: the version a binding points at and a row is stamped with.
-    /// @param docUuid      The document.
-    /// @param bindingUuid  The binding.
-    /// @param fragmentUuid The fragment it was taken from.
+    /// @param id           Its id: the version a binding points at and rows are stamped with.
+    /// @param docUuid      The UUID of the document the learner ran under.
+    /// @param bindingUuid  The UUID of the binding it belongs to.
+    /// @param fragmentUuid The UUID of the fragment it was taken from.
     /// @param structure    The fragment's pipeline data, as JSON.
-    /// @param code         Element id to the code that element runs with.
-    /// @param versions     Document uuid to the version of it this was taken from.
+    /// @param code         A map of element id to the code (configuration text) that element runs with.
+    /// @param versions     A map of document UUID to the version of that document the snapshot was taken from.
     /// @param createTimeMs When it was taken.
     record Snapshot(String id,
                     String docUuid,

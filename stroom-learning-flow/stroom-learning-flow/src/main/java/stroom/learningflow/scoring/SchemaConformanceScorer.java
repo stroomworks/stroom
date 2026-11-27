@@ -57,25 +57,25 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Schema conformance (design 01 §8.2), a gate by ruling A16: the proportion of records that validate
- * against the schemas of the document's schema group, judged per record as {@code SchemaFilterSplit}
- * judges them — the output split one top-level element at a time into Stroom's own {@code SchemaFilter}.
- * The feedback is the first failing records' messages, as Stroom post-processes them for people:
- * "Invalid content was found starting with element 'EventDetail'. One of '{EventSource}' is expected." —
- * followed by what the schema says the element in question may contain ({@link ContentModels}), since a
- * validator names one missing child at a time and a model told only that climbs the content model one
- * rung per candidate (design 02 §6.2). Applies to a step that transformed records into records; a
- * parser's records are the input's shape and are judged by the stream-level scorers (design 01 §4).
- * <p>
- * The schema filter is pipeline-scoped in a node and reports through the pipeline's error receiver, which
- * is swapped for a recording one for the length of the run — the same arrangement as
- * {@code DataSplitterCompiler}, with the same consequence: an instance is for one thread.
- */
+/// The schema conformance scorer, a gate in every preset: the proportion of records that validate against
+/// the document's target schema (or, where it names none, the `EVENTS` schema group). Records are judged
+/// individually, as `SchemaFilterSplit` judges them: the output is split one top-level element at a time
+/// into Stroom's own `SchemaFilter`.
+///
+/// The feedback is the first failing records' messages, as Stroom formats them for people, e.g. "Invalid
+/// content was found starting with element 'EventDetail'. One of '{EventSource}' is expected.". These are
+/// followed by what the schema says the element in question may contain ([ContentModels]), because a
+/// validator names one missing child at a time, and a model told only that would fix the content one
+/// child per candidate. It applies to a step that transformed records into records; a parser's records
+/// follow the input's structure and are judged by the stream-level scorers.
+///
+/// The schema filter is pipeline-scoped on a node and reports through the pipeline's error receiver,
+/// which is swapped for a recording one for the length of the run. This is the same arrangement as
+/// `DataSplitterCompiler`, with the same consequence: an instance must only be used by one thread.
 public final class SchemaConformanceScorer implements Scorer {
 
-    /// The event-logging schemas' group in Stroom's content packs: what a document naming no target is
-    /// judged against.
+    /// The schema group of the event-logging schemas in Stroom's content packs, which is what a document
+    /// naming no target schema is judged against.
     static final String EVENTS_GROUP = "EVENTS";
     private static final ElementId CONFORMANCE = new ElementId("SchemaConformance");
     private static final int RECORDS_SHOWN = 5;
@@ -136,8 +136,8 @@ public final class SchemaConformanceScorer implements Scorer {
             try {
                 split.startStream();
                 final XMLReader reader = ConfinedXml.reader();
-                // A declared skip is the module's own marker, not an event, and no schema knows it:
-                // validating it would fail every feed that has header lines (the declared-skips design)
+                // A declared skip is this module's own marker, not an event, and no schema allows it, so
+                // validating it would fail every feed that has header lines.
                 reader.setContentHandler(DeclaredSkips.stripping(split));
                 reader.parse(new InputSource(new StringReader(output)));
                 split.endStream();
@@ -145,8 +145,8 @@ public final class SchemaConformanceScorer implements Scorer {
                 split.endProcessing();
             }
         } catch (final SAXException | IOException | RuntimeException e) {
-            // The output parsed once already, to be counted; a failure here is the validator's, and every
-            // record it did not get to judge is a record that did not conform.
+            // The output has already parsed once, when it was counted, so a failure here is the
+            // validator's, and every record it did not get to judge counts as not conforming.
             errors.log(Severity.FATAL_ERROR, null, CONFORMANCE, e.getMessage(), ErrorType.GENERIC, e);
         } finally {
             errorReceiverProxy.setErrorReceiver(previous);
@@ -156,7 +156,8 @@ public final class SchemaConformanceScorer implements Scorer {
         final int passing = Math.max(0, counter.records - errors.failing.size());
         final int failing = total - passing;
         final List<StoredError> diagnostics = new ArrayList<>();
-        // The schema's own account first: it is what turns one missing child per candidate into one step.
+        // The schema's description goes first, because it lets the model fix all the missing children in
+        // one attempt instead of one per candidate.
         if (!errors.failing.isEmpty()) {
             diagnostics.addAll(hints(constraint(target), errors.failing.values()));
         }
@@ -171,9 +172,8 @@ public final class SchemaConformanceScorer implements Scorer {
                     "Record " + failure.getKey() + ": " + failure.getValue()));
         }
         // The validator counts records from one; the output's records are indexed from zero. An error
-        // raised before any record began — the validator failing to start — is keyed zero and names no
-        // record. A record the validator never reached is failing too, and is every index from the last
-        // it reached.
+        // raised before any record began (e.g. the validator failing to start) is keyed zero and names no
+        // record. Records the validator never reached also fail: every index after the last one it reached.
         final Set<Integer> failingRecords = new TreeSet<>();
         for (final int record : errors.failing.keySet()) {
             if (record >= 1) {
@@ -186,9 +186,10 @@ public final class SchemaConformanceScorer implements Scorer {
         return Optional.of(new Score(type(), (double) passing / total, diagnostics, failingRecords));
     }
 
-    /// Which schemas the output is validated against: the one version the document names as its target
-    /// (task 7), or, where it names none, every schema of the `EVENTS` group, which is what the check's
-    /// schema group setting always defaulted to before the target replaced it.
+    /// Chooses which schemas the output is validated against: the single schema version the document
+    /// names as its target or, where it names none, every schema in the `EVENTS` group. The latter keeps
+    /// documents saved before the target schema setting existed behaving as they did, since the check's
+    /// old schema group setting defaulted to `EVENTS`.
     ///
     /// @param target The document's target schema, or null.
     /// @return The criteria.
@@ -201,11 +202,10 @@ public final class SchemaConformanceScorer implements Scorer {
         return target.criteria();
     }
 
-    /**
-     * What the schema says about the elements the messages complain of: the whole content model of an
-     * element reported incomplete, and of the parents that could hold an unexpected child beside what
-     * was expected instead. A few, distinct, so the feedback stays readable.
-     */
+    /// Builds hints from what the schema says about the elements the messages complain of: the whole
+    /// content model of an element reported as incomplete, and of the parents that could hold an
+    /// unexpected child as well as what was expected instead. Only a few distinct hints are given, so the
+    /// feedback stays readable.
     private List<StoredError> hints(final FindXMLSchemaCriteria constraint, final Collection<String> messages) {
         final Set<String> texts = new LinkedHashSet<>();
         final Set<String> misplaced = new LinkedHashSet<>();
@@ -224,8 +224,8 @@ public final class SchemaConformanceScorer implements Scorer {
                             .filter(name -> !name.isEmpty())
                             .toList();
                     if (expected.contains(found)) {
-                        // The right name in the wrong namespace: a literal result element outside the
-                        // stylesheet's default namespace, most often.
+                        // The right name in the wrong namespace, most often a literal result element
+                        // outside the stylesheet's default namespace.
                         misplaced.add(found + " was found where " + found + " is expected, so it is in the wrong "
                                       + "namespace or none" + models.namespace()
                                               .map(ns -> ": declare xmlns=\"" + ns + "\" on the xsl:stylesheet "
@@ -240,7 +240,7 @@ public final class SchemaConformanceScorer implements Scorer {
                 }
             }
         } catch (final RuntimeException e) {
-            // The hint is best effort; the score and the validator's own messages stand without it.
+            // The hints are best effort; the score and the validator's own messages stand without them.
             return List.of();
         }
         final List<StoredError> hints = new ArrayList<>();
@@ -256,16 +256,15 @@ public final class SchemaConformanceScorer implements Scorer {
         return hints;
     }
 
-    /// What the content models are cached under: a group, or one version's namespace and system id.
+    /// The key the content models are cached under: a group, or one schema version's namespace and system
+    /// id.
     private static String key(final FindXMLSchemaCriteria criteria) {
         return criteria.getSchemaGroup() + "\u0000" + criteria.getNamespaceURI() + "\u0000"
                + criteria.getSystemId();
     }
 
-    /**
-     * The schemas as the validator reads them — as the processing user, since the stream's user need not
-     * be able to read schema documents to have their output judged against them.
-     */
+    /// Loads the schemas the validator uses, as the processing user, since the stream's user need not be
+    /// able to read schema documents to have their output judged against them.
     private ContentModels load(final FindXMLSchemaCriteria criteria) {
         return securityContext.asProcessingUserResult(() -> new ContentModels(
                 schemaStore.find(criteria).getValues().stream()
@@ -274,18 +273,15 @@ public final class SchemaConformanceScorer implements Scorer {
                         .toList()));
     }
 
-    /**
-     * A name as Xerces writes it in a message — maybe quoted, maybe prefixed or in braces — as a local name.
-     */
+    /// Converts a name as Xerces writes it in a message (possibly quoted, prefixed or in braces) to a local
+    /// name.
     private static String local(final String written) {
         final String bare = written.trim().replace("\"", "").replace("{", "").replace("}", "");
         return bare.substring(bare.lastIndexOf(':') + 1);
     }
 
-    /**
-     * Sits between the split and the schema filter, so that every error the validator raises can be laid
-     * at the record whose document is passing through.
-     */
+    /// Sits between the split and the schema filter and counts the records, so that every error the
+    /// validator raises can be attributed to the record currently passing through.
     private static final class RecordCounter extends AbstractXMLFilter {
 
         private final RecordErrors errors;
@@ -303,9 +299,7 @@ public final class SchemaConformanceScorer implements Scorer {
         }
     }
 
-    /**
-     * The first error at or above {@code ERROR} for each record that raised one, by record number.
-     */
+    /// Records the first error at or above `ERROR` for each record that raised one, by record number.
     private static final class RecordErrors implements ErrorReceiver {
 
         private final Map<Integer, String> failing = new LinkedHashMap<>();

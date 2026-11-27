@@ -16,8 +16,9 @@
 
 package stroom.learningflow.learning;
 
-/// Thrown when a learning run would ask the model but the document names none, so that what stops the run
-/// is reported as a model not chosen ([StopReports#failure]) rather than as an unknown failure.
+/// Thrown when a learning run needs to ask the model but the Learning Flow document names none. It has its
+/// own type so that the stop is reported as "no model chosen" ([StopReports#failure]) rather than as an
+/// unknown failure.
 public class ModelNotChosenException extends IllegalStateException {
 
     /// @param message What is wrong, in a sentence.

@@ -23,11 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * A supervisor's messages as a list: what scenarios run over, and what a node runs over until the A26
- * module is bound — node-local and gone on restart.
- * Every method is synchronised: one node's tasks share it.
- */
+/// An in-memory [Guidance], holding the messages people leave for learners as a list, for scenarios and
+/// for a node run without the database module. It is local to one node and lost on restart. Every method
+/// is synchronised, because one node's tasks share it.
 public final class InMemoryGuidance implements Guidance {
 
     private final List<Row> rows = new ArrayList<>();
@@ -56,8 +54,7 @@ public final class InMemoryGuidance implements Guidance {
         rows.removeIf(row -> row.docUuid().equals(docUuid) && row.given().id() == id);
     }
 
-    /// What has been said to the learner, brought to the document it runs under (see
-    /// [InMemoryLearners]).
+    /// Updates the learner's guidance to the document it runs under (see [InMemoryLearners]).
     ///
     /// @param learner The learner.
     /// @param docUuid The document.

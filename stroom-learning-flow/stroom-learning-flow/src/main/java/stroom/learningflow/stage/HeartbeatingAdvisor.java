@@ -29,17 +29,18 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-/// An advisor that keeps the attempt's claim alive while a question is with the model (A45; design 04
-/// §4). The claim is pushed out before every question and after every answer, but a single call that
-/// takes longer than the lease would otherwise let the claim lapse mid-call, and another node would take
-/// the attempt and ask the same question again. So while the delegate is answering, the heartbeat runs
-/// on a timer — a third of the lease apart, so two can be missed before the claim lapses — and stops the
-/// moment the answer, or a failure, comes back.
+/// An advisor wrapper that keeps a session's claim on its learner alive while a question is with the model.
 ///
-/// One daemon thread serves every attempt on the node: a heartbeat is one short write, and an attempt
-/// asks one question at a time. A question's beats run under a lock that the question takes as it
-/// returns, so once [#ask] has returned no beat of it is running and none can start: the session goes on
-/// — parks, closes, asks again — knowing nothing will write its claim behind it.
+/// The claim is renewed before every question and after every answer, but a single call that takes longer
+/// than the lease would otherwise let the claim expire mid-call, and another node would take over the
+/// session and ask the same question again. So while the delegate is answering, a heartbeat runs on a timer,
+/// a third of the lease apart so that two can be missed before the claim expires, and stops as soon as the
+/// answer, or a failure, comes back.
+///
+/// One daemon thread serves every session on the node, because a heartbeat is one short write and a session
+/// asks one question at a time. A question's heartbeats run under a lock that the question also takes as it
+/// returns, so once [#ask] has returned none of its heartbeats is running and none can start. The session
+/// can then go on (park, close, or ask again) knowing that nothing will renew its claim behind its back.
 public final class HeartbeatingAdvisor implements Advisor {
 
     private static final ScheduledExecutorService TIMER = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -52,16 +53,17 @@ public final class HeartbeatingAdvisor implements Advisor {
     private final Runnable heartbeat;
     private final long everyMs;
 
-    /// @param delegate  Who answers.
-    /// @param heartbeat What pushes the claim out; it must not throw.
-    /// @param every     How often to push it out while a question is with the model.
+    /// @param delegate  The advisor that answers the questions.
+    /// @param heartbeat Renews the claim; it must not throw.
+    /// @param every     How often to renew the claim while a question is with the model.
     public HeartbeatingAdvisor(final Advisor delegate, final Runnable heartbeat, final Duration every) {
         this.delegate = Objects.requireNonNull(delegate);
         this.heartbeat = Objects.requireNonNull(heartbeat);
         this.everyMs = Math.max(1L, every.toMillis());
     }
 
-    /// The interval for a lease: a third of it, so that two missed beats still leave the claim held.
+    /// Gets the heartbeat interval for a lease: a third of it, so that the claim is still held after two
+    /// missed heartbeats.
     public static Duration intervalFor(final Duration lease) {
         return lease.dividedBy(3);
     }
@@ -105,8 +107,8 @@ public final class HeartbeatingAdvisor implements Advisor {
     // --------------------------------------------------------------------------------
 
 
-    /// One question's beats: started with it, and stopped — waiting for a beat that is running — before
-    /// the question returns.
+    /// The heartbeats for one question: started when it is asked, and stopped before it returns, waiting
+    /// for any heartbeat that is running to finish.
     private final class Beating {
 
         private final Object lock = new Object();

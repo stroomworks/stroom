@@ -30,9 +30,9 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// The content of the dialog that loads a built-in text into one of a step's texts (design 05 §3):
-/// the built-ins to choose from, and the words of the one chosen, shown before they are loaded.
-/// [BuiltInTextController] shows it.
+/// The content of the dialog that replaces one of the texts a Learning Flow sends to the AI (such as a step's
+/// question) with one of Stroom's built-in texts. It lists the built-in texts to choose from and previews the
+/// one chosen before it is loaded. [BuiltInTextController] shows it.
 public class BuiltInText extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -45,7 +45,7 @@ public class BuiltInText extends Component {
     private Consumer<Template> onChoice = template -> {
     };
 
-    /// Makes an empty dialog content.
+    /// Creates the dialog content with nothing to choose from.
     public BuiltInText() {
         initWidget(BINDER.createAndBindUi(this));
         choice.setOnChange(template -> onChoice.accept(template));
@@ -72,7 +72,7 @@ public class BuiltInText extends Component {
         preview.setValue(text);
     }
 
-    /// @param onChoice Told the built-in the user chooses.
+    /// @param onChoice Called with the built-in text the user chooses, so that it can be previewed.
     public void setOnChoice(final Consumer<Template> onChoice) {
         this.onChoice = onChoice;
     }

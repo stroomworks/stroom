@@ -18,14 +18,15 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/// Where a session goes when it leaves the flow without binding (A83): parked for a person, or the
-/// learner given up and its streams errored. A transition names one with `goto park` or `goto give-up`;
-/// one written `abandon` takes the step's own default, which is give-up for a parser (A52, A54) and park
-/// for any other step (A65).
+/// Where a session goes when it leaves the flow without producing a binding: parked for a person, or the
+/// learner given up and its streams errored. A transition names one by going to `park` or `give-up`; one that
+/// names no step takes the step's own default, which is give-up for a parser (a stream that cannot be parsed
+/// is the one real failure) and park for any other step.
 public enum FlowExit implements HasDisplayValue {
-    /// The session parks for a person (A65): grant more, answer a turn, or send to the exhaustion step.
+    /// The session stops and waits for a person, who can grant more budget, answer a turn, or send it to the
+    /// fallback step that writes marked Unknowns.
     PARK("park"),
-    /// The learner is given up and the streams waiting on it error with the reason (A52, A54, A80).
+    /// The learner is given up and the streams waiting on it error with the reason.
     GIVE_UP("give-up");
 
     private final String displayValue;

@@ -25,8 +25,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// The one model of checks: every check has one setting, a new Learning Flow has the *Standard* defaults,
-/// and a document held before the model is read from its scorers.
+/// Tests the check settings: every check has exactly one setting, a new Learning Flow document has the
+/// *Standard* defaults, settings round-trip, and invalid sets are reported.
 class TestCheckSettings {
 
     @Test

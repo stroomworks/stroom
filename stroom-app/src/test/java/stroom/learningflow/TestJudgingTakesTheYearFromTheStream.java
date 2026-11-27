@@ -55,33 +55,33 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// A timestamp with no year takes its year from the stream, not from the clock (Track 1 task 3,
-/// assumption AS6).
+/// Tests that, when a learning session judges a translation, a timestamp with no year takes its year from
+/// the stream rather than from the clock.
 ///
-/// This is the fault the dev instance showed on 11 November: syslog writes `Jun 17 09:06:02` with no year,
-/// and a translation that guesses one dates every event wrongly while passing every other check. The
-/// answer is `stroom:format-date`, which fills in what the timestamp leaves out from the stream's own
-/// time — but only where the run holds the stream. The worker runs outside a processing task, where
-/// nothing held it, so Stroom's `FormatDate` fell back to `Instant.now()`.
+/// Syslog writes timestamps such as `Jun 17 09:06:02` with no year. A translation that guesses the year
+/// dates every event wrongly while passing every other check. The translation should use
+/// `stroom:format-date`, which fills in the missing parts from the stream's own time, but only when the
+/// stream's metadata is available to the run. The learning worker runs outside a processing task, and
+/// without that metadata Stroom's `FormatDate` falls back to `Instant.now()`.
 ///
-/// The test is here rather than in the module because only a node runs Stroom's real function library.
-/// The module's scenario harness stands in for it (`StroomStandIns`), and the last test here is what
-/// holds the two together: a stand-in that had drifted would have the model correcting a fault the
-/// pipeline does not have.
+/// The test is here rather than in the Learning Flow module because only a running node has Stroom's
+/// real function library. The module's scenario harness uses a stand-in (`StroomStandIns`), and the last
+/// test checks that the stand-in fills the year in the same way. If they differed, the scenarios would
+/// teach the model to work around a fault the real pipeline does not have.
 class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTest {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow", "PARTIAL-DATES");
 
-    /// Three years before this test runs: far enough back that a year taken from the clock is
-    /// unmistakable, and the shape of a stream loaded from an archive.
+    /// The stream's creation time, three years before the test runs. This is far enough back that a year
+    /// taken from the clock is unmistakable, and is typical of a stream loaded from an archive.
     private static final Instant RECEIVED = Instant.now().minus(3 * 365, ChronoUnit.DAYS);
-    /// Two years before that again, for the second stream of one pipeline scope.
+    /// Two years before [#RECEIVED], for the second stream run in the same pipeline scope.
     private static final Instant OLDER = RECEIVED.minus(2 * 365, ChronoUnit.DAYS);
 
     private static final String INPUT = "<records xmlns=\"records:2\"><record><data name=\"when\" "
                                         + "value=\"Jun 17 09:06:02\"/></record></records>";
 
-    /// A translation that does what the prompt now tells the model to do: take what the timestamp leaves
+    /// A translation that does what the prompt tells the model to do: take the parts the timestamp leaves
     /// out from the stream, rather than writing a year of its own.
     private static final String XSLT = """
             <xsl:stylesheet version="2.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
@@ -145,9 +145,9 @@ class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTes
 
     @Test
     void aSecondStreamInOneScopeDoesNotKeepTheFirstsYear() {
-        // The fault assumption AS6 named: the worker carries a batch of attempts in one pipeline scope,
-        // and the holders are scoped to it, so an attempt that did not replace the previous one's meta
-        // would take the previous stream's year without saying so
+        // The worker runs a batch of attempts in one pipeline scope, and the meta holder is scoped to it.
+        // An attempt that did not replace the previous attempt's meta would silently take the previous
+        // stream's year.
         final AtomicReference<String> first = new AtomicReference<>();
         final AtomicReference<String> second = new AtomicReference<>();
         pipelineScopeRunnable.scopeRunnable(() -> {
@@ -167,9 +167,8 @@ class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTes
 
     @Test
     void theModulesStandInFillsTheYearInTheSameWay() {
-        // What Track 2 step 2 could not check until the stream's time was held when judging: the
-        // scenario harness and a node must agree, or a translation that passes the suite behaves
-        // differently in a pipeline
+        // The scenario harness and a node must agree, or a translation that passes the scenarios would
+        // behave differently in a real pipeline.
         final AtomicReference<String> real = new AtomicReference<>();
         pipelineScopeRunnable.scopeRunnable(() -> {
             final DocRef fragment = write("partial-dates-v3");
@@ -196,14 +195,15 @@ class TestJudgingTakesTheYearFromTheStream extends AbstractProcessIntegrationTes
         return steps.get(steps.size() - 1).result().output();
     }
 
-    /// The same date through the module's stand-in, which the scenario harness runs.
+    /// Runs the same translation through the module's stand-in XSLT step, which the scenario harness uses,
+    /// and returns what it wrote in `When`.
     private static String standIn() {
         return when(new StandInXsltStep(new StreamFacts(1L, "SYSLOG", "Raw Events", RECEIVED.toEpochMilli(),
                 Map.of())).prepare(XSLT).run(INPUT).output());
     }
 
-    /// @param output A run's output.
-    /// @return What it wrote in its first `When`.
+    /// @param output The XML output of a translation run.
+    /// @return The text of the first `When` element in the output.
     private static String when(final String output) {
         assertThat(output).describedAs("the translation produced output").isNotNull();
         return output.replaceAll("(?s).*?<When[^>]*>", "").replaceAll("(?s)</When>.*", "").trim();

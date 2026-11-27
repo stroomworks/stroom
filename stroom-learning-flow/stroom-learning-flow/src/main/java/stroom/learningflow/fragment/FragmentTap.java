@@ -20,9 +20,10 @@ import stroom.util.pipeline.scope.PipelineScoped;
 
 import org.xml.sax.ContentHandler;
 
-/// Where a fragment's parser output is tapped during a serving run (design 04 §4): the handler the tap
-/// filter forwards to, set by the runner for the run and cleared after it. Pipeline-scoped, as the
-/// fragment's output holder is, since the fragment is built inside the task's or the worker's scope.
+/// Holds the handler that [FragmentTapFilter] forwards a fragment's parser output to during a serving
+/// run. [PipelineFragmentRunner] sets it for the run and restores the previous handler afterwards. Like
+/// [FragmentOutput], it is pipeline-scoped because the fragment is built inside the processing task's or
+/// the background worker's pipeline scope.
 @PipelineScoped
 public class FragmentTap {
 

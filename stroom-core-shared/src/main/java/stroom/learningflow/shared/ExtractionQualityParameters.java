@@ -26,24 +26,18 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Extraction quality, the anti-degeneracy scorer of proposed ruling A16 (§8.3): the ratio of
- * schema-named elements to untyped {@code Data}, the proportion of records whose {@code EventDetail}
- * names a real branch rather than {@code Unknown}, and coverage of the fields the document requires.
- */
+/// Parameters for the extraction quality check, which catches output that is valid but extracts nothing
+/// useful. It measures the share of elements that are typed rather than untyped `Data`, the share of records
+/// whose `EventDetail` names a real branch rather than `Unknown`, and how well the required fields are filled.
 @JsonPropertyOrder({"allowUnknownEventDetail", "requiredFields"})
 @JsonInclude(Include.NON_NULL)
 public final class ExtractionQualityParameters extends ScorerParameters {
 
-    /**
-     * Whether {@code Unknown} event detail is tolerated at all. Never counts toward a passing score
-     * either way (A16).
-     */
+    /// Whether a bare `Unknown` event detail (one without the learned Unknown marker) is tolerated. When it is,
+    /// such records are neither failed nor measured, so they never raise the score.
     @JsonProperty
     private final boolean allowUnknownEventDetail;
-    /**
-     * XPaths every record must populate.
-     */
+    /// XPaths that every record must populate.
     @JsonProperty
     private final List<String> requiredFields;
 

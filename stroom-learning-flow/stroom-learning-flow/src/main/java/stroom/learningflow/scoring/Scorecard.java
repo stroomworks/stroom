@@ -35,16 +35,14 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * A Learning Flow's checks applied to a step (the one model of checks, UM-2 and UM-3): every check that
- * isn't off and whose scorer has a signal on the step is scored and judged against its threshold. A check
- * that is a gate refuses a candidate below its threshold; one that is advice does so only where the step
- * has a rule for its shortfall (D1). A check whose scorer is not installed, or whose parameters its scorer
- * refuses, is a configuration fault and is refused when the scorecard is built, not silently skipped or
- * failed stream by stream at scoring time. The checks with no scorer (wholeness, preservation, fidelity,
- * the regression corpus) are judged by the conversation and by promotion, which ask this scorecard whether
- * each is on and whether it decides ([#decides]).
- */
+/// Applies a Learning Flow's checks to a step. Every check that is not off, and whose scorer has
+/// something to measure on the step, is scored and judged against its threshold. A gate check refuses a
+/// candidate below its threshold; an advice check does so only where the flow step has a transition for
+/// its shortfall. A check whose scorer is not installed, or whose parameters its scorer rejects, is a
+/// configuration fault and is refused when the scorecard is built, rather than silently skipped or failed
+/// stream by stream at scoring time. The checks with no scorer (wholeness, preservation, fidelity, the
+/// regression corpus) are judged by the learning conversation and by promotion, which ask this scorecard
+/// whether each is on and whether it decides the outcome ([#decides]).
 public final class Scorecard {
 
     private static final Set<Check> MEANING = EnumSet.of(
@@ -52,7 +50,7 @@ public final class Scorecard {
 
     private final List<CheckSetting> settings;
     private final Map<Check, Scorer> scorers;
-    /// The one schema the document's translations must write (task 7), or null where it names none.
+    /// The schema the document's translations must conform to, or null where it names none.
     private final TargetSchema target;
 
     private Scorecard(final List<CheckSetting> settings,
@@ -75,34 +73,43 @@ public final class Scorecard {
         }
     }
 
+    /// Builds a scorecard that judges against no particular schema.
+    ///
     /// @param settings A Learning Flow's checks; those that are off are not run.
     /// @param scorers  The installed scorers.
-    /// @return The scorecard, judging against no particular schema.
+    /// @return The scorecard.
+    /// @throws IllegalArgumentException If a check that is on has no scorer or invalid parameters.
     public static Scorecard of(final List<CheckSetting> settings, final List<Scorer> scorers) {
         return of(settings, scorers, null);
     }
 
+    /// Builds a scorecard.
+    ///
     /// @param settings A Learning Flow's checks; those that are off are not run.
     /// @param scorers  The installed scorers.
-    /// @param target   The one schema the document's translations must write (task 7), or null where it
-    ///                 names none.
+    /// @param target   The schema the document's translations must conform to, or null where it names
+    ///                 none.
     /// @return The scorecard.
+    /// @throws IllegalArgumentException If a check that is on has no scorer or invalid parameters.
     public static Scorecard of(final List<CheckSetting> settings,
                                final List<Scorer> scorers,
                                final TargetSchema target) {
         return new Scorecard(settings, scorers, target, true);
     }
 
-    /**
-     * This scorecard with only the checks of meaning — those that judge what the output says, not how
-     * much of the input it took or how many records it made — for judging one event on its own.
-     */
+    /// This scorecard narrowed to the checks of meaning (those that judge what the output says, not how
+    /// much of the input it consumed or how many records it produced), for judging one event on its own.
+    ///
+    /// @return The narrowed scorecard.
     public Scorecard meaning() {
         return narrowed(settings.stream().filter(setting -> MEANING.contains(setting.getCheck())).toList());
     }
 
-    /// This scorecard with only the checks a flow step names (A37), and the compile gate, which every step
-    /// stands on.
+    /// This scorecard narrowed to the checks a flow step names, plus the compile and permitted checks,
+    /// which apply to every step.
+    ///
+    /// @param checks The checks the step names.
+    /// @return The narrowed scorecard.
     public Scorecard only(final Collection<Check> checks) {
         return narrowed(settings.stream()
                 .filter(setting -> setting.getCheck() == Check.COMPILE
@@ -115,8 +122,7 @@ public final class Scorecard {
         return new Scorecard(kept, List.copyOf(scorers.values()), target, false);
     }
 
-    /// @return The one schema the document's translations must write (task 7), or null where it names
-    ///         none.
+    /// @return The schema the document's translations must conform to, or null where it names none.
     public TargetSchema target() {
         return target;
     }
@@ -127,13 +133,13 @@ public final class Scorecard {
         return settings.stream().filter(setting -> setting.getCheck() == check).findFirst();
     }
 
-    /// Whether a check that falls short on a step decides the step's outcome (D1): a gate always does; advice
-    /// does only where the step has a rule for its shortfall; a check that is off, or not in this scorecard,
-    /// never does.
+    /// Whether a check that falls short on a step decides the step's outcome. A gate always does; advice
+    /// does only where the step has a transition for its shortfall; a check that is off, or not in this
+    /// scorecard, never does.
     ///
     /// @param check A check.
-    /// @param step  The step, or null for none, which has no rules.
-    /// @return Whether its shortfall decides.
+    /// @param step  The step, or null for none, which has no transitions.
+    /// @return Whether its shortfall decides the outcome.
     public boolean decides(final Check check, final FlowStep step) {
         return setting(check).map(setting -> setting.isGate() || ruled(step, check)).orElse(false);
     }
@@ -147,17 +153,22 @@ public final class Scorecard {
                         : check.getDefaultThreshold());
     }
 
-    /// The outcome of a verdict on a step that has no rules: passed, or the failed gate that decided it.
+    /// The outcome of a verdict on a step that has no transitions: passed, or the shortfall of the failed
+    /// gate that decided it.
+    ///
+    /// @param verdict The verdict.
+    /// @return The outcome.
     public static StepOutcome outcome(final Verdict verdict) {
         return outcome(verdict, null);
     }
 
-    /// The outcome of a verdict on a step (A37, D1): passed, or the shortfall that decided it — a failed gate
-    /// before any advice that fell short and that the step has a rule for, in the order of the checks within
-    /// each; the compile gate's as `COMPILE_FAILED`.
+    /// The outcome of a verdict on a step: passed, or the shortfall that decided it. A failed gate takes
+    /// precedence over any advice that fell short and that the step has a transition for, and within each
+    /// the first check in order wins. A compile failure gives `COMPILE_FAILED`.
     ///
     /// @param verdict The verdict.
-    /// @param step    The step judged, whose rules say which advice routes; null for one with no rules.
+    /// @param step    The step judged, whose transitions say which advice shortfalls decide the outcome;
+    ///                null for one with no transitions.
     /// @return The outcome.
     public static StepOutcome outcome(final Verdict verdict, final FlowStep step) {
         return shortfall(verdict, step)
@@ -165,10 +176,11 @@ public final class Scorecard {
                 .orElse(StepOutcome.PASSED);
     }
 
-    /// The score of the check that decided a verdict (design 06 A144): on a shortfall the one [#outcome]
-    /// names; on a pass the gate that passed by the least, or where no gate applied, the check that did.
-    /// The compile gate is the floor every step stands on rather than a check, and its outcome says all
-    /// its score would, so it decides no score.
+    /// The score of the check that decided a verdict, which is what a turn is scored by. On a shortfall it
+    /// is the check [#outcome] names; on a pass it is the gate that passed by the smallest margin or,
+    /// where no gate applied, the check that did. The compile check is a basic requirement of every step
+    /// rather than a measure, and its outcome already says everything its score would, so it is never the
+    /// deciding check.
     ///
     /// @param verdict The verdict.
     /// @param step    The step judged; null for one with no rules.
@@ -192,12 +204,13 @@ public final class Scorecard {
     }
 
     /// @param check A check.
-    /// @return Its name as people read it.
+    /// @return Its display name.
     static String name(final Check check) {
         return check.getName();
     }
 
-    // The judgement that decided a shortfall: a failed gate before any advice the step routes on
+    // Finds the judgement that decided a shortfall: a failed gate, or failing that, advice the step has a
+    // transition for.
     private static Optional<Judgement> shortfall(final Verdict verdict, final FlowStep step) {
         return verdict.judgements().stream()
                 .filter(Judgement::failedGate)
@@ -208,7 +221,7 @@ public final class Scorecard {
                         .findFirst());
     }
 
-    // Whether the step has a rule for the check's shortfall
+    // Whether the step has a transition for the check's shortfall.
     private static boolean ruled(final FlowStep step, final Check check) {
         final StepOutcome shortfall = check.shortfall();
         return step != null && shortfall != null && step.transitionOn(shortfall) != null;

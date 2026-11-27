@@ -20,17 +20,18 @@ import stroom.docref.HasDisplayValue;
 import stroom.learningflow.shared.LearnerState;
 import stroom.learningflow.shared.SupervisorLearner;
 
-/// Which feeds the Feeds tab lists, by where they stand.
+/// The choices for which Smart Pipelines a list of them shows, according to the state of each one's learner.
+/// Used on a Learning Flow document's Pipelines tab and on the Smart Pipelines screen.
 public enum FeedFilter implements HasDisplayValue {
     /// Every feed.
     ALL("All pipelines"),
-    /// A draft to approve, or a paused run.
+    /// Waiting for a person: a draft to approve, or a paused run.
     NEEDS_YOU("Needs you"),
-    /// A run under way, or nothing translating yet.
+    /// Learning: a run is under way, or nothing translates the feed yet.
     LEARNING("Learning"),
-    /// A translation in use.
+    /// A translation is in use.
     TRANSLATING("Translating"),
-    /// Stopped learning, or learning switched off.
+    /// Learning has been stopped, or is switched off.
     STOPPED("Stopped or off");
 
     private final String displayValue;
@@ -44,17 +45,18 @@ public enum FeedFilter implements HasDisplayValue {
         return displayValue;
     }
 
-    /// Whether a list filtered by this leaves anything out, or lets deleted pipelines in, so that the filter
-    /// button can say a filter is on rather than leaving a person wondering where the rest went.
+    /// Whether a list filtered by this differs from the unfiltered list, by leaving feeds out or by including
+    /// deleted pipelines. The filter button uses this to show that a filter is on, so that a person is not
+    /// left wondering where the other feeds went.
     ///
     /// @param showDeleted Whether feeds whose pipeline was deleted are listed too.
-    /// @return Whether it is anything but every feed of every pipeline that still exists.
+    /// @return False only when the list shows every feed of every pipeline that still exists.
     public boolean isFiltering(final boolean showDeleted) {
         return this != ALL || showDeleted;
     }
 
     /// @param learner A feed's learner row.
-    /// @return Whether the filter lists it.
+    /// @return Whether this filter includes the feed.
     public boolean test(final SupervisorLearner learner) {
         final LearnerState state = learner.getState();
         switch (this) {

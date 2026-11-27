@@ -27,10 +27,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
-/**
- * What a script expects of one question: its kind, and as much of its content as the scenario cares
- * to pin down. Built fluently; every {@code with…} adds a condition and a phrase to the description.
- */
+/// What a [Script] expects of one question: its kind, and as much of its content as the scenario needs to
+/// check. It is built fluently; each `with…` method adds a condition and a phrase to the description.
 public final class QuestionMatcher {
 
     private final List<Predicate<Question>> conditions = new ArrayList<>();
@@ -68,8 +66,8 @@ public final class QuestionMatcher {
                 q -> q instanceof final Configuration c && c.elementType().equals(elementType) && !c.admitting());
     }
 
-    /// The exhaustion step's question (design 04 §4): the transform's configuration asked for once more,
-    /// with the admitted form in it.
+    /// Matches the exhaustion step's question: the transform's configuration asked for once more, with
+    /// the form for admitting records as marked Unknown events included.
     public static QuestionMatcher admission(final String elementType) {
         return new QuestionMatcher("admission question for " + elementType,
                 q -> q instanceof final Configuration c && c.elementType().equals(elementType) && c.admitting());

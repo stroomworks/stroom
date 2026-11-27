@@ -39,20 +39,17 @@ import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
 
 
-/**
- * The supervisor at the extraction stage (design 01 §3, §12 item 4): one supervised stage fed the raw
- * stream, emitting events. Sits where a parser sits, and does what the {@link Stage} decides — runs
- * the stream through a bound fragment, learns one when nothing is bound and the document allows, or
- * refuses it with an error naming the learner and the reason (A4). What it does is {@link Supervision}'s.
- * <p>
- * A bound fragment runs as a nested pipeline (A20), built by the same {@link stroom.pipeline.factory.PipelineFactory}
- * in the same pipeline scope, so its errors reach this pipeline's error stream and its events reach this
- * element's targets. It runs once: the run the stage judged is the run that is served. The bindings that
- * produced the output (§7.3 rule 3) go into the output stream's attributes through {@link MetaData}.
- * <p>
- * The stage's runtime state — learners, outputs, deferrals, regression set — is whatever the node
- * binds for the seams of A26; until the module of §12 item 8 exists that is in-memory and node-local.
- */
+/// The Smart Pipeline pipeline element. It sits in the parser position, is given the raw stream, and
+/// emits events. Each instance in a pipeline is a learner. What it does with each stream is decided by the
+/// [Stage], through [Supervision]: it serves the stream through the learner's binding; defers the stream
+/// when nothing can serve it yet, leaving the learning to the background worker; or, once the learner has
+/// given up, logs an error naming the learner and the reason.
+///
+/// A bound fragment runs as a nested pipeline, built by the same `stroom.pipeline.factory.PipelineFactory`
+/// in the same pipeline scope, so its errors reach this pipeline's error stream and its events reach
+/// this element's targets. The fragment is run only once per stream: the run that is judged is the run
+/// that is served. The bindings that produced the output are recorded in the output stream's attributes
+/// through [MetaData].
 @ConfigurableElement(
         type = LearningFlowParser.TYPE,
         displayValue = "Smart Pipeline",
@@ -92,15 +89,14 @@ public class LearningFlowParser extends AbstractParser implements HasStepDetails
         this.docRef = docRef;
     }
 
-    /// Which question a reprocess is asking (design 01 §7.3). False — the default — serves with the
-    /// learner's binding as it stands today, which is what "we have fixed it, run the backlog again" wants
-    /// and the mode a release (A12) reprocesses in. True runs each stream through the fragment that
-    /// produced its output before, which is what an audit wants: the content cannot have changed, so
-    /// the answer cannot either.
+    /// Sets how a reprocess translates each stream. False (the default) serves with the learner's binding
+    /// as it is today, which is what is wanted when re-running a backlog after a fix. True runs each
+    /// stream through the snapshot of the fragment that produced its earlier output, which is what an
+    /// audit wants: the configuration cannot have changed, so neither can the result.
     ///
-    /// It is a property rather than something a reprocess request carries because a reprocess in Stroom
-    /// names a pipeline and not a mode; an operator who wants to re-run history as it happened points a
-    /// pipeline whose supervisor has this set at the streams in question.
+    /// It is a property rather than part of a reprocess request because a reprocess in Stroom names a
+    /// pipeline, not a mode. An operator who wants to re-run history exactly as it happened points a
+    /// pipeline whose Smart Pipeline element has this set at the streams in question.
     @PipelineProperty(
             description = "Process each stream through the fragment that produced it before, rather "
                           + "than through whatever the learner is bound to today.",
@@ -110,31 +106,31 @@ public class LearningFlowParser extends AbstractParser implements HasStepDetails
         this.asProcessed = asProcessed;
     }
 
-    /// Which zone timestamps that carry no offset are in (decision N6, option F), e.g. `Europe/London`.
-    /// A stream's own `TimeZone` header beats it; where neither is set, times with no offset are read as
-    /// UTC. The resolved zone goes into the stream's metadata as `ResolvedTimeZone`, which the learned
-    /// stylesheet reads with `stroom:meta` and passes to `stroom:format-date` — so changing it here needs
-    /// no relearning, and the model is never asked to assume a zone.
+    /// Sets the time zone of timestamps that carry no offset, e.g. `Europe/London`. A stream's own
+    /// `TimeZone` header takes precedence; where neither is set, times with no offset are read as UTC.
+    /// The resolved zone goes into the stream's metadata as `ResolvedTimeZone`, which the learned
+    /// stylesheet reads with `stroom:meta` and passes to `stroom:format-date`. This means changing the
+    /// zone needs no relearning, and the model is never asked to assume a zone.
     ///
-    /// Declared here so that the pipeline editor and a factory can set it; it is read from the pipeline
-    /// by [PipelineZones], since the worker that carries a session on runs no pipeline and has no element
-    /// to be told it by.
+    /// The property is declared here so that the pipeline editor and a Pipeline Factory can set it. During
+    /// learning it is read from the pipeline by [PipelineZones], because the background worker runs no
+    /// pipeline and so has no element to receive it.
     @PipelineProperty(
             description = "The time zone of timestamps that carry no offset, e.g. Europe/London. A "
                           + "stream's own TimeZone header beats this; where neither is set, UTC.",
             displayPriority = 5)
     public void setTimeZone(final String timeZone) {
-        // The serving run is told it here; a judged run has no element, and reads it from the pipeline
-        // through PipelineZones
+        // A serving run gets the zone here. A run judged by the background worker has no element, and
+        // reads it from the pipeline through PipelineZones.
         supervision.setTimeZone(timeZone);
     }
 
-    /// Where what this stage learns goes (design 06 A113): a folder path from the top of the tree, e.g.
-    /// `Feeds/DOOR-ACCESS`, where a person has named one. Unset, beside the pipeline.
+    /// Sets the folder that this element's learned content is written to, as a path from the top of the
+    /// tree, e.g. `Feeds/DOOR-ACCESS`. If unset, content goes in the pipeline's own folder.
     ///
-    /// Declared here so that the pipeline editor and a factory can set it; it is read from the pipeline by
-    /// [PipelinePlaces], since the worker that carries a session on runs no pipeline and has no element to
-    /// be told it by.
+    /// The property is declared here so that the pipeline editor and a Pipeline Factory can set it. It is
+    /// read from the pipeline by [PipelinePlaces], because the background worker runs no pipeline and so
+    /// has no element to receive it.
     @PipelineProperty(
             description = "The folder what this stage learns goes in, e.g. Feeds/DOOR-ACCESS. Unset, the "
                           + "pipeline's own folder.",
@@ -143,10 +139,10 @@ public class LearningFlowParser extends AbstractParser implements HasStepDetails
         // Read from the pipeline by PipelinePlaces, not kept here.
     }
 
-    /// What what this stage learns is called (design 06 A113): the fragment's name, which its text
-    /// converter and XSLT take with the element id appended, and a later fragment takes with the first
-    /// free number after it (A132). Unset, the pipeline's name with ` learned` after it (A133). Read from
-    /// the pipeline, as the folder is.
+    /// Sets the name given to this element's learned fragment. Its text converter and XSLT take the same
+    /// name with the element id appended, and a later fragment takes the name followed by the first free
+    /// number. If unset, the pipeline's name followed by ` learned` is used. Like the folder, it is read
+    /// from the pipeline by [PipelinePlaces].
     @PipelineProperty(
             description = "The name what this stage learns is given. Unset, the pipeline's name followed "
                           + "by \"learned\".",
@@ -162,7 +158,7 @@ public class LearningFlowParser extends AbstractParser implements HasStepDetails
     }
 
 
-    /// What this stage decided about the record just captured, for the stepper's stage pane (A30).
+    /// What this element decided about the record just captured, for the stepper's Smart Pipeline pane.
     @Override
     public LearningFlowStepDetails getStepDetails(final long recordIndex) {
         return supervision.stepDetails(getElementId(), recordIndex);
@@ -172,11 +168,9 @@ public class LearningFlowParser extends AbstractParser implements HasStepDetails
     // --------------------------------------------------------------------------------
 
 
-    /**
-     * Reads the stream and lets the supervision decide. The document is never written: it holds only
-     * what a person authors, and what the stage learns is rows (A41). Two tasks learning for the same learner
-     * at once still race until the lease of A42 exists, but they race on rows and not on one document.
-     */
+    /// The parser's XML reader, which hands the stream to [Supervision]. The Learning Flow document is only
+    /// read, never written: it holds only what a person authors, and what is learned is stored in database
+    /// rows and content documents.
     private final class SupervisorReader extends stroom.pipeline.xml.converter.AbstractParser {
 
         @Override

@@ -20,13 +20,15 @@ import stroom.learningflow.shared.LearningFlowDoc;
 
 import java.util.Optional;
 
-/// The Learning Flow documents by uuid, as an attempt's row names one: what the worker
-/// reads to learn how the attempt it is carrying on was told to learn. The document is read as it
-/// stands now, not as it stood when the attempt opened, so an operator who changed it while the attempt
-/// waited has changed it — and where that makes the replay put different questions, the attempt is
-/// refused rather than answered from a record of something else (A45).
+/// Looks up Learning Flow documents by UUID, so that the deferred worker can read the settings a session it
+/// is resuming should learn under.
 ///
-/// A node reads the document store; a scenario answers with the documents it built.
+/// The document is read as it is now, not as it was when the session opened, so a change an operator made
+/// while the session waited takes effect. If the change means that replaying the session's recorded turns
+/// would ask different questions, the session is refused rather than resumed from answers to questions that
+/// would no longer be asked.
+///
+/// A node reads the document store; tests use the documents they built.
 public interface Documents {
 
     Optional<LearningFlowDoc> byUuid(String uuid);

@@ -21,66 +21,68 @@ import stroom.learningflow.shared.Binding;
 import java.util.List;
 import java.util.Optional;
 
-/// The bindings of A41 and A124, as rows: the fragment a learner is served by, and any draft awaiting review
-/// to take its place. Rows rather than a field on the document, so that two nodes promoting for two
-/// learners write two rows rather than racing to rewrite one document.
+/// Storage for learners' bindings: the binding a learner is served by, and any draft awaiting review to
+/// take its place.
 ///
-/// A row is the learner's (design 06 phase J slice 2b), and records the document the learner ran under
-/// when it was written, for the Supervisor to show and to decide who may see it. The serving path reads
-/// through a cache; these are the writes and the cache's source (design 01 §11.4).
+/// Bindings are stored as rows rather than on the Learning Flow document, because the document holds only
+/// what a person authors, and so that two nodes promoting for two learners write two separate rows rather
+/// than racing to rewrite one document.
+///
+/// A row is keyed by its learner, and records the document the learner ran under when it was written, so
+/// that the Supervisor can show it and decide who may see it. The serving path reads through a cache
+/// (`CachedLearnerBindings`); the implementation behind the cache does the writes and loads the cache.
 public interface LearnerBindings {
 
-    /// The learner's bindings, oldest first: the one that serves it, and any draft (A124).
+    /// Gets the learner's bindings, oldest first: the one that serves it, and any draft.
     ///
-    /// @param learner The learner.
-    /// @return Its bindings.
+    /// @param learner The learner to look up.
+    /// @return Its bindings, empty if it has none.
     List<Binding> forLearner(Learner learner);
 
-    /// The binding with this uuid, with whose it is.
+    /// Gets the binding with this UUID, together with the learner it belongs to.
     ///
-    /// @param bindingUuid The binding's uuid, which is unique across learners.
-    /// @return The row, if there is one.
+    /// @param bindingUuid The binding's UUID, which is unique across learners.
+    /// @return The binding and its owner, if there is one.
     Optional<Held> byUuid(String bindingUuid);
 
-    /// Add a binding to the learner's, giving it a uuid where it has none.
+    /// Adds a binding to the learner's bindings, giving it a UUID if it has none.
     ///
-    /// @param learner The learner.
-    /// @param docUuid The document the learner runs under.
-    /// @param binding The binding.
-    /// @return The binding as stored, with its uuid.
+    /// @param learner The learner the binding is for.
+    /// @param docUuid The UUID of the Learning Flow document the learner runs under.
+    /// @param binding The binding to add.
+    /// @return The binding as stored, with its UUID.
     Binding append(Learner learner, String docUuid, Binding binding);
 
-    /// Replace the binding of the same uuid; one the learner does not have is added, since a promotion
-    /// must not be lost because its row was pruned.
+    /// Replaces the binding with the same UUID. If the learner has no such binding it is added, so that a
+    /// promotion is not lost because its row was pruned in the meantime.
     ///
-    /// **Checked against the version the binding was read at** (audit finding W7-3), where it has one.
-    /// Taking the row lock was not enough: the writer then wrote every field back, so a node promoting a
-    /// binding from its cache reverted a rebind another node had made to the pipeline and
-    /// the snapshot in between. A binding built rather than read carries no version and is written as
-    /// before.
+    /// **The write is checked against the version the binding was read at**, where it has one. Locking the
+    /// row is not enough on its own, because every field is written back: a node promoting a binding read
+    /// from its cache would otherwise revert a change another node had made in between to the binding's
+    /// pipeline and snapshot. A binding that was built rather than read carries no version and is written
+    /// without the check.
     ///
-    /// @param learner The learner.
-    /// @param docUuid The document the learner runs under.
-    /// @param binding The binding.
-    /// @return Whether it was written. False means the row has moved since the binding was read, and
-    ///         what is there now is somebody else's more recent work: the caller's copy is stale and
-    ///         must not be forced over it.
+    /// @param learner The learner the binding is for.
+    /// @param docUuid The UUID of the Learning Flow document the learner runs under.
+    /// @param binding The binding to write.
+    /// @return Whether it was written. False means the row has changed since the binding was read, so the
+    ///         caller's copy is stale and must not be forced over the more recent one.
     boolean replace(Learner learner, String docUuid, Binding binding);
 
-    /// Remove a binding: a draft rejected, a binding retracted.
+    /// Removes a binding, e.g. when a draft is rejected or a binding is retracted.
     ///
     /// @param learner     The learner whose binding it is.
-    /// @param bindingUuid The binding's uuid.
+    /// @param bindingUuid The binding's UUID.
     void remove(Learner learner, String bindingUuid);
 
 
     // --------------------------------------------------------------------------------
 
 
-    /// A binding and whose it is.
+    /// A binding together with the learner it belongs to.
     ///
     /// @param learner The learner whose binding it is.
-    /// @param docUuid The document the learner ran under when it was written.
+    /// @param docUuid The UUID of the document the learner ran under when the binding was written.
     /// @param binding The binding.
     record Held(Learner learner, String docUuid, Binding binding) {
 

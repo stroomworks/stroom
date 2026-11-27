@@ -37,7 +37,7 @@ class TestLearningFlow {
         assertThat(warned).hasSize(1);
         assertThat(warned.get(0).getSeverity()).isEqualTo(Severity.WARNING);
         assertThat(warned.get(0).isProblem()).isFalse();
-        // The warning is about the step the rule is on, so that its card can say so
+        // The warning names the step the rule is on, so that the step's card can show it
         assertThat(warned.get(0).getStep()).isEqualTo(1);
         assertThat(warned.get(0).getMessage()).contains("never fires").contains("conformance");
     }
@@ -57,7 +57,7 @@ class TestLearningFlow {
         assertThat(flow.check()).isEmpty();
         assertThat(flow.check(null)).isEmpty();
         assertThat(flow.check(List.of())).isEmpty();
-        // A list that names other checks says nothing about this rule's
+        // A list that doesn't name this rule's check says nothing about it, so raises no warning
         assertThat(flow.check(List.of(CheckSetting.of(Check.YIELD, CheckState.OFF)))).isEmpty();
     }
 
@@ -65,12 +65,12 @@ class TestLearningFlow {
     void aWarningDoesNotStopTheFlowBeingHeld() {
         final LearningFlow flow = ruleOnConformanceShort();
 
-        // The store refuses a save on problems() alone, which asks check(), which raises no warnings: a
-        // flow whose only fault is a warning is held however its checks are set
+        // A save is refused on problems() alone, which uses check(), which raises no warnings, so a flow
+        // whose only fault is a warning can be saved however its checks are set
         assertThat(flow.problems()).isEmpty();
         assertThat(flow.check()).isEmpty();
 
-        // And were a warning ever to reach that path, the severity filter would still let it through
+        // If a warning ever reached that path, the severity filter would still not refuse the save for it
         final List<FlowProblem> warned = flow.check(List.of(
                 CheckSetting.of(Check.CONFORMANCE, CheckState.OFF)));
         assertThat(warned).isNotEmpty();
@@ -111,9 +111,8 @@ class TestLearningFlow {
                         List.of(new Transition(StepOutcome.CONFORMANCE_SHORT, Transition.END)))));
     }
 
-    /// A flow of the given steps, with no template overrides: what a test that is about the steps wants.
-    /// The built-in setups are the server's now (Track 2 step 1c), so a shared test builds the flow it
-    /// means rather than starting from one of them.
+    /// Builds a flow of the given steps, with no template overrides. The example flows are defined on the
+    /// server, so a test in this module builds the flow it means rather than starting from one of them.
     ///
     /// @param steps Its steps.
     /// @return The flow.

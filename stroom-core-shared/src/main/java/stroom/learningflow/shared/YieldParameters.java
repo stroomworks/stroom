@@ -24,11 +24,9 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/**
- * Yield (§8.4): output records per unit of input, scored by how close the ratio comes to what the document
- * expects. One record per input record is the transformation default; an extraction stage sets the
- * basis to lines or bytes and the ratio to what its data yields.
- */
+/// Parameters for the yield check, which measures output records per unit of input and scores how close
+/// that ratio comes to the expected one. The default is one record per input record. For a parser over raw
+/// text, the basis can be set to lines or bytes and the ratio to what the data is expected to yield.
 @JsonPropertyOrder({"expectedRatio", "basis"})
 @JsonInclude(Include.NON_NULL)
 public final class YieldParameters extends ScorerParameters {

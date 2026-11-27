@@ -40,13 +40,12 @@ import java.util.OptionalDouble;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Design 01 §12 item 8: what a node holds in front of the rows. A learner's bindings and what it has
- * settled into are read for every stream and written only when something is learned, so they are
- * cached and cleared by what writes them — on this node at once, and on every other node by the event
- * that write fires, which names the learner's pipeline (design 06 phase J slice 2b). The rolling scores
- * are not cached at all: they are counted across the cluster.
- */
+/// Tests the node-local caches in front of the learner binding and learner state tables.
+///
+/// A learner's bindings and state are read for every stream but written only when something is learned, so
+/// they are cached. A write clears the cached copy on this node at once, and fires an event naming the
+/// learner's pipeline so that every other node clears its copy too. The rolling score is not cached, because
+/// it is counted across the whole cluster.
 class TestCachedState {
 
     private static final String DOC = "doc-1";
@@ -76,9 +75,9 @@ class TestCachedState {
                 .isEqualTo(afterWrite + 1);
         assertThat(learnerBindings.forLearner(LEARNER)).extracting(Binding::getUuid).containsExactly("rule-1");
 
-        // What this node learns it sees at once, and every other node is told.
+        // A write on this node is visible on this node at once, and an event tells every other node.
         fired.clear();
-        // A draft, because a learner has one *live* binding and a second would be refused (W7-2)
+        // A draft, because a learner may have only one live (non-draft) binding and a second would be refused
         learnerBindings.append(LEARNER, DOC, Binding.builder().uuid("rule-2").draft(true).build());
 
         assertThat(learnerBindings.forLearner(LEARNER)).extracting(Binding::getUuid)
@@ -95,7 +94,8 @@ class TestCachedState {
         learnerBindings.append(NEIGHBOUR, DOC, Binding.builder().uuid("rule-n").build());
         assertThat(learnerBindings.forLearner(LEARNER)).hasSize(1);
         assertThat(learnerBindings.forLearner(NEIGHBOUR)).hasSize(1);
-        // Another node appends to the same learner: this node sees only the event.
+        // Simulate another node appending to the same learner by writing past the cache: this node only
+        // learns of it through the event.
         rows.delegate.append(LEARNER, DOC, Binding.builder().uuid("rule-2").draft(true).build());
         final int beforeEvent = rows.reads;
 
@@ -123,14 +123,15 @@ class TestCachedState {
         assertThat(stateRows.reads).describedAs("all three answers were read together, once")
                 .isEqualTo(afterFirst);
 
-        // Scored on every served stream: never cached, and it does not disturb what is.
+        // The rolling score is updated for every served stream. It is not cached, and recording a score does
+        // not read or disturb the cached state.
         states.scored(LEARNER, DOC, 1.0, 6, 10);
         states.scored(LEARNER, DOC, 1.0, 6, 10);
         assertThat(stateRows.scores).isEqualTo(2);
         assertThat(stateRows.reads).describedAs("and reads nothing back through the cache")
                 .isEqualTo(afterFirst);
 
-        // Giving up is a write: this node sees it, and every other is told.
+        // Giving up is a write, so this node sees it at once and every other node is sent an event.
         fired.clear();
         states.giveUp(LEARNER, DOC, "Rejected");
 
@@ -142,8 +143,9 @@ class TestCachedState {
 
     @Test
     void anEventIsOfTheLearnersOwnTypeAndOnlySaysToLetGoOfACopy() {
-        // Of the learner's own type: an event on the pipeline would have every node drop its merged
-        // pipeline data. And CLEAR_CACHE, since nothing a person authored has changed.
+        // The event uses the learner's own type rather than the pipeline's, because an event on the pipeline
+        // would make every node drop its cached merged pipeline data too. The action is CLEAR_CACHE because
+        // nothing a person authored has changed.
         learnerBindings.append(LEARNER, DOC, Binding.builder().uuid("rule-1").build());
         states.giveUp(LEARNER, DOC, "Rejected");
 
@@ -155,8 +157,8 @@ class TestCachedState {
 
     @Test
     void whatTheCacheHandsOutIsNotTheRowsOwnList() {
-        // One list, shared by every serving thread on the node until something invalidates it: a caller
-        // that sorted or added to what it was given would corrupt the serving of every stream.
+        // The cached list is shared by every serving thread on the node until it is invalidated, so a caller
+        // that sorted or added to it would corrupt what every other stream is served with.
         learnerBindings.append(LEARNER, DOC, Binding.builder().uuid("rule-1").build());
 
         final List<Binding> bindings = learnerBindings.forLearner(LEARNER);
@@ -193,8 +195,8 @@ class TestCachedState {
     // --------------------------------------------------------------------------------
 
 
-    /// The rows, counting what is asked of them: what a cache is for is that this number does not grow
-    /// with the number of streams.
+    /// An in-memory binding table that counts its reads, so tests can show the cache keeps the number of reads
+    /// from growing with the number of streams served.
     private static final class CountingBindings implements LearnerBindings {
 
         private final InMemoryLearnerBindings delegate = new InMemoryLearnerBindings();

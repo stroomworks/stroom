@@ -43,12 +43,13 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 63: **the flow names its exits** (A83; design 05 §2).
+/// Tests that a flow step can name the exit taken when its candidates are spent.
 ///
-/// A step whose candidates are spent leaves the flow by the exit it names: `goto park` parks the session
-/// for a person, `goto give-up` gives the learner up and errors its streams. The defaults stand where the
-/// flow names none, a parser's being give-up (scenario 60) and any other step's park (scenario 57), and
-/// the flow may say the other: a parser that parks, a transform that gives up.
+/// `goto park` parks the session for a person, and `goto give-up` gives the learner up and errors its
+/// streams. Where the flow names no exit, the defaults apply: a parser step gives up (as in
+/// `TestScenario60AParseThatCannotBeLearnedErrorsItsStreams`) and any other step parks (as in
+/// `TestScenario57TheSessionRunsTheHeldStreamInFull`). These tests override the defaults: a parser that
+/// parks, and a transform that gives up.
 class TestScenario63TheFlowNamesItsExits {
 
     private static final String DOC = "doc-1";
@@ -132,8 +133,8 @@ class TestScenario63TheFlowNamesItsExits {
         }
     }
 
-    /// The demo document with its yield counted per line, the gate a parser that cuts a CSV as one record
-    /// fails (scenario 60).
+    /// Sets the demo document's yield to be counted per line, which is the gate that a parser treating a CSV
+    /// as one record fails (as in `TestScenario60AParseThatCannotBeLearnedErrorsItsStreams`).
     private static LearningFlowDoc.Builder perLine(final LearningFlowDoc.Builder builder) {
         final List<CheckSetting> checks = DemoDocument.checks().stream()
                 .map(setting -> setting.getCheck() == Check.YIELD

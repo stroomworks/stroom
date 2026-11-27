@@ -36,17 +36,17 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
-/**
- * A variant's run over a whole stream, scored: what promotion, provisional binding, retraction and
- * relearning all decide on.
- *
- * @param records How many records the stream brought — its lines where it is text, its records by the
- *                boundary where one was settled, else the root's children of markup. The evidence the
- *                judgement rests on (A14), counted on the input so that a variant that drops records is
- *                judged, not excused.
- */
-/// @param held The records that fell short, each as the parser cut it, where a full pass kept them
-///             (design 04 §4): what the next question's candidates are held to. Empty otherwise.
+/// The scored result of running a candidate or binding over a whole stream, which promotion, provisional
+/// binding, retraction and relearning all decide on.
+///
+/// @param records   How many records the stream brought: its lines if it is text, its records by the record
+///                  boundary if one was settled, otherwise the children of the root element. This is the
+///                  evidence the judgement rests on. It is counted on the input, so that a candidate that
+///                  drops records is judged on them rather than excused.
+/// @param fellShort The indices of the records that fell short, if known from a served or full pass; null
+///                  to take them from the last verdict.
+/// @param held      The records that fell short, each as the parser split it, if a full pass kept them.
+///                  The next question's candidates are held to these. Empty otherwise.
 record Judged(String output, List<Verdict> verdicts, double score, int records,
                       EventList events, List<StoredError> diagnostics,
                       Set<Integer> fellShort, List<String> held) {
@@ -62,25 +62,24 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
         this(output, verdicts, score, records, events, diagnostics, null, List.of());
     }
 
-    /// A stream served as it was read, stopped at the record that fell short (design 04 §3): what is
-    /// known of it is the records judged before and including that one and the verdict on the one.
-    /// No output, since nothing was held; the stream is not read again to learn what was already
-    /// found. Its score is nothing: a stream with a record short of the bar did not clear it
-    /// (A55), and a candidate that clears the floor must not be kept out by the mean of the records
-    /// before the one that failed.
+    /// Judges a stream that was served as it was read and stopped at the first record that fell short.
+    /// All that is known is the number of records judged up to and including that one, and the verdict on
+    /// it. There is no output, since nothing was kept, and the stream is not read again. It scores zero: a
+    /// stream with a record short of the bar did not clear it, and a candidate that clears the floor must
+    /// not be kept out by the mean score of the records before the one that failed.
     static Judged shortOf(final ServedStream served, final RecordShortfall shortfall) {
         return new Judged(null, List.of(shortfall.verdict()), 0.0, served.records(),
                 null, served.diagnostics(), Set.of(shortfall.index()));
     }
 
-    /// A served stream whose **input** was not accounted for (Track 1 task 2, fix 1): the parser read
-    /// nothing, or read records that became neither an event nor a declared skip, or reported errors.
-    /// There is no output record to point at — the records went missing before anything could judge
-    /// them — so there are no verdicts and no failing index, and the reason stands in their place as
-    /// the evidence the next question opens with. Scores nothing, as a stream that lost records did.
+    /// Judges a served stream whose **input** was not all accounted for: the parser read nothing, or read
+    /// records that became neither an event nor a declared skip, or reported errors. There is no output
+    /// record to point at, because the records went missing before anything could judge them, so there are
+    /// no verdicts and no failing index. The reason is used instead, as the evidence the next question
+    /// opens with. It scores zero, because the stream lost records.
     ///
-    /// @param served What the run came to.
-    /// @param reason What was not accounted for.
+    /// @param served The result of the run.
+    /// @param reason A description of what was not accounted for.
     /// @return The judgement.
     static Judged lostFrom(final ServedStream served, final String reason) {
         final List<StoredError> evidence = new ArrayList<>();
@@ -91,9 +90,9 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
                 : served.records(), null, List.copyOf(evidence), Set.of());
     }
 
-    /// A held stream run in full by a session, with the records that fell short kept as evidence
-    /// (A64): their verdicts, and as diagnostics what each was and became, which is what the next
-    /// question opens with. Scores nothing, as a stream with a record short of the bar does.
+    /// Judges a held stream that a session ran in full, keeping the records that fell short as evidence:
+    /// their verdicts, and diagnostics showing what each record was and what it became, which the next
+    /// question opens with. It scores zero, because a record fell short of the bar.
     static Judged shortOf(final Shortfalls pass) {
         final List<Verdict> verdicts = new ArrayList<>();
         final List<StoredError> evidence = new ArrayList<>();
@@ -124,9 +123,9 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
         final int records = attempted.isEmpty()
                 ? 0
                 : LearningPrefix.recordsBrought(attempted.get(0));
-        // What the checks that passed still have to say goes on the error stream with what the
-        // elements said: a translation that declared records skipped is not failing, and is exactly
-        // what a person approving it has to be told about
+        // Notices from checks that passed go on the error stream with the elements' diagnostics. For
+        // example, a translation that declared records skipped is not failing, but a person approving it
+        // needs to be told
         final List<StoredError> said = new ArrayList<>(diagnostics(attempted));
         verdicts.forEach(verdict -> said.addAll(verdict.notices()));
         return new Judged(output, verdicts, candidateScore(verdicts), records, events,
@@ -134,20 +133,20 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
     }
 
 
-    /// What the elements said, in chain order. A run that is served rather than discarded has these
-    /// put on the pipeline's error stream by whoever serves it (A20): the fragment runs under a
-    /// receiver of its own, so that a candidate's complaints go to the model rather than to the
-    /// operator, and the one run that is kept must not be silent for the same reason.
+    /// The elements' diagnostics, in chain order. When a run is served rather than discarded, whoever serves
+    /// it puts these on the pipeline's error stream. The fragment runs under its own error receiver, so that
+    /// a candidate's errors go to the model rather than the operator; the run that is served must therefore
+    /// report its errors explicitly, or they would be lost.
     private static List<StoredError> diagnostics(final List<Attempted> attempted) {
         return attempted.stream()
                 .flatMap(step -> step.result().diagnostics().stream())
                 .toList();
     }
 
-    /// @return Whether every gate passed on every step of the chain, and every record of the stream
-    ///         cleared the gates that judge records, which is the bar it will be served to (the one model
-    ///         of checks: serving uses the same gates). There is no total to reach, so a check that is
-    ///         advice never refuses a candidate.
+    /// @return Whether every gate passed on every step of the chain, and every record of the stream cleared
+    ///         the gates that judge records, which is the bar it will be served against (serving uses the
+    ///         same gates). There is no total score to reach, so a check that is only advice never refuses
+    ///         a candidate.
     boolean clearsGates() {
         return !verdicts.isEmpty()
                && verdicts.stream().allMatch(Verdict::gatesPassed)
@@ -176,9 +175,9 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
                         : "s ") + String.join(", ", failed);
     }
 
-    /// The records of the chain's output that fell short of the bar (design 04 §3, A55): the last
-    /// step's, since that is what is emitted, and the scorers that judge records one by one judge a
-    /// transform's records and not a parser's. Zero-based, in output order.
+    /// The records of the chain's output that fell short of the bar. These are taken from the last step,
+    /// since that is what is emitted, and the scorers that judge records one by one judge a transform's
+    /// records rather than a parser's. Zero-based, in output order.
     Set<Integer> failingRecords() {
         if (fellShort != null) {
             return fellShort;
@@ -188,12 +187,9 @@ record Judged(String output, List<Verdict> verdicts, double score, int records,
                 : verdicts.get(verdicts.size() - 1).failingRecords();
     }
 
-    /**
-     * The candidate's score as people see it (the one model of checks, D3): the average of the checks that
-     * ran on it, gates and advice alike, each counted once at its lowest value over the chain's steps. It
-     * decides nothing: whether the candidate is promoted is its gates' to say. A candidate with no step
-     * scores nothing.
-     */
+    /// The candidate's score as shown to people: the average of the checks that ran on it, gates and advice
+    /// alike, each counted once at its lowest value over the chain's steps. It decides nothing; only the
+    /// gates decide whether the candidate is promoted. A candidate with no steps scores zero.
     private static double candidateScore(final List<Verdict> verdicts) {
         if (verdicts.isEmpty()) {
             return 0.0;

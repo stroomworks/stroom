@@ -29,11 +29,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Track 2 step 3 (ruling A24): **the spend breaker stops new sessions, and the streams wait.**
+/// Tests the spend breaker, which stops new sessions opening once a Learning Flow document, or the cluster
+/// as a whole, has spent its hourly token allowance. The streams wait instead.
 ///
-/// An attempt's own budgets bound one session. A feed that keeps opening them was bounded by nothing —
-/// and unattended learning without a ceiling has no upper bound on cost at all
-/// (`simplification-options.md` §5).
+/// An attempt's own budgets limit a single session, but nothing else would limit a feed that keeps opening
+/// sessions, so unattended learning would have no upper bound on cost.
 class TestTheSpendBreakerStopsNewSessions {
 
     private static final String DOC = "doc-1";
@@ -44,7 +44,7 @@ class TestTheSpendBreakerStopsNewSessions {
     void aStreamWaitsRatherThanOpeningASessionThatWouldCostMoreThanTheCeiling() {
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
-        // The hour's allowance is already gone, spent by sessions this document opened earlier
+        // The hour's allowance has already been spent by sessions this document opened earlier.
         scenarios.spend.record(DOC, 1_000L, 13, SpendBreaker.WINDOW_MS);
         final Script silent = Script.of();
 
@@ -66,14 +66,15 @@ class TestTheSpendBreakerStopsNewSessions {
 
     @Test
     void theSameStreamIsLearnedOnceTheHourHasRolled() {
-        // The breaker is a pause, not a refusal: what it stops costs nothing and comes back by itself
+        // The breaker is a pause, not a refusal: a stream it stops costs nothing and is learned from later
+        // without anyone acting.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
         scenarios.spend.record(DOC, 1_000L, 13, SpendBreaker.WINDOW_MS);
         final Script silent = Script.of();
         scenarios.stage(document -> silent, scenarios.learnerBindings).decide(doc, Scenarios.LEARNER, stream(1L));
 
-        // A window of nothing is a window that has always just rolled
+        // Recording an empty window simulates the hour having rolled over.
         scenarios.spend.record(DOC, 0L, 0, 0L);
         final StageRun again = scenarios.stage(document -> silent, scenarios.learnerBindings)
                 .decide(doc, Scenarios.LEARNER, stream(1L));
@@ -101,7 +102,7 @@ class TestTheSpendBreakerStopsNewSessions {
         assertThat(scenarios.attempts.forDocument(DOC, 10)).isEmpty();
     }
 
-    /// The demo document with a ceiling of its own.
+    /// Builds the demo document with its own hourly token ceiling.
     private static LearningFlowDoc doc() {
         return DemoDocument.configure(Scenarios.document())
                 .uuid(DOC)

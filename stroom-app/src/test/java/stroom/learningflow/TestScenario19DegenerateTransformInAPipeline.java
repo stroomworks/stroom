@@ -83,13 +83,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenario 19 (Tier 2): scenario 5 in a real pipeline. The degenerate transform of design 01
- * §8.3 validates against the node's own schema store — every version of the event-logging schema the
- * content pack carries, resolved as the real {@code SchemaFilter} resolves it — and is refused by the
- * extraction-quality gate (A16); the second candidate is promoted and its events pass the pipeline's own
- * {@code SchemaFilter} downstream.
- */
+/// Tests, in a running node, that a degenerate transform is rejected by the extraction quality check even
+/// though its output is schema-valid.
+///
+/// A degenerate transform produces events that validate but say nothing useful, for example every event
+/// with `Unknown` in its `EventDetail`. Here the first XSLT candidate is such a transform. It passes schema
+/// conformance against the node's own schema store, resolved as the real `SchemaFilter` resolves it, but
+/// the extraction quality gate rejects it. The second candidate is promoted, and its events pass the
+/// pipeline's own `SchemaFilter`.
 class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -98,7 +99,7 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
     private static final String DEGENERATE = Scenarios.resource("csv-degenerate.xsl");
     private static final String EXPECTED_EVENTS = Scenarios.resource("csv-logon.events.xml");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -159,8 +160,9 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
         script.verifyExhausted();
         final ProcessorResult result = processOne();
 
-        // The degenerate candidate cleared the schema gate against the node's schemas: its re-ask carries no
-        // conformance feedback. The promoted transform's events pass the pipeline's own schema filter.
+        // The degenerate candidate passed the schema conformance gate against the node's schemas, so the
+        // follow-up question carries no conformance feedback. The promoted transform's events pass the
+        // pipeline's own schema filter.
         assertThat(script.scripted().get(3).feedback())
                 .noneMatch(error -> error.getMessage().startsWith("Schema conformance"));
         assertThat(result.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR)).isZero();
@@ -173,12 +175,10 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
                 binding.getUuid());
     }
 
-    /**
-     * The split and target questions are answered from the configurations the script will give, as the
-     * module's scenarios do; the script states only what the scenario is about. The structure's compiler
-     * is built when a question is asked, inside the processing pipeline's scope, so it reaches the node's
-     * parser factory the way the element does.
-     */
+    /// Starts the script of model answers. As in the module's scenarios, the split and target questions are
+    /// answered from the configurations given to [Structure], so the script only needs the chain and
+    /// configuration answers this test is about. The Data Splitter compiler uses the node's parser factory,
+    /// as the element does.
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of().structure(new Structure(
@@ -189,12 +189,12 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
         final DocRef docRef = learningFlowStore.createDocument("door-access");
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
-                // Task 7: a new document starts on the latest event-logging installed, and this
-                // node has all seven; the scenario's canned answers write 3.0.0, so it says so
+                // A new document targets the latest installed event-logging schema (4.1.0 on a test
+                // node), but this test's canned answers write 3.0.0, so it targets that version.
                 .targetSchema(TargetSchemaFixture.eventLogging300(xmlSchemaStore))
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
@@ -216,11 +216,9 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
         return docRef;
     }
 
-    /**
-     * {@code Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter → XMLWriter →
-     * StreamAppender}: the supervised stage where a parser and its translation would be, and the standard
-     * tail of an event pipeline after it.
-     */
+    /// Creates the pipeline `Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter →
+    /// XMLWriter → StreamAppender`. The Learning Flow element takes the place of a parser and its
+    /// translation, followed by the usual elements at the end of an event pipeline.
     private DocRef pipeline(final DocRef feed, final DocRef doc) {
         final PipelineData data = new PipelineDataBuilder()
                 .addElement(new PipelineElement("Source", "Source"))
@@ -277,9 +275,8 @@ class TestScenario19DegenerateTransformInAPipeline extends AbstractProcessIntegr
         return new String(streamStore.getFileData().get(meta.getId()).get(meta.getTypeName()), StandardCharsets.UTF_8);
     }
 
-    /**
-     * The two serialisers indent differently and one writes a declaration; the events are the same.
-     */
+    /// Normalises XML for comparison, because the two serialisers indent differently and only one writes an
+    /// XML declaration.
     private static String canonical(final String xml) {
         return xml.replaceAll("<\\?xml[^>]*\\?>", "").replaceAll(">\\s+<", "><").strip();
     }

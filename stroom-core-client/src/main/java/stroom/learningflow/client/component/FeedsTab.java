@@ -24,10 +24,10 @@ import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 
-/// A Learning Flow document's Feeds tab (design 07): what stops the document learning anything
-/// ([ReadinessBanner]) across the top, only where something does; beneath, the pipelines that learn under it
-/// ([FeedList]), each opening its pipeline, whose AI Translation tab ([PipelineAiTab]) follows and acts on
-/// its learning. [FeedsTabController] fills it.
+/// A Learning Flow document's Pipelines tab. Across the top, a banner ([ReadinessBanner]) says what stops the
+/// document learning anything, and is shown only when something does. Beneath it is the list of pipelines that
+/// learn under the document ([FeedList]); each can be opened at its Learning Status tab ([PipelineAiTab]),
+/// where its learning is followed and acted on. [FeedsTabController] fills it.
 public class FeedsTab extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -39,25 +39,25 @@ public class FeedsTab extends Component {
     @UiField
     FeedList feedList;
 
-    /// Makes the tab, empty.
+    /// Creates the tab, empty.
     public FeedsTab() {
         initWidget(BINDER.createAndBindUi(this));
     }
 
-    /// @return Whether the document will learn anything.
+    /// @return The banner that says what stops the document learning anything.
     public ReadinessBanner getReadiness() {
         return readiness;
     }
 
-    /// Shows or hides what stops the document learning: a document that will learn needs no banner, since
-    /// the Setup tab's route map says how each part of it is set.
+    /// Shows or hides the banner saying what stops the document learning. A document that will learn needs no
+    /// banner, since the Setup tab's route map already shows how each part of it is set.
     ///
     /// @param shown Whether the banner is shown.
     public void setReadinessShown(final boolean shown) {
         readinessPanel.setVisible(shown);
     }
 
-    /// @return The document's feeds.
+    /// @return The list of pipelines that learn under the document.
     public FeedList getFeedList() {
         return feedList;
     }

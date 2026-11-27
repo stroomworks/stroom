@@ -23,13 +23,11 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Audit finding W5-7: **the elements a Learning Flow may choose from are the elements something can
-/// run.**
+/// Tests that the elements a Learning Flow may choose from are exactly the elements a step runner exists for.
 ///
-/// `XMLParser` was in the default list with no runner behind it, so the chain question offered the model
-/// something it could never be given a configuration for. It has gone; this is what stops the two
-/// drifting apart again, in either direction — a runner added without being offered is as much a fault
-/// as an element offered with no runner.
+/// An element offered with no runner would let the chain question offer the model something that could never
+/// be run. A runner added without its element being offered is just as much a fault, so the check runs in both
+/// directions.
 class TestLearnableElements {
 
     @Test

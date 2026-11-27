@@ -49,12 +49,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/// The stage pane's contents, from what the stage decided (A30, design 01 §11.7).
+/// Builds the contents of the stepper's Smart Pipeline pane from what the stage decided.
 ///
-/// A pure mapping from [StageRun] — which was written as everything a scenario asserts on (design 02
-/// §1), and is the same list a person wants to see — onto the shared form the client renders. The one
-/// thing it adds is whether this was a step rather than a run, because a dry run's decision is what the
-/// stage *would* have done and the pane has to say so.
+/// It is a pure mapping from [StageRun] (which holds everything the scenario tests check, and which is
+/// also what a person wants to see) onto the shared form the client renders. The one thing it adds is
+/// whether this was a step rather than a real run, because a dry run's decision is what the stage *would*
+/// have done and the pane has to say so.
 public final class StepDetails {
 
     private StepDetails() {
@@ -83,12 +83,12 @@ public final class StepDetails {
                         : produced.boundary().toString(),
                 verdicts(run.verdicts()),
                 transcript(run.transcript()),
-                // Attached per record by [Supervision], since the decision is the stream's and what each
-                // of the fragment's elements made of the input is each record's.
+                // Attached per record by Supervision, since the decision applies to the whole stream but
+                // what each of the fragment's elements made of the input is per record.
                 List.of());
     }
 
-    /// The stream's feed and type, in that order, where it has them: what the model is shown of it.
+    /// The stream's feed and type, in that order, where it has them, for the pane to show.
     private static Map<String, String> stream(final Input input) {
         final Map<String, String> stream = new LinkedHashMap<>();
         if (input.feed() != null) {
@@ -100,11 +100,14 @@ public final class StepDetails {
         return stream;
     }
 
-    /// What was decided, in one line, in the terms design 02 §4 uses.
+    /// Describes a decision in one line.
     ///
-    /// **Every** decision has a line. A surface that says nothing for the outcomes nobody thought about
-    /// is worse than no surface, and the error stream and the stage pane say the same thing because
-    /// they say it from here — a second switch elsewhere is a second place to forget an outcome.
+    /// **Every** kind of decision has a line, because a display that shows nothing for unexpected outcomes
+    /// is worse than none. The error stream and the stepper pane both use this method so that they say
+    /// the same thing, and so that there is only one switch in which an outcome could be forgotten.
+    ///
+    /// @param decision What was decided.
+    /// @return The description.
     public static String describe(final Decision decision) {
         return switch (decision) {
             case Bound bound -> bound.binding() == null
@@ -125,8 +128,9 @@ public final class StepDetails {
         };
     }
 
-    /// What was decided as lines for the Error stream: [#describe], and where the decision stopped a
-    /// learning run with a report, its details and suggestions beneath, each labelled ([StopReport#lines()]).
+    /// Describes a decision as lines for the error stream: the [#describe] line, followed, where the
+    /// decision stopped a learning session with a report, by the report's labelled details and
+    /// suggestions ([StopReport#lines()]).
     ///
     /// @param decision What was decided.
     /// @return The lines, the first of them [#describe]'s.
@@ -139,13 +143,13 @@ public final class StepDetails {
         final List<String> lines = new ArrayList<>();
         lines.add(describe(decision));
         if (report != null) {
-            // The error line is the decision's own reason, said in the first line already
+            // The report's first line is the decision's own reason, which describe() has already given.
             lines.addAll(report.lines().subList(1, report.lines().size()));
         }
         return lines;
     }
 
-    // A translation by its fragment's name, as a person knows it, not its binding's UUID
+    // Names a translation by its fragment's name, as a person knows it, rather than its binding's UUID.
     private static String named(final Binding binding) {
         final String name = NullSafe.get(binding.getPipeline(), DocRef::getName);
         return name == null
@@ -178,8 +182,8 @@ public final class StepDetails {
                 judgement.metThreshold());
     }
 
-    /// The transcript as the Supervisor view carries a turn (A28), so that a person reading one in the
-    /// stepper and one in the Supervisor is reading the same thing.
+    /// Maps the transcript to the form the Supervisor uses for a turn, so that a person reading one in the
+    /// stepper and one in the Supervisor sees the same thing.
     private static List<SupervisorTurn> transcript(final List<Exchange> transcript) {
         final List<SupervisorTurn> turns = new ArrayList<>();
         for (int number = 0; number < transcript.size(); number++) {
@@ -191,8 +195,8 @@ public final class StepDetails {
                     Question.kindOf(exchange.question()),
                     exchange.question().summary(),
                     exchange.reply(),
-                    // Who answered is the attempt's to know (A28); a step reads a transcript the stage
-                    // has just made, and everything in it was answered by the model.
+                    // Who answered is recorded on the attempt. A step reads a transcript the stage has just
+                    // made, and everything in it was answered by the model.
                     null,
                     exchange.outcome(),
                     exchange.score()));

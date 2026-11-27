@@ -32,12 +32,12 @@ import org.fusesource.restygwt.client.DirectRestService;
 
 import java.util.List;
 
-/// What a QA person needs to judge one Smart Pipeline's translated output on its Quality Assurance tab: its
-/// volume and cardinality, samples of the records its translation was learned and checked on beside what they
-/// became.
+/// REST resource for a Smart Pipeline's Quality Assurance tab, which gives a person what they need to judge
+/// the pipeline's translated output: its volume and cardinality, and samples of the records its translation
+/// was learned and checked on beside what they became.
 ///
-/// Held to the pipeline's permissions, as its Learning Status is: anyone who may view the pipeline reads
-/// these. A deleted pipeline's are read by its Learning Flow's viewers.
+/// Access follows the pipeline's permissions, as the Learning Status tab's does: anyone who may view the
+/// pipeline may read these. For a deleted pipeline, anyone who may view its Learning Flow document may.
 @Tag(name = "Learning Flow Quality")
 @Path("/learningFlowQuality" + ResourcePaths.V1)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -45,8 +45,8 @@ import java.util.List;
 public interface QualityResource extends RestResource, DirectRestService {
 
     /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its Smart Pipeline element.
-    /// @return Its volume, day by day lately, and the cardinality of what its translation in use was learned on.
+    /// @param elementId    The id of its Smart Pipeline element.
+    /// @return Its recent daily volume, and the cardinality of what its translation in use was learned on.
     @GET
     @Path("/pipelines/{pipelineUuid}/elements/{elementId}")
     @Operation(
@@ -56,9 +56,9 @@ public interface QualityResource extends RestResource, DirectRestService {
                          @PathParam("elementId") String elementId);
 
     /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its Smart Pipeline element.
+    /// @param elementId    The id of its Smart Pipeline element.
     /// @return The records its translation in use was learned and checked on, newest first, each beside what it
-    ///         became; empty where none is in use.
+    ///         became; empty where no translation is in use.
     @GET
     @Path("/pipelines/{pipelineUuid}/elements/{elementId}/samples")
     @Operation(

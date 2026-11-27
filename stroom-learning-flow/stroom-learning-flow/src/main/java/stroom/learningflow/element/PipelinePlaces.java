@@ -32,23 +32,24 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-/// The place of a learner's content in a node (design 06 A113): the element's folder and name properties,
-/// read from its pipeline as merged, so that a value a factory wrote, or a parent pipeline set, counts.
-/// Unset, the folder is the pipeline's own and the name is the pipeline's with ` learned` after it (A133):
-/// beside the pipeline and sorting with it, but never the pipeline's own name.
+/// Works out where a learner's content is written on a node: the folder and name set by the Smart
+/// Pipeline element's `learnedFolder` and `learnedName` properties. They are read from the pipeline merged
+/// with its parents, so a value written by a Pipeline Factory or set on a parent pipeline counts. If unset,
+/// the folder is the pipeline's own and the name is the pipeline's name followed by ` learned`, so the
+/// content sits beside the pipeline and sorts with it, but never has the pipeline's own name.
 public class PipelinePlaces implements Places {
 
-    /// The element's property for the folder what it learns goes in: the name Stroom gives
-    /// [LearningFlowParser#setLearnedFolder].
+    /// The name of the element property for the folder learned content goes in, which is the property
+    /// name Stroom derives from [LearningFlowParser#setLearnedFolder].
     static final String FOLDER_PROPERTY = "learnedFolder";
-    /// The element's property for the name what it learns is given: the name Stroom gives
-    /// [LearningFlowParser#setLearnedName].
+    /// The name of the element property for the name learned content is given, which is the property name
+    /// Stroom derives from [LearningFlowParser#setLearnedName].
     static final String NAME_PROPERTY = "learnedName";
-    /// Where content goes for a learner whose pipeline cannot be read — deleted while a session it
-    /// opened was still being carried on — so that what was learned can still be found.
+    /// Where content goes for a learner whose pipeline cannot be read (e.g. it was deleted while one of its
+    /// sessions was still running), so that what was learned can still be found.
     private static final DocPath ORPHANED = DocPath.fromParts("Learning Flow");
-    /// What follows the pipeline's name in a default name: the pipeline is in the same folder under its
-    /// own name, and what it learns is not the pipeline.
+    /// The suffix added to the pipeline's name to make the default name. The pipeline is in the same
+    /// folder under its own name, so learned content needs a different one.
     private static final String LEARNED = " learned";
 
     private final LearnerDocuments learnerDocuments;
@@ -79,9 +80,9 @@ public class PipelinePlaces implements Places {
         return new Place(folder, name);
     }
 
-    /// A folder as a person or a factory pattern writes it, `Feeds/DOOR-ACCESS`: a leading `/` or none,
-    /// and space around a `/` or an empty part between two, which a pattern substituting to nothing can
-    /// leave, taken as not meant. Nothing left is the top of the tree.
+    /// Parses a folder path as a person or a Pipeline Factory pattern writes it, e.g. `Feeds/DOOR-ACCESS`.
+    /// A leading `/` is optional, and whitespace around a `/` or an empty part between two (which a pattern
+    /// that substitutes to nothing can leave) is ignored. A path with no parts left is the top of the tree.
     private static DocPath folder(final String text) {
         return DocPath.fromParts(Arrays.stream(text.split("/"))
                 .map(String::strip)
@@ -89,8 +90,8 @@ public class PipelinePlaces implements Places {
                 .toList());
     }
 
-    /// The folder the pipeline is in, from the top of the tree. Read as the processing user, as the
-    /// pipeline was: where a learner's content goes is not a question about who is asking.
+    /// The folder the pipeline is in, as a path from the top of the tree. It is read as the processing
+    /// user, as the pipeline was, because where a learner's content goes does not depend on who is asking.
     private DocPath beside(final PipelineDoc pipeline) {
         return securityContextProvider.get().asProcessingUserResult(() -> {
             final ExplorerNodeService explorerNodeService = explorerNodeServiceProvider.get();

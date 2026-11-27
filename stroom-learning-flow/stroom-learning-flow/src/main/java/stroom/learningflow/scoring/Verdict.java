@@ -25,20 +25,20 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/**
- * The scorecard's verdict on one step: every judgement, and their average. Whether the step passes is
- * [Scorecard#outcome]'s to say, since an advice check that falls short fails a step only where the step
- * has a rule for it (the one model of checks, D1). The feedback is what the model is told to try again:
- * each check that fell short, by how much, and its diagnostics.
- *
- * @param judgements One per check that applied, in the order of the checks.
- * @param score      The average of the checks that ran, gates and advice alike, in [0, 1]; 1.0 where none
- *                   ran.
- */
+/// The scorecard's verdict on one step: every judgement, and their average. Whether the step passes is
+/// decided by [Scorecard#outcome], since an advice check that falls short fails a step only where the step
+/// has a transition for that shortfall. The feedback is what the model is told when asked to try again:
+/// each check that fell short, by how much, and its diagnostics.
+///
+/// @param judgements One per check that applied, in the order of the checks.
+/// @param score      The average of the checks that ran, gates and advice alike, in [0, 1]; 1.0 where none
+///                   ran.
 public record Verdict(List<Judgement> judgements, double score) {
 
     private static final ElementId SCORECARD = new ElementId("Scorecard");
 
+    /// Creates a verdict from its judgements.
+    ///
     /// @param judgements One per check that applied.
     /// @return The verdict, with the average of the judgements as its score.
     public static Verdict of(final List<Judgement> judgements) {
@@ -47,15 +47,16 @@ public record Verdict(List<Judgement> judgements, double score) {
                 : judgements.stream().mapToDouble(judgement -> judgement.score().value()).average().orElse(1.0));
     }
 
+    /// Whether every gate check met its threshold.
+    ///
     /// @return Whether no gate fell below its threshold.
     public boolean gatesPassed() {
         return judgements.stream().noneMatch(Judgement::failedGate);
     }
 
-    /// The records that fell short of the bar (design 04 §3, A55): a record clears it when every gate
-    /// that judges records one by one passed on *that* record, so this is the union of the gates'
-    /// failing records. Zero-based, in output order. Empty where every record cleared it — or where no
-    /// gate judges per record.
+    /// The records that fell short of the bar. A record clears the bar when every gate that judges records
+    /// individually passed it, so this is the union of the gates' failing records, as zero-based indexes
+    /// in output order. Empty where every record cleared the bar, or where no gate judges per record.
     public Set<Integer> failingRecords() {
         final Set<Integer> failing = new TreeSet<>();
         for (final Judgement judgement : judgements) {
@@ -66,13 +67,13 @@ public record Verdict(List<Judgement> judgements, double score) {
         return failing;
     }
 
-    /// What the checks that **passed** still have to say: their `INFO` diagnostics, which [#feedback] does
-    /// not carry because it is only about what fell short.
+    /// The `INFO` diagnostics from checks that **passed**, which [#feedback] does not include because it
+    /// only covers what fell short.
     ///
     /// A check that passes is usually silent, but not always. Completeness passes when the records that
-    /// became events and the records the translation declared it skipped add up — and how many were
-    /// skipped is exactly what a person approving the translation needs to read, since by decision there
-    /// is no cap on it (`docs/learning-flow-declared-skips-design.md`).
+    /// became events and the records the translation declared it skipped add up, and how many were skipped
+    /// is exactly what a person approving the translation needs to see, since there is deliberately no
+    /// limit on skips.
     ///
     /// @return The notices, in the order of the checks; empty where every check that passed was silent.
     public List<StoredError> notices() {

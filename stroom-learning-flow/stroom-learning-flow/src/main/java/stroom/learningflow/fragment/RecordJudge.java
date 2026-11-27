@@ -21,28 +21,29 @@ import stroom.learningflow.scoring.Verdict;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-/// The bar, record by record (design 04 §3, A55): what a serving run asks of each record of the chain's
-/// output as it is produced. The stage supplies it — the gates that judge a record, over the record as
-/// one document of its own — and the run stops at the first record that falls short.
+/// Applies the bar to each record of a fragment's output as a serving run produces it. The stage supplies
+/// it, made from the per-record gates, and each record is judged as a document of its own. Unless
+/// [#stops] says otherwise, the run stops at the first record that falls short.
 public interface RecordJudge {
 
-    /// Judge one record of the output.
+    /// Judges one record of the output.
     ///
-    /// @param index  Which record, from zero, in output order.
+    /// @param index  The record's zero-based index, in output order.
     /// @param record The record as a document of its own: the output's root with this record alone in
     ///               it, so that the scorers read it as they read any output.
-    /// @param parsed The record as the parser cut it, where the runner can say — what a session is shown
-    ///               for a record that fell short; empty where it cannot.
+    /// @param parsed Supplies the record as the parser produced it, which is what a session is shown for a
+    ///               record that fell short; empty where the runner cannot provide it.
     /// @return The verdict. A record clears the bar when every gate passed on it.
     Verdict judge(int index, String record, Supplier<Optional<String>> parsed);
 
-    /// Whether the run stops at the first record short of the bar. A task's judge does: nothing after
-    /// the record is read. A session's full pass does not: it wants every record that falls short.
+    /// Whether the run stops at the first record that falls short of the bar. A processing task's judge
+    /// does, so nothing after that record is read. A learning session's full pass does not, because it
+    /// wants every record that falls short.
     default boolean stops() {
         return true;
     }
 
-    /// Whether a verdict clears the bar.
+    /// Whether a verdict clears the bar: every gate passed and no record failed.
     static boolean clears(final Verdict verdict) {
         return verdict.gatesPassed() && verdict.failingRecords().isEmpty();
     }

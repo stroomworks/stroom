@@ -39,10 +39,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A131, with A28 and A80: a learner that gave up is sent back from its attempt, and learns from
-/// the next stream it is given — which, for a feed that ships rarely, is the stream that errored, put
-/// through again by a person's reprocess filter on the pipeline. There is no ledger between the two: the
-/// attempt is the record a person acts from, and the stream that errored is an ordinary error stream.
+/// Tests sending a learner that gave up back to learn again, and having it learn from the stream that errored.
+///
+/// After the learner is sent back, it learns from the next stream it is given. For a feed that arrives rarely,
+/// that is likely to be the stream that errored, processed again by a person's reprocess filter on the
+/// pipeline. Nothing else links the two: the attempt is the record a person acts from, and the stream that
+/// errored is an ordinary error stream.
 class TestALearnerThatGaveUpIsSentBack {
 
     private static final String DOC = "doc-1";
@@ -54,17 +56,18 @@ class TestALearnerThatGaveUpIsSentBack {
     void sentBackFromItsAttemptItLearnsFromTheStreamThatErroredWhenThatIsReprocessed() {
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc();
-        // Given up — how a session gives up is scenario 60's — and a stream errored behind it.
+        // The learner is given up directly here (TestScenario60AParseThatCannotBeLearnedErrorsItsStreams tests
+        // how a session gives up), and a stream is errored because of it.
         scenarios.states.giveUp(Scenarios.LEARNER, DOC, "No passing configuration for DSParser");
         final StageRun errored = scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER, stream(1L));
         assertThat(errored.decision()).isInstanceOf(Sentinel.class);
         assertThat(((Sentinel) errored.decision()).reason()).contains("Given up");
 
-        // A person sends it back from the attempt list, as the Supervisor's Learn again does.
+        // A person sends it back from the attempt list, as the Supervisor's Learn Again action does.
         scenarios.supervisorActions().relearn(doc, Scenarios.LEARNER, "Sent back to be learned again by jo");
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isEmpty();
 
-        // And reprocesses the stream that errored: it is the learner's next stream, and it learns.
+        // The person then reprocesses the stream that errored. It is the learner's next stream, so it learns.
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))

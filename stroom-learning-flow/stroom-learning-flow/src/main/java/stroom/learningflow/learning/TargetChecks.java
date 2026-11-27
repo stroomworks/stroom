@@ -42,39 +42,39 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * The checks a target brings to the conversation (design 01 §10.1, ruling A31), beside the document's
- * scorers: whether a proposed target is an event worth aiming at; whether the parser's records
- * <i>preserve</i> what the targets need; whether the transform's events <i>reproduce</i> them. Each
- * says what fell short in the terms the model can act on.
- */
+/// The learning-only checks used by [Conversation] alongside the document's scorers, mostly concerned with
+/// targets and record boundaries.
+///
+/// They decide whether a proposed target is an event worth aiming at, whether the parser's records
+/// *preserve* what the targets need, whether the transform's events *reproduce* the targets, and whether a
+/// split's records hold the input whole. Each reports what fell short in terms the model can act on.
 public final class TargetChecks {
 
-    /**
-     * The most record kinds a sample is asked about: enough to see every kind of record a feed carries, few enough
-     * to keep the attempt short.
-     */
+    /// The maximum number of record kinds a sample is asked about: enough to see every kind of record a typical
+    /// feed carries, but few enough to keep the attempt short.
     public static final int REPRESENTATIVES = 3;
     public static final String NONE = "none";
     private static final ElementId TARGET = new ElementId("Target");
     private static final int VALUE_LENGTH_COUNTED = 2;
-    /// The local name of the events root, which is what says a target is already a document where the
-    /// target schema names none of its own.
+    /// The local name of the event-logging root element. A target whose root has this name is already a
+    /// whole document, where the target schema names no root of its own.
     private static final String EVENTS_ROOT = "Events";
     private static final String EVENTS_VERSION = "3.0.0";
     private static final String EVENTS_SYSTEM_ID = "file://event-logging-v3.0.0.xsd";
-    /// The first element a piece of markup opens, capturing its local name without any prefix.
+    /// Matches the first start tag in a piece of XML, capturing its local name without any prefix.
     private static final Pattern ROOT = Pattern.compile("\\s*<(?:[\\w.-]+:)?([\\w.-]+)[\\s/>]");
 
     private TargetChecks() {
     }
 
-    /**
-     * One record of each kind the split yielded, first seen first, at most {@link #REPRESENTATIVES}. A text
-     * record's kind is its text skeleton, values reduced to their classes; a markup record's is its
-     * element skeleton with its naming attributes ({@link RecordSkeleton}), since records
-     * of one vocabulary — named {@code Data}, or a JSON map — are told apart by what they are called.
-     */
+    /// Returns one record of each kind the split produced, in the order first seen, and at most
+    /// [#REPRESENTATIVES]. A text record's kind is its text skeleton, with values reduced to their character
+    /// classes. An XML record's kind is its element skeleton with its naming attributes ([RecordSkeleton]),
+    /// because records in a generic vocabulary (elements all named `Data`, or a JSON map) are told apart by
+    /// the names in their attributes.
+    ///
+    /// @param records The records the split produced.
+    /// @return One representative record per kind.
     public static List<String> representatives(final List<String> records) {
         return representatives(records, REPRESENTATIVES);
     }
@@ -93,29 +93,44 @@ public final class TargetChecks {
         return List.copyOf(byKind.values());
     }
 
-    /// The elements of a document with this local name, each as its text — the records where that element is
-    /// one record (A35). Only the outermost occurrences count: an element of the name inside another is part
-    /// of that record, not a record of its own.
+    /// Returns the elements of a document with this local name, each as its text: the records, where that
+    /// element is one record. Only the outermost occurrences count, because an element of the same name inside
+    /// another is part of that record, not a record of its own.
+    ///
+    /// @param document The parsed document.
+    /// @param name     The local name of the record element.
+    /// @return The records' text.
     public static List<String> elementsNamed(final OutputRecords document, final String name) {
         return document.recordsBy(RecordBoundary.ofElement(name)).stream().map(XdmNode::toString).toList();
     }
 
-    /// The records of JSON where every top-level value is one ([Boundary#ROOT]): the root map's children —
-    /// or, where the document is one top-level array, that array's items, since the parser wraps such a
-    /// document in a keyless array under the root map, which no key could name.
+    /// Returns the records of JSON in which every top-level value is one record ([Boundary#ROOT]). These are
+    /// the root map's children, or, where the document is one top-level array, that array's items, because
+    /// the parser puts such a document in a keyless array under the root map, which no key could name.
+    ///
+    /// @param document The JSON parser's XML output, parsed.
+    /// @return The records' text.
     public static List<String> rootRecords(final OutputRecords document) {
         return document.recordsBy(RecordBoundary.ofArray(RecordBoundary.ROOT)).stream()
                 .map(XdmNode::toString)
                 .toList();
     }
 
-    /// The items of the JSON array with this key, in the XSL/json vocabulary the parser produces, each as its
-    /// text — the records where that array holds them (A31). The outermost such array counts.
+    /// Returns the items of the JSON array with this key, in the XSL/json vocabulary the parser produces,
+    /// each as its text: the records, where that array holds them. Only the outermost such array counts.
+    ///
+    /// @param document The JSON parser's XML output, parsed.
+    /// @param key      The array's key.
+    /// @return The records' text.
     public static List<String> arrayItems(final OutputRecords document, final String key) {
         return document.recordsBy(RecordBoundary.ofArray(key)).stream().map(XdmNode::toString).toList();
     }
 
-    /// The text a markup record carries: its element and attribute values, for wholeness against the document.
+    /// Returns the text content of an XML record, for comparing with the document's text in the wholeness
+    /// check. A record that will not parse is returned as it is.
+    ///
+    /// @param record The record's XML.
+    /// @return Its text content.
     public static String textOf(final String record) {
         return OutputRecords.parse(record)
                 .map(parsed -> parsed.root().getStringValue())
@@ -126,10 +141,14 @@ public final class TargetChecks {
         return document.recordsBy(RecordBoundary.ofElement(name));
     }
 
-    /// Whether an element that occurs is one record: it must not be the root, must not be a container of a
-    /// repeated child, and its occurrences together must hold the document whole, as a split's records must.
-    /// That it occurs at all is the caller's to check first.
+    /// Checks whether a named element is a good record boundary. It must not be the root; if it occurs only
+    /// once it must not be a container of a repeated structured child; and its occurrences together must hold
+    /// nearly all of the document's text, as a split's records must. The caller checks first that it occurs
+    /// at all.
     ///
+    /// @param document  The sample, parsed.
+    /// @param name      The element's local name.
+    /// @param wholeness What share of the document's text the records must hold between them.
     /// @return The shortfall, empty where the element will do.
     public static Optional<StoredError> recordElement(final OutputRecords document,
                                                      final String name,
@@ -141,8 +160,8 @@ public final class TargetChecks {
         }
         final List<XdmNode> found = occurrences(document, name);
         if (found.size() == 1) {
-            // One occurrence holding a repeated child that has structure of its own is the records' container,
-            // not a record. A repeated child that is a leaf — a field, as <data> in a one-record sample — is not.
+            // One occurrence holding a repeated child with structure of its own is the records' container, not
+            // a record. A repeated leaf child (a field, such as <data> in a one-record sample) does not count.
             final Map<String, Long> children = new LinkedHashMap<>();
             document.evaluate(found.get(0), "*[*]")
                     .forEach(child -> children.merge(((XdmNode) child).getNodeName().getLocalName(), 1L, Long::sum));
@@ -166,14 +185,13 @@ public final class TargetChecks {
         return Optional.empty();
     }
 
-    /// Whether the children of a named element are the records
-    /// (`docs/learning-flow-mixed-record-elements.md`): a feed that interleaves several record types as
-    /// siblings under one container, where no single element name describes a record.
+    /// Checks whether the children of a named element are a good record boundary. This is for a feed that
+    /// mixes several record types as siblings under one container, where no single element name describes
+    /// a record.
     ///
-    /// Unlike [#recordElement] this does **not** refuse a parent that occurs once. A container that
-    /// repeats in the stream may well appear once in a sample — `gateway-audit.xml`'s first `</batch>`
-    /// is at byte 11,318 and the default sample is 8,192 — and refusing it was half of why that feed
-    /// could not be learned at all.
+    /// Unlike [#recordElement], this does **not** refuse a container that occurs once. A container that
+    /// repeats in the stream may well appear only once in a sample, because the sample is cut from the start
+    /// of the stream, so refusing it would make such feeds impossible to learn.
     ///
     /// @param document  The sample, parsed.
     /// @param parent    The container's local name, or [RecordBoundary#ROOT] for the document's own root.
@@ -194,8 +212,8 @@ public final class TargetChecks {
                       + "whose children are the records"));
         }
         if (found.size() == 1) {
-            // One child is a wrapper named as though it were a container: the records are inside it, and
-            // the model is being told to look one level deeper rather than refused outright.
+            // A single child means the named element is a wrapper, not a container of records. The records
+            // are inside it, so the model is told to look one level deeper.
             return Optional.of(new StoredError(Severity.ERROR, null, TARGET, (ofRoot
                     ? "The root"
                     : parent) + " holds one element child, so its children are not a sequence of records; "
@@ -217,9 +235,11 @@ public final class TargetChecks {
         return node.getStringValue().chars().filter(c -> !Character.isWhitespace(c)).count();
     }
 
-    /**
-     * How many of the records are of the representative's kind.
-     */
+    /// Counts how many of the records are of the same kind as a representative.
+    ///
+    /// @param records        The records.
+    /// @param representative The representative record.
+    /// @return How many are of its kind.
     public static int count(final List<String> records, final String representative) {
         final String kind = kindOf(representative);
         return (int) records.stream()
@@ -228,23 +248,25 @@ public final class TargetChecks {
                 .count();
     }
 
-    /**
-     * The kind of one record, by which representatives are chosen and counted: the text skeleton of a line,
-     * the record skeleton of markup.
-     */
+    /// Returns the kind of one record, by which representatives are chosen and counted: the text skeleton of
+    /// a text record, or the record skeleton of an XML record.
+    ///
+    /// @param record The record.
+    /// @return A key that is the same for records of the same kind.
     public static String kindOf(final String record) {
         return RecordSkeleton.isMarkup(record)
                 ? RecordSkeleton.recordSkeleton(record)
                 : RecordSkeleton.textSkeleton(record);
     }
 
-    /**
-     * Whether a split emitted the input whole: the record texts, together, must carry nearly every
-     * non-blank character of the input. A split that keeps the first line of each block passes coverage —
-     * the block was consumed — and fails this.
-     *
-     * @return The shortfall, empty where the records carry the input.
-     */
+    /// Checks whether a split emitted the input whole: the record texts together must contain nearly every
+    /// non-whitespace character of the input. A split that keeps only the first line of each block passes
+    /// the coverage check, because the block was consumed, but fails this one.
+    ///
+    /// @param input       The input that was split.
+    /// @param recordTexts The text of each record.
+    /// @param threshold   The share of the input's characters the records must hold.
+    /// @return The shortfall, empty where the records hold the input.
     public static Optional<StoredError> wholeness(final String input,
                                                  final List<String> recordTexts,
                                                  final double threshold) {
@@ -261,30 +283,29 @@ public final class TargetChecks {
                                                                           + "field, however many lines it spans"));
     }
 
-    /// A proposed target as a whole document the scorers can judge: the event wrapped in the events root
-    /// where the model gave the event alone.
+    /// Turns a proposed target into a whole document the scorers can judge, by wrapping the event in the
+    /// event-logging `Events` root where the model gave the event alone.
     ///
-    /// Whether it is already a document is decided by its **root element's name**, not by whether the
-    /// text holds the characters `<Events` somewhere (audit finding W1-2). The substring test wrapped a
-    /// prefixed root — `<evt:Events>` — a second time, so the scorers judged a document inside a
-    /// document; and an event carrying those characters in an attribute or a comment was left unwrapped,
-    /// which is the same fault the other way round.
+    /// Whether it is already a document is decided by its **root element's local name**, not by whether the
+    /// text contains `<Events` somewhere. A substring test would wrap a prefixed root such as `<evt:Events>`
+    /// a second time, and would leave unwrapped an event that has those characters in an attribute or a
+    /// comment.
     ///
-    /// A root of another schema's name is still wrapped in event-logging's, because that is the only
-    /// root this knows. Naming the target schema's root belongs with Track 1 task 7 (D1).
+    /// This form always uses event-logging's root; [#asDocument(String, TargetSchema)] uses the root of
+    /// another target schema.
     ///
     /// @param event What the model gave.
-    /// @return It as a document.
+    /// @return The event as a document.
     public static String asDocument(final String event) {
         return asDocument(event, null);
     }
 
-    /// The same, wrapped in the root of the schema the document's translations must write (task 7).
+    /// The same, wrapping the event in the root of the schema the document's translations must produce.
     ///
     /// @param event  The proposed event, which may already be a whole document.
-    /// @param target The target schema, or null where the document names none — in which case the
-    ///               wrapper is event-logging 3.0.0, which is what it always was.
-    /// @return It as a document.
+    /// @param target The target schema, or null where the document names none, in which case the wrapper
+    ///               is event-logging 3.0.0.
+    /// @return The event as a document.
     public static String asDocument(final String event, final TargetSchema target) {
         final String root = target == null || target.rootElement() == null
                 ? EVENTS_ROOT
@@ -302,8 +323,8 @@ public final class TargetChecks {
                 : open(root, target) + stripped + "</" + root + ">";
     }
 
-    /// The opening tag a proposed event is wrapped in: the target's root, namespace, schema location and
-    /// version, or event-logging 3.0.0's where the document names no target.
+    // Returns the start tag a proposed event is wrapped in: the target's root, namespace, schema location and
+    // version, or event-logging 3.0.0's where the document names no target.
     private static String open(final String root, final TargetSchema target) {
         final String namespace = target == null
                 ? TargetSchema.EVENT_LOGGING
@@ -320,14 +341,16 @@ public final class TargetChecks {
                + "Version=\"" + version + "\">";
     }
 
-    /**
-     * Whether a proposed target is an event worth aiming at: it must parse as one event, and it is judged
-     * by the document's scorers of meaning — conformance, extraction quality, business rules — over the
-     * wrapped document, as a transform's output would be. The stream-level scorers do not apply to one
-     * event on its own, and a document that does not parse is refused rather than passed unscored.
-     *
-     * @return The shortfalls, empty where the target is accepted.
-     */
+    /// Judges whether a proposed target is an event worth aiming at. It must parse as exactly one event, and
+    /// it is then judged by the document's scorers of meaning (schema conformance, extraction quality,
+    /// business rules) over the wrapped document, as a transform's output would be. The stream-level scorers
+    /// do not apply to one event on its own, and a document that does not parse is refused rather than
+    /// passed unscored.
+    ///
+    /// @param scorecard The document's scorers.
+    /// @param record    The record the target is for.
+    /// @param document  The proposed target, wrapped as a document.
+    /// @return The shortfalls, empty where the target is accepted.
     public static List<StoredError> judge(final Scorecard scorecard, final String record, final String document) {
         final Optional<StoredError> refusal = refusal(document, scorecard.target());
         if (refusal.isPresent()) {
@@ -339,11 +362,12 @@ public final class TargetChecks {
                 : verdict.feedback();
     }
 
-    /// Why a proposed target is not an event to judge at all: not well-formed, or more than one event.
+    /// Checks whether a proposed target can be judged at all. It cannot if it is not well-formed, or holds
+    /// other than exactly one event.
     ///
     /// @param document The proposed target, wrapped as a document.
-    /// @param target   The schema it must be in, which names the element to reply with (task 7, W1-1); null
-    ///                 for event-logging.
+    /// @param target   The schema it must be in, which says which element to reply with; null for
+    ///                 event-logging.
     /// @return The refusal, empty where the document is one event.
     public static Optional<StoredError> refusal(final String document, final TargetSchema target) {
         final Optional<OutputRecords> parsed = OutputRecords.parse(document);
@@ -356,7 +380,7 @@ public final class TargetChecks {
         return Optional.empty();
     }
 
-    // The element one record becomes, as the refusal names it: event-logging's Event, or the target's own
+    // Names the element one record becomes, for the refusal message: event-logging's Event, or the target's
     private static String replyWith(final TargetSchema target) {
         if (TargetSchema.isEventLoggingOrNone(target)) {
             return "the Event element";
@@ -366,7 +390,7 @@ public final class TargetChecks {
                 .orElse("the one record's element");
     }
 
-    // The document's root, which the reply must leave out
+    // Names the document's root, which the reply must leave out
     private static String wrapper(final TargetSchema target) {
         if (TargetSchema.isEventLoggingOrNone(target)) {
             return "an Events wrapper";
@@ -376,19 +400,25 @@ public final class TargetChecks {
                 : "a " + target.rootElement() + " wrapper";
     }
 
-    /// The scorers of meaning over one proposed event, as a transform's output would be judged.
+    /// Runs the scorers of meaning over one proposed event, as a transform's output would be judged.
+    ///
+    /// @param scorecard The document's scorers.
+    /// @param record    The record the target is for.
+    /// @param document  The proposed target, wrapped as a document.
+    /// @return The verdict.
     public static Verdict verdict(final Scorecard scorecard, final String record, final String document) {
         return scorecard.meaning()
                 .judge(new Attempted("Target", false, record, new StepResult(document, List.of())));
     }
 
-    /**
-     * Whether the parser's records carry every value the targets need: each leaf value of a target's
-     * event that appears in its source record must appear among the data values of some emitted record.
-     * Constants the instructions supplied are not in the source and are not demanded.
-     *
-     * @return The shortfalls, empty where every value is preserved.
-     */
+    /// Checks whether the parser's records carry every value the targets need (the preservation check). Each
+    /// text or attribute value of a target's event that appears in its source record must appear within the
+    /// values of some emitted record. Constants supplied by the instructions are not in the source record,
+    /// so they are not required.
+    ///
+    /// @param recordsDocument The parser's output.
+    /// @param targets         The targets.
+    /// @return The shortfalls, empty where every value is preserved.
     public static List<StoredError> preservation(final String recordsDocument, final List<Target> targets) {
         final Optional<OutputRecords> parsed = OutputRecords.parse(recordsDocument);
         if (parsed.isEmpty()) {
@@ -424,13 +454,13 @@ public final class TargetChecks {
         return shortfalls;
     }
 
-    /**
-     * Whether the transform reproduced each target: some emitted event must equal the target's event as
-     * a canonical tree. Where none does, the nearest — the event at the target's position — is shown
-     * beside it.
-     *
-     * @return The shortfalls, empty where every target is reproduced.
-     */
+    /// Checks whether the transform reproduced each target (the fidelity check): some emitted event must
+    /// equal the target's event once both are in canonical form. Where none does, the produced event that
+    /// agrees with the target for longest from the start is shown beside it, as the nearest.
+    ///
+    /// @param eventsDocument The transform's output.
+    /// @param targets        The targets.
+    /// @return The shortfalls, empty where every target is reproduced.
     public static List<StoredError> fidelity(final String eventsDocument, final List<Target> targets) {
         final Optional<OutputRecords> produced = OutputRecords.parse(eventsDocument);
         final List<String> events = produced.map(records -> records.records().stream()
@@ -461,11 +491,14 @@ public final class TargetChecks {
         return shortfalls;
     }
 
-    /// The event's values that came from the record: every leaf and attribute value of the event, long
-    /// enough to mean something, that occurs within one of the record's values. Where the record is
-    /// markup, its values are its text and attribute values, never its element or attribute names, so a
-    /// JSON key the event uses as a name is not demanded of the parser; where it is text, the record
-    /// itself is its one value.
+    /// Returns the event's values that came from the record: every text and attribute value of the event, of
+    /// at least two characters, that occurs within one of the record's values. Where the record is XML, its
+    /// values are its text and attribute values, never its element or attribute names, so a JSON key that the
+    /// event repeats (as a field name, for example) is not required of the parser. Where the record is text,
+    /// the whole record is its one value.
+    ///
+    /// @param target The target, which must have an event.
+    /// @return The values the parser's records must carry.
     static Set<String> sourceValues(final Target target) {
         final Set<String> recordValues = recordValues(target.record());
         final Set<String> values = new TreeSet<>();
@@ -483,23 +516,23 @@ public final class TargetChecks {
         return values;
     }
 
-    /// The values a record carries: its text and attribute values where it is markup that parses, else
-    /// the record itself.
+    // Returns the values a record carries: its text and attribute values where it is XML that parses, or else
+    // the record itself.
     private static Set<String> recordValues(final String record) {
         return OutputRecords.parse(record)
                 .map(parsed -> markupValues(parsed, parsed.root()))
                 .orElse(Set.of(record));
     }
 
-    /// The values the parser emitted in one of its records.
+    // Returns the values the parser emitted in one of its records.
     private static Set<String> dataValues(final OutputRecords records, final XdmNode record) {
         return markupValues(records, record);
     }
 
-    /// The text and attribute values in and under an element. A `key` attribute of the XSL/json
-    /// vocabulary is a field's name by construction (as `RecordSkeleton` treats it), so it is not a value.
-    /// It is recognised by its element's local name, since a record cut from the parser's output need not
-    /// declare the vocabulary's namespace.
+    // Returns the text and attribute values in and under an element. A `key` attribute of the XSL/json
+    // vocabulary is a field's name (as `RecordSkeleton` treats it), so it is not a value. It is recognised by
+    // its element's local name, because a record cut from the parser's output may not declare the
+    // vocabulary's namespace.
     private static Set<String> markupValues(final OutputRecords records, final XdmNode element) {
         final Set<String> values = new TreeSet<>();
         records.evaluate(element, "descendant::text() | descendant-or-self::*/@*[not(local-name() = 'key' "
@@ -509,11 +542,12 @@ public final class TargetChecks {
         return values;
     }
 
-    /**
-     * An element as one line naming every element and attribute by namespace and local name, attributes
-     * sorted, whitespace-only text dropped and other text trimmed — so two trees that say the same thing
-     * compare equal whatever prefixes, declarations or indentation each serialisation chose.
-     */
+    /// Returns an element in a canonical one-line form: every element and attribute named by namespace and
+    /// local name, attributes sorted, whitespace-only text dropped and other text trimmed. Two trees that say
+    /// the same thing then compare equal, whatever prefixes, declarations or indentation each one used.
+    ///
+    /// @param node The element.
+    /// @return Its canonical form.
     static String canonical(final XdmNode node) {
         final StringBuilder text = new StringBuilder();
         canonical(node, text);
@@ -539,10 +573,9 @@ public final class TargetChecks {
         }
     }
 
-    /**
-     * How far two canonical forms agree from the start: the produced event that agrees longest is the
-     * nearest to the target, and the point where they part is where the transform went wrong.
-     */
+    // Returns how many characters two canonical forms agree on from the start. The produced event that agrees
+    // longest is the nearest to the target, and the point where they differ is where the transform went
+    // wrong.
     private static int agreement(final String produced, final String expected) {
         final int limit = Math.min(produced.length(), expected.length());
         int i = 0;

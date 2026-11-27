@@ -23,22 +23,24 @@ import stroom.pipeline.shared.data.PipelineElementType;
 import java.util.Collection;
 import java.util.function.Predicate;
 
-/// Which unit a chain of elements can be replayed over (A1, design 01 §4), by the one thing that
-/// decides it: whether a parser stands in the chain.
+/// Works out which unit (a whole stream or a single record) a chain of elements can be replayed over,
+/// from the one thing that decides it: whether the chain contains a parser.
 ///
-/// Derived rather than declared, in every place it is needed — of a written fragment, when a binding names
-/// one; of a document's allowed elements, which say what its stage may learn; and of a stage's position
-/// in a pipeline, which says what it may host. The three must agree, and saying so is what this is for.
+/// The unit is derived rather than declared wherever it is needed, so that every place that needs it
+/// gets the same answer. It is used to check that the chains a Learning Flow document's allowed elements
+/// can make are able to parse the raw stream the Smart Pipeline element is given.
 public final class ReplayUnits {
 
     private ReplayUnits() {
     }
 
+    /// Works out the replay unit of a chain of element types.
+    ///
     /// @param elementTypes The element types of a chain, in any order.
-    /// @param isParser     Whether a type parses raw input into records: the element registry's
-    ///                     `parser` role in a node, a [stroom.learningflow.learning.StepRunner]'s
-    ///                     own answer in the module.
-    /// @return [ReplayUnit#STREAM] where any of them parses, since the bytes above a parser cannot be
+    /// @param isParser     Whether a type parses raw input into records: on a node, whether the element
+    ///                     registry gives it the `parser` role; in module tests, the
+    ///                     `stroom.learningflow.learning.StepRunner`'s own answer.
+    /// @return [ReplayUnit#STREAM] where any of them parses, since the raw bytes a parser reads cannot be
     /// replayed from a record; [ReplayUnit#RECORD] otherwise.
     public static ReplayUnit ofElements(final Collection<String> elementTypes,
                                         final Predicate<String> isParser) {
@@ -47,8 +49,8 @@ public final class ReplayUnits {
                 : ReplayUnit.RECORD;
     }
 
-    /// Whether an element type parses raw input into records, as a node's element registry has it: the
-    /// registry's `parser` role.
+    /// Whether an element type parses raw input into records, according to a node's element registry,
+    /// i.e. whether the registry gives it the `parser` role.
     ///
     /// @param registry    The node's element registry.
     /// @param elementType The element type.
@@ -58,12 +60,13 @@ public final class ReplayUnits {
         return type != null && type.hasRole(PipelineElementType.ROLE_PARSER);
     }
 
-    /// Why a thing of one unit cannot serve a stage of another, in the words an operator needs: what the
-    /// subject has or lacks, and what the stage it would serve is given.
+    /// Builds the message explaining why something with one replay unit cannot serve a stage that needs the
+    /// other, in terms an operator can act on: what the subject has or lacks, and what the stage is given.
     ///
-    /// @param subject The unit of the thing at fault — the fragment being bound, or the chains a
-    ///                document's allowed elements could learn.
-    /// @param what    What to call it, which is what the operator has to go and change.
+    /// @param subject The replay unit of the thing at fault, e.g. the chains a document's allowed elements
+    ///                can make.
+    /// @param what    The name to use for the thing at fault, which is what the operator has to change.
+    /// @return The message.
     public static String mismatch(final ReplayUnit subject, final String what) {
         return subject == ReplayUnit.RECORD
                 ? what + " has no parser, but this stage is fed by the source and is given raw data: "

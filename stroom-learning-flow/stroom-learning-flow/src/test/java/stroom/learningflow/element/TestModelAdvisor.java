@@ -43,18 +43,18 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * The node's advisor against a chat model that records what it was sent: the system text first, the
- * transcript as alternating turns, the new question last; tokens counted; every call audited.
- */
+/// Tests the advisor that puts learning questions to a chat model.
+///
+/// A recording chat model checks that each request holds the system text first, then the earlier questions
+/// and answers as alternating user and AI messages, then the new question last. It also checks that tokens are
+/// counted and that every call, including a failed one, is audited without the sample's data.
 class TestModelAdvisor {
 
     private static final DocRef DOCUMENT = new DocRef("LearningFlow", "doc-1", "door-access");
     private static final Sample SAMPLE = Sample.of("a,b\n");
 
-    /**
-     * A chat model that answers from a list and keeps every request.
-     */
+    /// A chat model that answers from a list of canned replies, or throws a given failure, and keeps every
+    /// request it receives.
     private static final class Recording implements ChatModel {
 
         private final List<List<ChatMessage>> requests = new ArrayList<>();

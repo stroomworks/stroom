@@ -32,9 +32,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Track 2 step 1c: the built-in setups are JSON beside `FlowExamples`, read with the same mapper a
-/// stored document is read with. The flow DSL that used to spell them out is gone, so these are what
-/// hold the three setups to what they were.
+/// Tests the built-in example flows, which are JSON resources beside `FlowExamples`, read with the same mapper
+/// a stored document is read with.
+///
+/// Because the examples are data rather than code, these tests are what pin down each example's steps and
+/// transitions.
 class TestFlowExamples {
 
     @ParameterizedTest
@@ -68,8 +70,8 @@ class TestFlowExamples {
 
     @Test
     void escalatingSettlesTheSplitGoesDirectThenAsksForATarget() {
-        // A39, A40: the split is asked of every input; a parser refused on yield goes back to it; the
-        // target is asked only when the transform stays short.
+        // The Escalating example asks the split question of every input, sends a parser that is short on yield
+        // back to the split, and asks for a target only when the transform stays short.
         final List<FlowStep> steps = FlowExamples.steps(FlowExample.ESCALATING);
 
         assertThat(steps).extracting(FlowStep::getKind).containsExactly(

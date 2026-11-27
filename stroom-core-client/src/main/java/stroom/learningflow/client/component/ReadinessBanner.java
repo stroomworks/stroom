@@ -33,9 +33,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// What stops a Learning Flow document learning anything ([Readiness]), across the top of its Feeds tab: a
-/// banner listing what is right and what isn't, each wrong with a button that puts it right. The buttons that
-/// change the document are hidden while it is read only. The tab shows it only where something is wrong.
+/// A banner across the top of a Learning Flow document's Pipelines tab (`FeedsTab`) that explains why the
+/// document will not learn anything yet ([Readiness]).
+///
+/// It lists every readiness check, passed or failed, and gives each failed one a button that fixes it. While
+/// the document is read-only, the buttons that would change it are hidden; those that only show a setting
+/// remain. The tab shows the banner only when a check has failed.
 public class ReadinessBanner extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -56,10 +59,11 @@ public class ReadinessBanner extends Component {
         initWidget(BINDER.createAndBindUi(this));
     }
 
-    /// Shows what is right and wrong with the document.
+    /// Shows the results of the document's readiness checks.
     ///
-    /// @param readiness What is right and wrong with it, where something is wrong.
-    /// @param changed   Whether it has changes that aren't saved, which the checks are of.
+    /// @param readiness The results, at least one of which has failed.
+    /// @param changed   Whether the document has unsaved changes. The checks include those changes, so the
+    ///                  banner says so.
     public void setReadiness(final Readiness readiness, final boolean changed) {
         items.clear();
         fixes.clear();
@@ -75,7 +79,7 @@ public class ReadinessBanner extends Component {
                     : "readiness-banner__mark readiness-banner__mark--not");
             mark.getElement().setAttribute("aria-hidden", "true");
             row.add(mark);
-            // What the mark says, for a screen reader, which is not shown the mark
+            // The mark is hidden from screen readers, so this hidden text says the same thing for them
             final InlineLabel said = new InlineLabel(item.isOk()
                     ? "Right: "
                     : "To put right: ");
@@ -98,14 +102,14 @@ public class ReadinessBanner extends Component {
         unsaved.setVisible(changed);
     }
 
-    /// @param onFix Told the fix the user asks for.
+    /// @param onFix Called with the fix whose button the user pressed.
     public void setOnFix(final Consumer<Fix> onFix) {
         this.onFix = onFix;
     }
 
     @Override
     protected void onReadOnlyChange(final boolean readOnly) {
-        // What changes the document is hidden; what only shows a tab stays
+        // Hide the fixes that would change the document; keep those that only show a setting
         for (final Button button : fixes) {
             final String text = button.getText();
             button.setVisible(!readOnly

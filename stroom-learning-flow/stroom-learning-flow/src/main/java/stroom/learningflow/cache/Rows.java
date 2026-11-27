@@ -23,9 +23,10 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/// The rows themselves, as against what a node keeps in front of them: the seam a cache decorates
-/// (design 01 §12 item 8). The database module binds its DAOs under this, and the unannotated binding is
-/// the cache, so that everything asking for a seam gets the cache and only the cache asks the database.
+/// Guice qualifier for the database-backed implementation of a seam that has a cache in front of it.
+///
+/// The database module binds its DAOs under this qualifier, and the unqualified binding is the cache. That
+/// way everything that injects the seam gets the cache, and only the cache reads the database directly.
 @Qualifier
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.PARAMETER, ElementType.FIELD, ElementType.METHOD})

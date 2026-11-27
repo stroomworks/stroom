@@ -41,12 +41,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 48 (design 03 §3): a document store's audit export as CSV whose last field is
-/// quoted and may hold commas, doubled quotes and line breaks. A split of one record per line cuts such a
-/// record in two: it consumes every character, so coverage says nothing, and it loses none, so wholeness — a
-/// character share — says nothing either; what catches it is yield against the lines a record takes, which
-/// the document states. The split that honours the quoting passes; targets are proposed for whole records;
-/// the golden holds the note with its line break intact and its doubled quotes as one.
+/// Tests learning a CSV audit export whose last field is quoted and may hold commas, doubled quotes and line
+/// breaks, so that one record can span several lines.
+///
+/// A split of one record per line cuts such a record in two. It consumes every character, so coverage does
+/// not catch it, and it loses none, so wholeness (a share of characters) does not catch it either. What
+/// catches it is the yield check, against the number of lines per record that the document states. The split
+/// that respects the quoting passes, targets are proposed for whole records, and the expected output keeps
+/// the note's line break and reads each doubled quote as one.
 class TestScenario48CsvMultiline {
 
     private static final String WHOLE = Scenarios.resource("csv-multiline-split.ds3.xml");
@@ -101,12 +103,12 @@ class TestScenario48CsvMultiline {
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
         assertThat(run.output()).isEqualTo(EVENTS);
-        // The golden keeps the line break and reads a doubled quote as one.
+        // The expected output keeps the line break and reads a doubled quote as one.
         assertThat(run.output())
                 .contains("<Description>Opened from the \"Finance\" share;\nread only</Description>")
                 .contains("<Description>Removed after review, superseded\nby the v2 draft</Description>");
-        // The line split consumed everything and lost nothing: neither coverage nor wholeness refused it.
-        // Yield against the lines a record takes did, before any target was asked.
+        // The line split consumed everything and lost nothing, so neither coverage nor wholeness refused it.
+        // Yield against the lines per record did, before any target was asked for.
         final List<Exchange> turns = run.transcript();
         assertThat(turns.get(1).question()).isInstanceOf(Split.class);
         assertThat(turns.get(1).outcome()).isEqualTo(StepOutcome.YIELD_SHORT);
@@ -114,7 +116,8 @@ class TestScenario48CsvMultiline {
         assertThat(turns.get(2).question().feedback()).extracting(error -> error.getMessage())
                 .noneMatch(message -> message.startsWith("Input coverage") || message.startsWith("The split emitted"));
         assertThat(turns.get(2).outcome()).isEqualTo(StepOutcome.PASSED);
-        // Targets were proposed for whole records: one of them spans two lines and carries the doubled quote.
+        // Targets were proposed for whole records: each starts with a timestamp, and at least one spans two
+        // lines.
         final List<TargetFor> targets = script.asked().stream()
                 .filter(TargetFor.class::isInstance).map(TargetFor.class::cast).toList();
         assertThat(targets).isNotEmpty();

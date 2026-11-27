@@ -16,30 +16,33 @@
 
 package stroom.learningflow.client.component;
 
-/// Something a person can do to a Smart Pipeline on its Learning Status tab, whichever of the Supervisor's
-/// levels it acts on:
-/// its learning run (approve, reject, grant, exhaust, answer), its learner (learn again, stop) or the
-/// translation it has (accept, improve, remove, open). Each says what its button says.
+/// An action a person can take on a Smart Pipeline from the Learning Status tab. An action applies to one of
+/// three things: the current learning run (approve, reject, give more, finish with Unknowns, answer), the
+/// learner (learn again, stop learning) or the translation in use (improve, remove). Go to Setup opens the
+/// document instead. Each action holds its button's label.
 public enum FeedAction {
-    /// Approves what a run drafted under review mode (A25).
+    /// Approves the translation a run drafted, when the document requires new translations to be approved.
     APPROVE("Approve and use it"),
-    /// Rejects what a run drafted (A25); asks why.
+    /// Rejects the translation a run drafted; asks why.
     REJECT("Reject…"),
-    /// Gives a paused run more tokens or minutes (A77, A145).
+    /// Gives a paused run more tokens or minutes. The extra applies to that run only, not to the document.
     GRANT("Give it more…"),
-    /// Sends a paused run to the fallback, the exhaustion step (A65, A76).
+    /// Sends a paused run to the fallback step, which learns to mark the records still not translated as
+    /// Unknown events. A run that runs out of budget pauses for a person rather than doing this itself.
     EXHAUST("Finish with Unknowns"),
-    /// Answers the question the run stopped at, in place of the AI (A28).
+    /// Answers the question the run stopped at, in place of the AI.
     ANSWER("Answer it myself"),
-    /// Asks for the translation in use to be made better (A46).
+    /// Asks for the translation in use to be improved.
     IMPROVE("Improve…"),
-    /// Learns afresh from the next stream (A28, A29).
+    /// Learns a new translation from scratch, starting from the next stream.
     RELEARN("Learn again"),
-    /// Stops learning: the learner gives up (design 06 A115); asks why.
+    /// Stops learning: the learner gives up, and streams nothing can translate fail with the reason given;
+    /// asks why.
     GIVE_UP("Stop learning…"),
-    /// Takes the translation back (A28); asks why.
+    /// Removes the translation in use; asks why.
     RETRACT("Remove translation…"),
-    /// Opens the document's Setup tab at Learning, where learning is switched on.
+    /// Opens the Learning Flow's Setup tab at the AI model and instructions section, where learning is
+    /// switched on.
     OPEN_SETTINGS("Go to Setup");
 
     private final String label;
@@ -48,7 +51,7 @@ public enum FeedAction {
         this.label = label;
     }
 
-    /// @return What its button says.
+    /// @return The label on the action's button.
     public String getLabel() {
         return label;
     }

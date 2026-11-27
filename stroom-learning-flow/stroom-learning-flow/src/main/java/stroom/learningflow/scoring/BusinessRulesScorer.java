@@ -34,13 +34,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * Business rules (design 01 §8.4): the document's named XPath assertions, each of which every record must
- * satisfy, and — where the document says so — the transform's own {@code xsl:message} warnings, which are
- * a rule the stylesheet's author found broken. The score is the proportion of records that hold every
- * rule, a message counting against one record since the transform does not say which; the feedback
- * names the rule and how many records broke it. Applies to a step that transformed records into records.
- */
+/// The business rules scorer. It checks the document's named XPath assertions, each of which every
+/// record must satisfy, and, where the document says so, counts the transform's own `xsl:message`
+/// warnings as broken rules reported by the stylesheet. The score is the proportion of records that meet
+/// every rule; each message counts against one record, since the transform does not say which. The
+/// feedback names each rule and how many records broke it. It applies only to a step that transformed
+/// records into records.
 public final class BusinessRulesScorer implements Scorer {
 
     private static final ElementId RULES = new ElementId("BusinessRules");
@@ -107,7 +106,7 @@ public final class BusinessRulesScorer implements Scorer {
             return Optional.empty();
         }
         final int failed = Math.min(records.size(), failing.size() + messageFailures);
-        // A transform's own messages are not laid at a record, so only the assertions name which fell short.
+        // A transform's messages are not tied to a record, so only the assertions identify failing records.
         return Optional.of(new Score(type(), 1.0 - (double) failed / records.size(), diagnostics, failing));
     }
 }

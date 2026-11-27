@@ -43,18 +43,16 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 49 (design 01 §12 item 26): a stream of XML fragments — one `<Event>` per
-/// line, no root. It is not a document, so until the `XMLFragmentParser` existed as a step the stage
-/// read it as text, could not answer the split question over it, and abandoned the attempt.
+/// Tests learning a stream of XML fragments, one `<Event>` per line with no root element.
 ///
-/// The parser wraps the fragments in a root, which makes them one document whose children are the
-/// records. Nothing is asked about the wrapper — it is the element's own business, not a candidate
-/// spent — and the split question is the XML one, naming the element that is one record, because what
-/// the stream carries is markup.
+/// Such a stream is not a well-formed document, so it is learned through the `XMLFragmentParser`, which wraps
+/// the fragments in a root and makes them one document whose children are the records. Nothing is asked
+/// about the wrapper, since the parser handles it and it costs no candidate. The split question is the XML
+/// one, naming the element that is one record.
 ///
-/// The fixture is the Windows security export with its root removed, and it learns the same stylesheet
-/// and produces the same events as scenario 45: a stream is the records it carries, whether or not
-/// anything wrapped them.
+/// The fixture is the Windows Security export with its root removed. It learns the same stylesheet and
+/// produces the same events as `TestScenario45WindowsSecurity`, because the records are the same whether or
+/// not anything wraps them.
 class TestScenario49XmlFragments {
 
     private static final String FRAGMENTS = Scenarios.resource("events-fragments.xml");
@@ -107,11 +105,11 @@ class TestScenario49XmlFragments {
                 .describedAs("the same events as the same stream with a root around it")
                 .isEqualTo(Scenarios.canonical(EVENTS));
 
-        // Nothing was asked about the wrapper: the fragment parser's configuration is its own.
+        // Nothing was asked about the wrapper, because the fragment parser needs no configuration.
         assertThat(script.asked()).noneMatch(question -> question instanceof Configuration configuration
                                                          && "XMLFragmentParser".equals(
                 configuration.elementType()));
-        // And the split question was the XML one, over what the parser made of the stream.
+        // The split question was the XML one, over the parser's output.
         final Split split = script.asked().stream()
                 .filter(Split.class::isInstance).map(Split.class::cast).findFirst().orElseThrow();
         assertThat(split.kind()).isEqualTo(InputKind.XML);

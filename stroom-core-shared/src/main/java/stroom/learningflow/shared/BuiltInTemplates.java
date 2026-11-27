@@ -25,10 +25,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * The built-in text of every template and its version, as the node serves it to the Setup tab, so that an
- * override is edited from the words it replaces (design 01 §10.2).
- */
+/// The built-in text of every prompt template, with its version, as the server sends it to the Setup tab. It is
+/// sent so that a person writing an override starts from the text it replaces.
 @JsonPropertyOrder({"version", "templates"})
 @JsonInclude(Include.NON_NULL)
 public class BuiltInTemplates {

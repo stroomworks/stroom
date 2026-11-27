@@ -26,18 +26,16 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 import java.util.List;
 
-/**
- * What one element has to say about a step, beyond the text it read and wrote (A30, design 01 §11.7).
- * <p>
- * Most elements have nothing: their input, output and log are the whole story, and this is null for
- * them. An element whose behaviour is a <em>decision</em> — which fragment this stream was routed to,
- * and why — has no single document to show as code and cannot say it in a log line without losing the
- * links and the actions that go with it. It puts a subtype of this on the step instead, and the stepper
- * gives it to a presenter registered for the type in place of the code pane.
- * <p>
- * The subtypes are named here because Jackson needs them by name on the wire. That is a registration
- * list and not a hierarchy: the slot is for any element with a decision to explain.
- */
+/// Extra information an element reports about one step in the stepper, beyond the text it read and wrote.
+///
+/// Most elements have none, because their input, output and log tell the whole story, and this is null for
+/// them. The Smart Pipeline element's behaviour is a decision (which learned translation served this stream,
+/// and why), which has no single document to show as code and cannot be put in a log line without losing the
+/// links and actions that go with it. Such an element puts a subtype of this on the step instead, and the
+/// stepper shows a pane registered for that subtype in place of the code pane.
+///
+/// The subtypes are listed here because Jackson needs their names for serialisation. Any element with a
+/// decision to explain can add a subtype.
 @JsonTypeInfo(
         use = JsonTypeInfo.Id.NAME,
         property = "type")
@@ -47,14 +45,14 @@ import java.util.List;
 @JsonInclude(Include.NON_NULL)
 public abstract class ElementStepDetails {
 
-    /**
-     * The elements this one ran inside itself for the record being stepped, in the order it ran them, or
-     * empty where it ran none (A30, design 01 §11.7).
-     * <p>
-     * Declared here rather than on a subtype because the stepper draws them, and the stepper must not
-     * have to know what kind of element it is looking at to do so. Any element that is not one step but
-     * several can answer this and be expanded the same way.
-     */
+    /// The elements this one ran inside itself for the record being stepped, such as the elements of a nested
+    /// pipeline, in the order it ran them.
+    ///
+    /// It is declared here rather than on a subtype because the stepper draws these elements, and it should
+    /// not need to know what kind of element it is looking at to do so. Any element that runs other elements
+    /// can return them here and be expanded in the same way.
+    ///
+    /// @return The nested elements, or an empty list where it ran none.
     @JsonIgnore
     public List<NestedElementData> getNested() {
         return List.of();

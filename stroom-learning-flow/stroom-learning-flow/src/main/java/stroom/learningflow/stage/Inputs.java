@@ -21,21 +21,20 @@ import stroom.util.shared.TextRange;
 import java.util.List;
 import java.util.Optional;
 
-/// The streams an attempt was raised on, by the meta id its row names (A28): what lets an attempt be
-/// carried on outside the task that raised it. The worker re-walks the conversation over the
-/// same sample, and the sample is the stream, which is kept where every stream is kept rather than
-/// copied into the attempt — a stream is kept once, and storing its text again would be storing it
-/// twice. (It used to say "until redaction is built (A17, A38)"; A146 settled that samples are never
-/// redacted, so the reason is simply that the stream is already there.)
+/// Looks up the stream a session was opened on, by the meta id recorded on the session's row. This is what
+/// lets a session be resumed outside the task that opened it: the worker replays the conversation over the
+/// same sample, which is read from the stream itself. The stream's text is not copied into the session,
+/// because the stream is already stored and storing its text again would duplicate it.
 ///
-/// A node reads the stream store; a scenario answers from what it put there.
+/// A node reads the stream store; tests answer from what they put there.
 public interface Inputs {
 
-    /// The stream, or empty where it has been deleted since — a learner whose only example is gone cannot
-    /// be learned, and the attempt that was learning it is closed rather than left waiting.
+    /// Gets the stream, or empty if it has since been deleted. A learner whose only example is gone cannot
+    /// be learned, so the caller closes the session rather than leaving it waiting.
     Optional<Input> byId(long metaId);
 
-    /// The text between two locations, each a line and a column counted from one.
+    /// Gets the text between two locations, each a line and column counted from one, with the end
+    /// location's character included. Empty if the span is missing or out of range.
     static Optional<String> cut(final String data, final TextRange span) {
         if (data == null || span == null || span.getFrom() == null || span.getTo() == null) {
             return Optional.empty();

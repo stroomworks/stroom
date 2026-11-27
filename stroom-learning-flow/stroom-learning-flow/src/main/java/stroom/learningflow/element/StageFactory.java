@@ -76,17 +76,17 @@ import jakarta.inject.Provider;
 import java.time.Clock;
 import java.util.List;
 
-/// A stage over this node's state, wherever one is wanted: in a pipeline task, where the supervisor
-/// element runs it over the stream in front of it, and in the worker (A5), which runs it
-/// over an attempt that stopped. A stage holds nothing between calls, so one is as good as many; what it
-/// is built from — the element runners, the scorers, the fragment writer and runner, and the runtime
-/// state of A26 — is the same in either place, and a second copy of this list in the worker would be a
-/// second place to forget a scorer.
+/// Builds a [Stage] wired to this node's services, wherever one is needed: in a processing task, where
+/// the Smart Pipeline element runs it over the stream in front of it, and in the background worker, which
+/// runs it over attempts waiting for the model. A stage holds nothing between calls, so one is as good as
+/// many. What it is built from (the element runners, the scorers, the fragment writer and runner, and the
+/// stored state) is the same in both places, and keeping the list here means there is only one place
+/// where a scorer could be forgotten.
 ///
-/// Not a singleton, and not to be held: two of the things a stage runs on — the Data Splitter compiler
-/// and the schema scorer — collect their diagnostics through the pipeline-scoped `ErrorReceiverProxy`,
-/// so a stage belongs to one pipeline scope. The element is inside one already; the worker enters one
-/// for each attempt it carries on ([DeferredLearning]).
+/// It is not a singleton, and a stage it creates should not be kept: the Data Splitter compiler and the
+/// schema scorer collect their diagnostics through the pipeline-scoped `ErrorReceiverProxy`, so a stage
+/// belongs to one pipeline scope. The element is already inside one; the worker enters one for each run
+/// ([DeferredLearning]).
 public class StageFactory {
 
     private final Advisors advisors;
@@ -188,8 +188,9 @@ public class StageFactory {
         this.configProvider = configProvider;
     }
 
-    /// The spend breaker (A24), over this node's configured cluster ceilings: what [#create()] gives a stage,
-    /// and what the Supervisor asks to say which Smart Pipelines can't learn now (Track 2 step 4).
+    /// Creates the spend breaker, which stops learning when token or call ceilings over the last hour are
+    /// reached, using this node's configured cluster-wide ceilings. [#create()] gives it to each stage, and
+    /// the Supervisor uses it to show which Smart Pipelines cannot learn at the moment.
     ///
     /// @return The breaker.
     public SpendBreaker breaker() {
@@ -197,33 +198,36 @@ public class StageFactory {
                 configProvider.get().getSpendCallsPerHour());
     }
 
-    /// Promotion on this node (simplification option iii): approve, reject and retract, which run no
-    /// pipeline and so need no pipeline scope, unlike a stage.
+    /// Creates the promotion actions on this node: approve, reject and retract. Unlike a stage, these run
+    /// no pipeline and so need no pipeline scope.
     ///
-    /// @return It, under the wall clock.
+    /// @return The promotion actions, using the system clock.
     public Promotion promotion() {
         return new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, fragmentWriter,
                 codes, places, wake, Clock.systemUTC());
     }
 
-    /// A person's actions on a run or a learner on this node (simplification option iii): grant, exhaust,
-    /// amend, relearn and give up, which run no pipeline and so need no pipeline scope.
+    /// Creates the actions a person can take on a session or a learner on this node: grant, exhaust,
+    /// amend, relearn and give up. These run no pipeline and so need no pipeline scope.
     ///
-    /// @return Them, under the wall clock and this node's lease.
+    /// @return The actions, using the system clock and this node's session lease.
     public SupervisorActions supervisorActions() {
         return new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots, targetSchemas,
                 wake, Clock.systemUTC(), configProvider.get().getSessionLease().getDuration());
     }
 
-    /// A stage on this node, under the wall clock. Only to be called inside a pipeline scope: the Data Splitter
-    /// compiler and the schema scorer it is built from report through the scoped error receiver.
+    /// Creates a stage on this node, using the system clock. Only call this inside a pipeline scope: the
+    /// Data Splitter compiler and the schema scorer the stage is built from report through the
+    /// pipeline-scoped error receiver.
+    ///
+    /// @return The stage.
     public Stage create() {
-        // A node judges a candidate with the element that will run it (§12 item 2) — but only where the
-        // module re-implements one. The parsers here already drive stroom's own factories: the Data
-        // Splitter's DS3 factory, the JSON reader, stroom's XML reader, and they additionally report
-        // what each record consumed, which input coverage (A11) is scored on and a pipeline does not
-        // tell anyone. The transform is the one place the module drives Saxon itself — its own
-        // configuration, no pool, no function library — so it is the one wrapped.
+        // A node judges a candidate with the real element that will run it, but only where the module
+        // would otherwise re-implement the element. The parser runners already use Stroom's own
+        // factories (the Data Splitter's DS3 factory, the JSON reader, Stroom's XML reader), and they also
+        // report what input each record consumed, which input coverage is scored on and which a pipeline
+        // does not report. The transform is the one place the module drives Saxon itself (with its own
+        // configuration, no pool and no function library), so it is the one wrapped in a real pipeline.
         final List<StepRunner> runners = runners(dataSplitterCompilerProvider.get(), pipelineFactoryProvider,
                 headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider, taskContextFactory);
         final List<Scorer> scorers = List.of(
@@ -238,8 +242,8 @@ public class StageFactory {
                 scorers,
                 targetSchemas,
                 fragmentWriter,
-                // A node judges and serves through the real pipeline (§12 item 2): the stand-in the Tier 1
-                // scenarios run on is for a harness with no node under it.
+                // A node judges and serves through a real pipeline. The stand-in runner used by the Tier 1
+                // tests is only for a test harness with no node.
                 new PipelineFragmentRunner(pipelineStore, pipelineDataCache, elementRegistryFactory,
                         pipelineFactoryProvider,
                         headlessCaptureProvider, errorReceiverProvider, fragmentOutputProvider, fragmentTapProvider,
@@ -248,8 +252,8 @@ public class StageFactory {
                 learnerBindings,
                 states,
                 spend,
-                // The policy over A44's counter (A24): the cluster's ceilings come from the node's
-                // configuration, a Learning Flow's from the document
+                // The cluster-wide ceilings come from the node's configuration, and a Learning Flow's own
+                // ceilings from its document.
                 breaker(),
                 guidance,
                 outputs,
@@ -263,21 +267,22 @@ public class StageFactory {
                 Clock.systemUTC(),
                 configProvider.get().getSessionLease().getDuration(),
                 nodeInfo.getThisNodeName(),
-                // Recorded against each attempt's words (N9), so a prompt rebuilt after an upgrade can
-                // say the checks' wording may have moved under it.
+                // The build version is recorded with each attempt's question wording, so that a prompt
+                // rebuilt after an upgrade can warn that the wording of the checks may have changed.
                 NullSafe.get(buildInfoProvider.get(), BuildInfo::getBuildVersion));
     }
 
-    /// The runners a stage learns elements with, one for each of [FlowStep#LEARNABLE_ELEMENTS] and in its
-    /// order: that list is what a document chooses from, and anything else it names is passed over when a
-    /// run starts. Making one runs nothing, so a test can make them to check the list.
+    /// The step runners a stage learns elements with, one for each of [FlowStep#LEARNABLE_ELEMENTS] and in
+    /// the same order. That list is what a document chooses its allowed elements from, and any other
+    /// element a document names is ignored when a session starts. Creating the runners runs nothing, so a
+    /// test can create them to check the list.
     ///
     /// @param dataSplitterCompiler    Compiles a Data Splitter configuration.
-    /// @param pipelineFactoryProvider Makes the pipeline the transform is run in.
+    /// @param pipelineFactoryProvider Creates the pipeline the transform is run in.
     /// @param headlessCaptureProvider Captures what the transform wrote.
     /// @param injectedCodeProvider    Gives the transform its candidate stylesheet.
-    /// @param errorReceiverProvider   Collects what went wrong in the pipeline.
-    /// @param taskContextFactory      Runs the pipeline as a task.
+    /// @param errorReceiverProvider   Collects errors reported in the pipeline.
+    /// @param taskContextFactory      Provides the task context the pipeline runs in.
     /// @return The runners.
     static List<StepRunner> runners(final DataSplitterCompiler dataSplitterCompiler,
                                     final Provider<PipelineFactory> pipelineFactoryProvider,

@@ -19,17 +19,19 @@ package stroom.learningflow.transformation;
 import java.util.Map;
 import java.util.Objects;
 
-/// What the stand-in `stroom:` functions may read: the stream being translated, and nothing else. This is
-/// the whole of the context an allowed function is given (decision N1's last group), which is what makes
-/// those functions repeatable — judging and serving the same stream give the same answer.
+/// Facts about the stream being translated, which are all the context the allowed `stroom:` functions are
+/// given when a candidate stylesheet is run outside a pipeline. Limiting them to this makes the functions
+/// repeatable: judging and serving the same stream give the same answer.
+///
+/// A [stroom.learningflow.learning.Sample] carries these facts for the stream it was taken from.
 ///
 /// @param id         The stream's id, or 0 where the harness has none.
 /// @param feed       The feed's name, or null.
 /// @param type       The stream type, or null.
 /// @param receivedMs When the stream was received, which is the reference a partial date is completed
-///                   from, or null where it is not known. Null is not the same as "now": a stand-in asked
-///                   to complete a date without it fails rather than reading the clock, because a date
-///                   taken from the clock would differ between judging and serving (assumption AS6).
+///                   from, or null where it is not known. Null does not mean "now": a stand-in asked to
+///                   complete a date without it fails rather than reading the clock, because a date taken
+///                   from the clock would differ between judging and serving.
 /// @param attributes The receipt headers, which `stroom:meta` reads.
 public record StreamFacts(long id,
                           String feed,
@@ -43,8 +45,8 @@ public record StreamFacts(long id,
                 : Map.copyOf(attributes);
     }
 
-    /// Facts for a harness that knows nothing of the stream: every stand-in that needs the stream says so
-    /// rather than guessing.
+    /// Returns facts for a harness that knows nothing of the stream: every stand-in that needs the stream
+    /// then reports that, rather than guessing.
     ///
     /// @return The empty facts.
     public static StreamFacts none() {
@@ -63,7 +65,7 @@ public record StreamFacts(long id,
         if (direct != null) {
             return direct;
         }
-        // The real function reads the stream's own fields under these names as well as the headers
+        // The real function also reads the stream's own fields under these names, as well as the headers
         return switch (name) {
             case "Feed" -> feed;
             case "Type", "StreamType" -> type;
@@ -74,8 +76,10 @@ public record StreamFacts(long id,
         };
     }
 
-    /// @return When the stream was received.
-    /// @throws IllegalStateException where it is not known, naming what that stops.
+    /// Returns when the stream was received, for completing a partial date.
+    ///
+    /// @return When the stream was received, in epoch milliseconds.
+    /// @throws NullPointerException where it is not known, with a message saying what that prevents.
     public long requireReceivedMs() {
         return Objects.requireNonNull(receivedMs, () ->
                 "This run does not know when the stream was received, so a date without a year cannot be "

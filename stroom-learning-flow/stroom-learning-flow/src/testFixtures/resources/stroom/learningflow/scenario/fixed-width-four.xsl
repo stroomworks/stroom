@@ -13,7 +13,7 @@
     </Events>
   </xsl:template>
 
-  <!-- Four columns: who signed on where and when, with no outcome to state -->
+  <!-- Four columns: who signed on, where and when, with no outcome column -->
   <xsl:template match="record">
     <xsl:variable name="time" select="data[@name='time']/@value"/>
     <xsl:variable name="user" select="normalize-space(data[@name='user']/@value)"/>

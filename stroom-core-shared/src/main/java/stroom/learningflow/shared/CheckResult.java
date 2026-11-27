@@ -23,10 +23,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// How a new translation did on one check, kept beside the run that learned it so a person approving it
-/// can see why it passed (Track 2 step 4, approval evidence): the gates it cleared and the advice it was
-/// given. Numbers only, never what the check said about a record, as that quotes the stream's own text
-/// (A146).
+/// How a new translation did on one check, kept with the session that learned it so that a person approving
+/// it can see why it passed: the gates it cleared and the advice it was given. Only the numbers are kept, never
+/// what the check said about a record, because that can quote the stream's own text.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CheckResult {
 

@@ -31,13 +31,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/// How far a learning run has got over its document's flow, as the Feeds tab's progress strip shows it:
-/// each step in order, done, where the run is now, or still to come, with how many tries it took; and,
-/// where the run went back to an earlier step, why. Replaces the Supervisor's path over the flow chart,
-/// which a person had to read at a third of its size.
+/// Works out how far a learning run has got through its document's flow, for the progress strip on a
+/// pipeline's Learning Status tab. The strip shows each step in order, marked as done, current, tried or still
+/// to come, with the number of tries it took, and a note of how often the run went back to an earlier step and
+/// why it most recently did.
 ///
-/// A run whose turns name steps the flow no longer has (the flow was edited since) is shown by the steps
-/// its turns name, in the order it met them.
+/// If the run's turns name steps that the flow no longer has (because the flow was edited after the run),
+/// the strip shows instead the steps the turns name, in the order the run reached them.
 public final class FeedProgress {
 
     private final List<Item> items;
@@ -50,9 +50,9 @@ public final class FeedProgress {
 
     /// Works out a run's progress.
     ///
-    /// @param steps The document's steps, or empty where not known.
-    /// @param run   The run, with its turns; null for none, which has no progress.
-    /// @return Its progress.
+    /// @param steps The document's steps, or empty if they are not known.
+    /// @param run   The run, with its turns, or null for no run, which gives an empty strip.
+    /// @return The run's progress.
     public static FeedProgress of(final List<FlowStep> steps, final SupervisorAttempt run) {
         final List<SupervisorTurn> turns = run == null || run.getTurns() == null
                 ? List.of()
@@ -92,7 +92,7 @@ public final class FeedProgress {
         final List<Item> items = new ArrayList<>();
         for (int i = 0; i < stops.size(); i++) {
             final Stop stop = stops.get(i);
-            // The fallback is shown only where the run reached it: most never do
+            // The fallback step is shown only if the run reached it, as most runs never do
             if (stop.kind == QuestionKind.ADMIT && tries[i] == 0) {
                 continue;
             }
@@ -122,7 +122,8 @@ public final class FeedProgress {
         return new FeedProgress(items, note);
     }
 
-    // The flow's steps, or where the turns name steps it doesn't have, the steps the turns name
+    // Returns the flow's steps. If any turn names a step the flow doesn't have, returns instead the steps the
+    // turns name, in the order they were reached
     private static List<Stop> stops(final List<FlowStep> steps, final List<SupervisorTurn> turns) {
         final List<Stop> stops = new ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
@@ -158,7 +159,8 @@ public final class FeedProgress {
         return items;
     }
 
-    /// @return Where and why the run went back to an earlier step, or null where it never did.
+    /// @return How many times the run went back to an earlier step, and why it most recently did, or null if
+    ///         it never did.
     public String getNote() {
         return note;
     }
@@ -167,11 +169,11 @@ public final class FeedProgress {
     // --------------------------------------------------------------------------------
 
 
-    /// Where a step stands in a run.
+    /// The state of a step in a run.
     public enum State {
-        /// Passed, or the run finished past it.
+        /// Passed, or tried by a run that has finished.
         DONE,
-        /// The step the run is at, or stopped at.
+        /// The step the run is at now, or stopped at.
         NOW,
         /// Tried and not passed, and the run has moved on, e.g. back to an earlier step.
         TRIED,
@@ -183,7 +185,7 @@ public final class FeedProgress {
     // --------------------------------------------------------------------------------
 
 
-    /// One step of the strip.
+    /// One step on the strip.
     public static final class Item {
 
         private final String name;
@@ -201,12 +203,13 @@ public final class FeedProgress {
             return name;
         }
 
-        /// @return Where it stands.
+        /// @return The step's state in the run.
         public State getState() {
             return state;
         }
 
-        /// @return What the strip says of it, e.g. "Write the parser · 2 tries".
+        /// @return The step's label on the strip, e.g. "Write the parser · 2 tries". The number of tries is
+        ///         shown only when there was more than one.
         public String getLabel() {
             return tries > 1
                     ? name + " · " + tries + " tries"

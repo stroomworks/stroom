@@ -21,43 +21,43 @@ import stroom.learningflow.shared.LearningFlowDoc;
 
 import java.util.Optional;
 
-/// Where the one schema a document's translations must write is read from (task 7, decision D1
-/// option A). A node reads Stroom's `XMLSchema` documents; the Tier 1 scenario harness, which has no
-/// document store under it, holds the schemas it was given.
+/// Looks up the [TargetSchema] a Learning Flow's translations must produce. In a node it reads Stroom's
+/// `XMLSchema` documents; the scenario test harness, which has no document store, holds the schemas it was
+/// given.
 public interface TargetSchemas {
 
     /// Reads the schema a document names.
     ///
-    /// A schema that has been deleted, or that this node cannot read, gives empty rather than throwing:
-    /// what to do about it belongs to the caller — the readiness check says so in words, and a run
-    /// refuses before asking anything.
+    /// A schema that has been deleted, or that this node cannot read, gives empty rather than throwing,
+    /// because what to do about it is for the caller to decide: the readiness check reports it, and a run
+    /// refuses to start before asking anything.
     ///
     /// @param docRef The `XMLSchema` document, or null.
-    /// @return It resolved, or empty where it is null, gone or unreadable.
+    /// @return The resolved schema, or empty where the reference is null, deleted or unreadable.
     Optional<TargetSchema> resolve(DocRef docRef);
 
-    /// The latest version of event-logging installed, which a new document starts with (decision D1):
-    /// latest by the version its XSD declares, not by its name, and never a deprecated one. It is saved
-    /// on the document, so installing a newer version later does not change what a document that
-    /// already exists writes.
+    /// Returns the latest version of event-logging installed, which a new document starts with. Latest is
+    /// judged by the version its XSD declares, not by its name, and a deprecated version is never chosen.
+    /// The choice is saved on the document, so installing a newer version later does not change what an
+    /// existing document produces.
     ///
-    /// @return It, or empty where no event-logging schema is installed — in which case a new document
-    ///         has no target until someone picks one, and says so.
+    /// @return The schema, or empty where no event-logging schema is installed, in which case a new
+    ///         document has no target until someone picks one, and says so.
     Optional<TargetSchema> latestEventLogging();
 
-    /// The schema a document's translations must write.
+    /// Returns the schema a document's translations must produce.
     ///
     /// @param doc The document.
-    /// @return It resolved, or empty where the document names none or names one that is gone.
+    /// @return The resolved schema, or empty where the document names none or names one that is gone.
     default Optional<TargetSchema> of(final LearningFlowDoc doc) {
         return doc == null
                 ? Optional.empty()
                 : resolve(doc.getTargetSchema());
     }
 
-    /// A node with no schemas at all: what a test that does not care about the target uses.
+    /// Returns a lookup that finds no schemas at all, for tests that do not care about the target.
     ///
-    /// @return It.
+    /// @return The empty lookup.
     static TargetSchemas none() {
         return new TargetSchemas() {
             @Override

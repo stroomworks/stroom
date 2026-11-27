@@ -34,15 +34,17 @@ import org.jooq.Table;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/// A learner's rows brought to the document it runs under, in every table that keeps them by learner and
-/// records a document beside it. Each update is on the learner's prefix of a key, and touches only the
-/// rows that record another document, so a learner that has not moved costs nothing but the lookup.
+/// The database implementation of [Learners]. When a learner's pipeline element is pointed at a different
+/// Learning Flow document, this updates the document UUID on the learner's rows in every table that records
+/// one (bindings, learner state, guidance and deferrals).
 ///
-/// The node remembers the document it last brought each learner to, and does nothing while that is still
-/// the one: the task decision calls this for every stream, and a write per stream would be the first
-/// thing to give at volume. So a learner is brought once per node it runs on after it moves — and a
-/// node that met it under the old document and meets it under the new brings it again, which finds
-/// nothing left to move.
+/// Each update uses the learner's columns of an index and touches only rows that record a different
+/// document, so for a learner whose document has not changed it costs only the lookup.
+///
+/// Each node also remembers the document it last applied for each learner, and does nothing while that is
+/// unchanged. This is called for every stream, and a database write per stream would not scale. So a
+/// learner is updated once on each node it runs on after its document changes; the second and later nodes
+/// find nothing left to change.
 @Singleton
 public class LearnersDao implements Learners {
 

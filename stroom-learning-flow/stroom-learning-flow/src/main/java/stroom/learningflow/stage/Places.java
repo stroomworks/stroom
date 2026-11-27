@@ -18,28 +18,30 @@ package stroom.learningflow.stage;
 
 import stroom.util.shared.DocPath;
 
-/// Where what a learner learns goes, and what it is called (design 06 A113). The Learning Flow element
-/// has a folder and a name property for it, which a person may set; unset, what
-/// the learner learns goes beside its pipeline under the pipeline's name with ` learned` after it (A133).
-/// Read from the pipeline rather than handed over by the element, because the worker that carries a
-/// session on runs no pipeline.
+/// Decides where the content a learner learns is written in the explorer, and what it is called. The Smart
+/// Pipeline element has folder and name properties for this, which a person may set. If they are not set,
+/// the content goes beside the learner's pipeline, named after the pipeline with ` learned` appended.
+///
+/// The properties are read from the pipeline rather than passed in by the element, because the deferred
+/// worker that resumes a session does not run the pipeline.
 public interface Places {
 
-    /// Where the learner's fragment and its configuration documents go.
+    /// Gets where the learner's fragment and its configuration documents are written.
     ///
     /// @param learner The learner.
-    /// @return Its place.
+    /// @return The folder and name to use.
     Place of(Learner learner);
 
 
     // --------------------------------------------------------------------------------
 
 
-    /// A folder and a name. A second fragment in the folder takes the first free number after the name
-    /// (A132), which is the content creator's to find.
+    /// A folder and a name. If a fragment of that name already exists in the folder, the content creator
+    /// adds the first free number after the name.
     ///
-    /// @param folder The folder, from the root of the explorer.
-    /// @param name   The name the fragment is given, and its configuration documents are prefixed with.
+    /// @param folder The folder, as a path from the root of the explorer.
+    /// @param name   The name given to the fragment, which its configuration documents are also prefixed
+    ///               with.
     record Place(DocPath folder, String name) {
 
     }

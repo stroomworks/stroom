@@ -22,21 +22,21 @@ import stroom.learningflow.shared.LearningFlowDoc;
 import java.util.EnumSet;
 import java.util.Set;
 
-/// Which of the Setup tab's sections ([SetupSection]) hold something under "Advanced options" that is not as
-/// a new Learning Flow has it. Those open of their own accord, so that nothing changed is ever out of sight;
-/// the rest stay folded until someone opens them.
+/// Works out which sections of the Setup tab ([SetupSection]) have a setting under "Advanced options" that
+/// differs from a new Learning Flow's. The Setup tab opens those sections' advanced options automatically,
+/// so that a changed setting is never hidden; the others stay collapsed until someone opens them.
 ///
 /// What each section keeps under Advanced options:
 ///
 /// | Section | Advanced options |
 /// |---|---|
 /// | Learning steps | tries per step, largest sample |
-/// | Quality checks | the checks themselves where they are no starting set, lines kept back |
-/// | Approving new translations | records before a translation is trusted, the fallback |
+/// | Quality checks | the checks themselves, when they match none of the preset check sets; lines held out |
+/// | Approving new translations | records needed before a translation is trusted, the fallback |
 /// | Monitoring translations in use | records kept to check against, when a waiting stream is overdue |
 ///
-/// Percentages are compared as the tab shows them, whole, so that a fraction read back is not taken for a
-/// change.
+/// Fractions are compared as the whole percentages the tab shows, so that a value that has been rounded
+/// on its way back from the screen is not taken for a change.
 public final class AdvancedSettings {
 
     private static final LearningFlowDoc NEW = LearningFlowDoc.builder().uuid("new").build();
@@ -45,8 +45,8 @@ public final class AdvancedSettings {
         // Static utility
     }
 
-    /// @param doc A Learning Flow, as the Setup tab has it now.
-    /// @return The sections whose Advanced options hold something other than a new Learning Flow's.
+    /// @param doc A Learning Flow, as currently edited in the Setup tab.
+    /// @return The sections whose Advanced options hold a setting that differs from a new Learning Flow's.
     public static Set<SetupSection> changed(final LearningFlowDoc doc) {
         final Set<SetupSection> changed = EnumSet.noneOf(SetupSection.class);
         if (doc.getMaxAttempts() != NEW.getMaxAttempts()
@@ -71,16 +71,16 @@ public final class AdvancedSettings {
         return ScoreValues.toPercent(a) == ScoreValues.toPercent(b);
     }
 
-    /// Whether the fallback has been turned off, which is a change from how every default setup comes.
+    /// Whether the fallback has been turned off. Every built-in setup has the fallback on, so this is a change.
     ///
-    /// Asked of the document directly rather than against [#NEW]: a document built in the client has no
-    /// steps now (Track 2 step 1c), so a baseline built here has no fallback either, and comparing
-    /// against it would mark **every** Learning Flow as having changed this. A flow with no steps at all
-    /// is not "the fallback turned off" — it is a flow with no steps, which the approach already
-    /// reports.
+    /// The document is checked directly rather than compared with [#NEW]. A document built in the client has
+    /// no steps (the server gives a new document its default steps when it creates it), so [#NEW] has no
+    /// fallback either, and comparing against it would mark every Learning Flow as having changed this.
+    /// A flow with no steps at all is not treated as having the fallback turned off; the Learning steps
+    /// section already reports that it has no steps.
     ///
-    /// @param doc The document.
-    /// @return Whether it has steps and no fallback among them.
+    /// @param doc The document being edited.
+    /// @return Whether it has steps and none of them is the fallback.
     private static boolean fallbackTurnedOff(final LearningFlowDoc doc) {
         return !doc.getFlow().getSteps().isEmpty() && !ApproachFlow.hasFallback(doc.getFlow().getSteps());
     }

@@ -21,8 +21,8 @@ import stroom.learningflow.stage.Spend;
 import java.util.HashMap;
 import java.util.Map;
 
-/// The spend of A44 in memory, for a harness with no database. One node's count is not the cluster's,
-/// which is the whole of why the table exists.
+/// An in-memory [Spend], for tests with no database. It counts spending in the same fixed windows as
+/// `SpendDao`, but only for this node, whereas the database count is shared by the whole cluster.
 public final class InMemorySpend implements Spend {
 
     private final Map<String, Spent> byDocument = new HashMap<>();

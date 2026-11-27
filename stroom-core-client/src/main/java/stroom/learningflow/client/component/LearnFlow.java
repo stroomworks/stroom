@@ -32,14 +32,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/// What the approach on the Setup tab ([ApproachSectionController]) needs to know of a learning flow's
-/// text and its steps, worked out from the flow alone, so that it can be tested without a browser: the
-/// texts a step is asked with and where their words come from, a step's problems, and the check of a
-/// step's limits.
+/// Helpers for the Learning steps section of the Setup tab ([ApproachSectionController]) that depend only on
+/// the flow, so that they can be tested without a browser. They work out which question texts a step is asked
+/// with and where their words come from, which built-in texts may be loaded into a text, what is wrong with a
+/// step, and whether a step's limits are valid.
 public final class LearnFlow {
 
-    /// The texts that belong to no step: what every question is asked under, and what the questions
-    /// include by variable (A86).
+    /// The texts that belong to no particular step: the system text every question is sent with, and the rules
+    /// texts that questions include through variables. They are shown when the user asks for the text every
+    /// step shares.
     public static final List<Template> SHARED_TEXTS = List.of(Template.SYSTEM, Template.SPLIT_RULES,
             Template.EXTRACTION_RULES, Template.TRANSFORMATION_RULES);
 
@@ -50,11 +51,11 @@ public final class LearnFlow {
         // Static utility
     }
 
-    /// Checks the text of one of a step's limits (its candidates or kinds): empty for the kind's own
+    /// Checks the text typed for one of a step's limits (its tries or kinds). It must be empty, for the
     /// default, or a whole number of one or more.
     ///
     /// @param text The text typed.
-    /// @return Why it can't be kept, or null if it can.
+    /// @return Why the text is invalid, or null if it is valid.
     public static String limitProblem(final String text) {
         if (text == null || text.trim().isEmpty()) {
             return null;
@@ -64,11 +65,11 @@ public final class LearnFlow {
                 : null;
     }
 
-    /// Reads one of a step's limits.
+    /// Parses one of a step's limits.
     ///
     /// @param text The text typed.
-    /// @return The limit, or null where the text is empty (the kind's own default) or is not a whole
-    ///         number of one or more.
+    /// @return The limit, or null if the text is empty (meaning the default) or is not a whole number of one
+    ///         or more.
     public static Integer parseLimit(final String text) {
         if (text == null) {
             return null;
@@ -87,19 +88,21 @@ public final class LearnFlow {
         }
     }
 
-    /// @param value A step's limit, or null for the kind's own default.
-    /// @return The limit as text, empty for null.
+    /// @param value A step's limit, or null for the default.
+    /// @return The limit as text, or empty for null.
     public static String limitText(final Integer value) {
         return value == null
                 ? ""
                 : String.valueOf(value);
     }
 
-    /// The texts a step is asked with (A85): one for most kinds; for a split, the variant its guard
-    /// selects, or all three where the guard is `always` and the stream decides.
+    /// The question texts a step is asked with. Texts are per kind of step, not per step, so every step of a
+    /// kind uses the same text. Most kinds have one text. A split step uses the variant its guard selects (text,
+    /// XML or JSON), or all three if its guard lets any stream through, since the stream then decides which
+    /// is used.
     ///
     /// @param step A step.
-    /// @return Its texts.
+    /// @return The step's question texts.
     public static List<Template> textsOf(final FlowStep step) {
         switch (step.getKind()) {
             case CHAIN:
@@ -124,10 +127,11 @@ public final class LearnFlow {
         }
     }
 
-    /// The built-ins a text may be loaded from: those whose variables it allows, its own first.
+    /// The built-in texts that may be loaded into a text: its own built-in first, then any other whose
+    /// variables are all allowed in it.
     ///
     /// @param slot The text being loaded into.
-    /// @return The built-ins it may be loaded from.
+    /// @return The built-in texts it may be loaded from.
     public static List<Template> suitable(final Template slot) {
         final Set<String> allowed = new HashSet<>(Arrays.asList(slot.getVariables()));
         final List<Template> fits = new ArrayList<>();
@@ -140,8 +144,8 @@ public final class LearnFlow {
         return fits;
     }
 
-    /// @param template A text.
-    /// @return The tooltip of its words: the variables it may use.
+    /// @param template A question text.
+    /// @return The tooltip for the text box, listing the variables the text may use.
     public static String variablesTitle(final Template template) {
         final List<String> names = new ArrayList<>();
         for (final String variable : template.getVariables()) {
@@ -152,15 +156,16 @@ public final class LearnFlow {
                 : String.join(", ", names));
     }
 
-    /// Where a text's words come from, said above them. Text is per kind of question (A85): the status
-    /// says so where an edit reaches more than this step.
+    /// Describes where a text's words come from, for the status line above them. Texts are per kind of step,
+    /// so for the one text shared by parser and transform Configure steps the status warns that an edit
+    /// applies to all of them.
     ///
-    /// @param template            The text.
+    /// @param template            The question text.
     /// @param own                 Whether the document has its own words for it.
     /// @param fetched             Whether its built-in words have been fetched.
-    /// @param builtInVersion      The version of the built-ins the node serves, or null if not known.
+    /// @param builtInVersion      The version of the built-in texts the server provides, or null if not known.
     /// @param savedAgainstVersion The built-in version the document was last saved against, or null.
-    /// @return The status.
+    /// @return The status line.
     public static String textStatus(final Template template,
                                     final boolean own,
                                     final boolean fetched,
@@ -184,20 +189,21 @@ public final class LearnFlow {
         return status.toString();
     }
 
-    /// @param problems What is wrong with the flow.
+    /// @param problems The problems and warnings found in the flow.
     /// @param index    A step's index.
-    /// @return What is wrong with that step, or null for nothing.
+    /// @return The problems with that step, joined into one string, or null if there are none.
     public static String problemsOf(final List<FlowProblem> problems, final int index) {
         return problemsOf(problems, index, Severity.PROBLEM);
     }
 
-    /// What is said about a step at one severity: its problems, which stop the flow being held, or its
-    /// warnings, which only say.
+    /// Collects what is reported about a step at one severity: problems, which stop the flow being saved, or
+    /// warnings, which are only advice.
     ///
-    /// @param problems What is wrong with the flow.
+    /// @param problems The problems and warnings found in the flow.
     /// @param index    A step's index.
     /// @param severity The severity wanted.
-    /// @return What is said about that step at that severity, or null for nothing.
+    /// @return The messages about that step at that severity, joined into one string, or null if there are
+    ///         none.
     public static String problemsOf(final List<FlowProblem> problems,
                                     final int index,
                                     final Severity severity) {

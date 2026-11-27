@@ -44,49 +44,52 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/// A list of Smart Pipelines ([FeedList]): those of one Learning Flow, on its Pipelines tab, or of every
-/// Learning Flow the user may read, on the Smart Pipelines screen, where each row also names its Learning Flow.
-/// Each row's button opens the pipeline at its Learning Status tab ([PipelineAiTabController]), where its
-/// learning is followed and acted on, by the pipeline's permissions.
+/// Wires a list of Smart Pipelines ([FeedList]). On a Learning Flow's Pipelines tab it lists that document's
+/// pipelines; on the Smart Pipelines screen it lists those of every Learning Flow the user may read, and each
+/// row also names its Learning Flow. Each row's button opens the pipeline at its Learning Status tab
+/// ([PipelineAiTabController]), where its learning is followed and acted on, subject to the pipeline's
+/// permissions.
 ///
-/// The pipelines are filtered as Stroom's other lists are: by a quick filter of the names above the table
-/// (the pipeline's, and on the Smart Pipelines screen its Learning Flow's too), and by the dialog its filter
-/// button opens ([FeedFilterEditorController]), of where they stand and whether those whose pipeline was deleted
-/// are listed too.
+/// The pipelines are filtered as Stroom's other lists are: by a quick filter on names above the table (the
+/// pipeline's, and on the Smart Pipelines screen its Learning Flow's too), and by the dialog that the filter
+/// button opens ([FeedFilterEditorController]), which filters by learner state and by whether deleted
+/// pipelines are listed.
 ///
-/// Every pipeline asked for is read at once, and filtered and paged here, so that each filter can say how many
-/// it lists. A list that isn't a content tab isn't refreshed by Stroom, so it reads its pipelines again itself,
-/// every ten seconds while it is on the page and auto refresh is on.
+/// All the matching pipelines are fetched in one request and then filtered and paged here, so that the filter
+/// dialog can say how many pipelines each choice would list. Stroom does not refresh a list that isn't a
+/// content tab, so this refreshes itself every ten seconds while the list is on screen and auto refresh is on.
 public class FeedListController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
-    /// The most pipelines read at once. A Learning Flow's pipelines number tens or hundreds; every Learning
-    /// Flow's, rarely more than this.
+    /// The most pipelines fetched in one request. A Learning Flow usually has tens or hundreds of pipelines,
+    /// and all Learning Flows together rarely have more than this.
     private static final int MOST_FEEDS = 1000;
     private static final int REFRESH_MS = 10_000;
 
     private final RestDataProvider<SupervisorLearner, ResultPage<SupervisorLearner>> dataProvider;
     private final Provider<FeedFilterEditorController> filterEditorProvider;
-    /// How many of the pipelines the quick filter lets through each choice of the dialog lists, as last read.
+    /// For each choice in the filter dialog, how many of the pipelines that pass the quick filter it would list,
+    /// as of the last fetch.
     private final Map<FeedFilter, Integer> counts = new EnumMap<>(FeedFilter.class);
     private FeedList view;
-    /// Whether it lists anything yet: every Learning Flow's pipelines, or [#docUuid]'s.
+    /// Whether the list has been told what to list yet (every Learning Flow's pipelines, or [#docUuid]'s).
+    /// Until it has, it fetches nothing.
     private boolean scoped;
     /// The Learning Flow whose pipelines are listed, or null for every Learning Flow's.
     private String docUuid;
     private FeedFilter filter = FeedFilter.ALL;
     private boolean showDeleted;
-    /// The quick filter's text, lower case: a pipeline is listed where one of its names has it.
+    /// The quick filter's text, in lower case. A pipeline is listed if one of its names contains it.
     private String nameFilter = "";
     private boolean autoRefresh = true;
-    /// Whether the list is on the page: it isn't read again while it isn't.
+    /// Whether the list is on screen. It isn't refreshed while it isn't.
     private boolean showing = true;
 
-    /// Made by GIN; [#attach(FeedList)] gives it its view.
+    /// Created by GIN; [#attach(FeedList)] then gives it its view.
     ///
     /// @param eventBus             The application's event bus.
-    /// @param restFactory          Makes REST requests.
-    /// @param filterEditorProvider Makes the dialog of which pipelines to show.
+    /// @param restFactory          Creates REST requests.
+    /// @param filterEditorProvider Creates the dialog that chooses which pipelines to show.
     @Inject
     public FeedListController(final EventBus eventBus,
                               final RestFactory restFactory,
@@ -128,11 +131,11 @@ public class FeedListController extends Controller {
         onDispose(timer::cancel);
     }
 
-    /// Attaches this to its view, declared in its owner's template, or made for a screen that is the list
-    /// alone.
+    /// Attaches this controller to its view, which is either declared in the owning screen's template or
+    /// created for a screen that consists of the list alone.
     ///
-    /// @param view The view.
-    /// @return This, for its owner to keep.
+    /// @param view The list.
+    /// @return This controller, for the owner to keep.
     public FeedListController attach(final FeedList view) {
         this.view = Objects.requireNonNull(view, "view");
         initWidget(view);
@@ -154,9 +157,10 @@ public class FeedListController extends Controller {
         return this;
     }
 
-    /// Lists one Learning Flow's pipelines, from the first page where they are another's.
+    /// Lists one Learning Flow's pipelines. If a different Learning Flow's pipelines were listed, the selection
+    /// is cleared and the list goes back to its first page.
     ///
-    /// @param docUuid The Learning Flow's uuid.
+    /// @param docUuid The Learning Flow's UUID.
     public void showLearningFlow(final String docUuid) {
         final boolean another = !scoped || !Objects.equals(this.docUuid, docUuid);
         scoped = true;
@@ -169,17 +173,17 @@ public class FeedListController extends Controller {
         refresh();
     }
 
-    /// Lists every Learning Flow's pipelines that the user may read, each naming its Learning Flow. They are
-    /// read at the next [#refresh()], as Stroom refreshes a content tab once it has opened it, so that they
-    /// aren't read twice.
+    /// Lists the pipelines of every Learning Flow that the user may read, each row naming its Learning Flow.
+    /// They are not fetched here but at the next [#refresh()]: Stroom refreshes a content tab once it has
+    /// opened it, so fetching here as well would fetch them twice.
     public void showEveryLearningFlow() {
         scoped = true;
         docUuid = null;
         view.setLearningFlowShown(true);
     }
 
-    /// Says whether the list is on screen: it is read again every ten seconds only while it is, and at once
-    /// when it comes back.
+    /// Tells the list whether it is on screen. It is refreshed every ten seconds only while it is, and
+    /// immediately when it comes back on screen.
     ///
     /// @param showing Whether it is on screen.
     public void setShowing(final boolean showing) {
@@ -195,13 +199,13 @@ public class FeedListController extends Controller {
         return autoRefresh;
     }
 
-    /// Reads the pipelines again.
+    /// Fetches the pipelines again.
     public void refresh() {
         dataProvider.refresh();
     }
 
-    // The pipelines the quick filter and the dialog let through, counting as it goes how many each choice of the
-    // dialog would list
+    // Returns the pipelines that pass both the quick filter and the dialog's filter. As it goes, it counts how
+    // many pipelines each choice in the dialog would list, for the dialog to show
     private List<SupervisorLearner> filtered(final List<SupervisorLearner> all) {
         final List<SupervisorLearner> shown = new ArrayList<>();
         counts.clear();
@@ -224,8 +228,8 @@ public class FeedListController extends Controller {
         return shown;
     }
 
-    /// Asks which pipelines to show, from the first page once answered: the page a person is on is a page of a
-    /// list that has just changed length.
+    /// Opens the dialog that chooses which pipelines to show. Once a choice is made the list goes back to its
+    /// first page, because the list has changed length and the page the person was on may no longer exist.
     private void editFilter() {
         filterEditorProvider.get().edit(this, filter, showDeleted, counts, (chosen, deleted) -> {
             filter = chosen;
@@ -236,15 +240,16 @@ public class FeedListController extends Controller {
         });
     }
 
-    // Whether the quick filter lets a pipeline through: its name as the table shows it has the text, or, where
-    // every Learning Flow's are listed, its Learning Flow's name has it
+    // Whether a pipeline passes the quick filter: its name as the table shows it contains the text, or, when
+    // every Learning Flow's pipelines are listed, its Learning Flow's name does
     private boolean hasName(final SupervisorLearner learner) {
         return nameFilter.isEmpty()
                || FeedList.name(learner).toLowerCase().contains(nameFilter)
                || (docUuid == null && FeedList.learningFlow(learner).toLowerCase().contains(nameFilter));
     }
 
-    /// Opens a pipeline at its Learning Status tab, showing its element.
+    /// Opens a pipeline at its Learning Status tab, showing the learner's element. Does nothing for a pipeline
+    /// that has been deleted.
     private void openPipeline(final SupervisorLearner learner) {
         if (learner.getPipeline() == null || learner.isPipelineDeleted()) {
             return;

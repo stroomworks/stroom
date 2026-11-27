@@ -34,34 +34,28 @@ import jakarta.inject.Provider;
 import java.io.StringReader;
 import java.util.List;
 
-/**
- * The compile gate for the extraction stage (design §8.1): turns Data Splitter configuration text into a
- * runnable parser, or into the diagnostics explaining why it cannot be run.
- * <p>
- * Nothing is written to a document store on the way through. The configuration is compiled from text,
- * which is what lets a candidate be scored before anything persists it (design §7.3, rule 1).
- * <p>
- * Scope: {@code DS3ParserFactory} and the proxy it reports through are pipeline-scoped in a node. This
- * class is constructed by hand in the harness; when it is bound for a node it must be given a pipeline
- * scope to run in, and it must not be shared between threads, since the proxy swap in {@link #compile}
- * is not synchronised.
- */
+/// Compiles Data Splitter configuration text proposed by the model into a runnable parser, or into the
+/// diagnostics that explain why it cannot be run. [DataSplitterStep] uses it before running a candidate.
+///
+/// The configuration is compiled straight from text and nothing is written to a document store, so a
+/// candidate can be judged before anything is saved.
+///
+/// `DS3ParserFactory` and the `ErrorReceiverProxy` it reports through are pipeline-scoped, so an instance must
+/// be used inside a pipeline scope. It must not be shared between threads, because the proxy swap in
+/// [#compile] is not synchronised.
 public class DataSplitterCompiler {
 
-    /**
-     * Diagnostics are attributed to the element that would run the configuration in a pipeline, so that
-     * their text matches what an operator would see in the stepper for the same fault.
-     */
+    /// The element id the diagnostics are attributed to. It is the element that would run the configuration
+    /// in a pipeline, so that the text matches what an operator would see in the stepper for the same fault.
     static final ElementId ELEMENT_ID = new ElementId("DS3Parser");
 
     private final Provider<DS3ParserFactory> parserFactoryProvider;
     private final ErrorReceiverProxy errorReceiverProxy;
 
-    /**
-     * @param errorReceiverProxy The proxy the schema validation behind the factory reports through. It is
-     *                           pipeline-scoped in a node, so a compile points it at its own receiver for
-     *                           the duration, exactly as a pipeline run does.
-     */
+    /// @param parserFactoryProvider Supplies a fresh Data Splitter parser factory for each compile.
+    /// @param errorReceiverProxy    The proxy the schema validation behind the factory reports through. It is
+    ///                              pipeline-scoped, so a compile points it at its own receiver for the
+    ///                              duration, as a pipeline run does.
     @Inject
     public DataSplitterCompiler(final Provider<DS3ParserFactory> parserFactoryProvider,
                                 final ErrorReceiverProxy errorReceiverProxy) {
@@ -78,18 +72,18 @@ public class DataSplitterCompiler {
 
         // Each factory holds the compiled state of one configuration, so a fresh one is taken per compile.
         final DS3ParserFactory parserFactory = parserFactoryProvider.get();
-        // The proxy is pipeline-scoped and may already be pointed at a running pipeline's receiver; it is
-        // borrowed for the compile and handed back, not cleared.
+        // The proxy is pipeline-scoped and may already point at a running pipeline's receiver, so the
+        // previous receiver is put back afterwards rather than cleared.
         final ErrorReceiver previous = errorReceiverProxy.getErrorReceiver();
         errorReceiverProxy.setErrorReceiver(errorReceiver);
         try {
             parserFactory.configure(new StringReader(configuration), errorHandler);
         } catch (final RuntimeException e) {
-            // A parse failure reaches the error handler first and is then rethrown, wrapped, so it is
-            // already on record by the time it arrives here. The Data Splitter's own compile faults — an
-            // undefined variable reference, a duplicate id, a regex that does not compile — arrive as bare
-            // runtime exceptions with nothing on record. Either way the configuration is rejected with the
-            // message as its diagnostic, which is what the next candidate needs; it is never a crash.
+            // An XML parse failure reaches the error handler first and is then rethrown wrapped, so it has
+            // already been recorded by the time it gets here. The Data Splitter's own compile faults (an
+            // undefined variable reference, a duplicate id, a regex that does not compile) arrive as bare
+            // runtime exceptions with nothing recorded, so the message is recorded here. Either way the
+            // configuration is rejected with a diagnostic the model can act on, rather than failing the run.
             if (errorReceiver.getCount(Severity.FATAL_ERROR) == 0) {
                 errorReceiver.log(Severity.FATAL_ERROR, null, ELEMENT_ID, e.getMessage(), e);
             }

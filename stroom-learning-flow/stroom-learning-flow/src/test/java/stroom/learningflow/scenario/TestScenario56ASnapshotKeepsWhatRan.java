@@ -44,15 +44,15 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Design 02 §5, scenario 56: **a promotion keeps a snapshot, and a session edits in place** (A58, A61,
-/// A70–A72; design 04 §8 scenario 11).
+/// Tests that each promotion keeps a snapshot of the configuration, and that relearning edits the existing
+/// fragment in place.
 ///
-/// A learner's binding points at a snapshot of its fragment's configuration. A relearning edits
-/// the same fragment — the same pipeline document, the same stylesheet document, the text replaced —
-/// and keeps a new snapshot; the deferral stamp moves with it, so a stream held against the old one is
-/// scored again. An output records the snapshot that produced it, and an as-processed reprocess runs
-/// that snapshot's code, not what the fragment says today. A stylesheet edited by hand is snapshotted the
-/// first time the binding serves after the edit. A retracted binding takes its snapshots with it.
+/// A learner's binding points at a snapshot of its fragment's configuration. Relearning edits the same
+/// fragment (the same pipeline document and stylesheet document, with the text replaced) and keeps a new
+/// snapshot. Because the binding's snapshot changes, a stream deferred against the old snapshot is scored
+/// again. Each output records the snapshot that produced it, so reprocessing "as processed" runs that
+/// snapshot's code, not the fragment's current content. A stylesheet edited by hand is snapshotted the first
+/// time the binding serves after the edit. Retracting a binding deletes its snapshots.
 class TestScenario56ASnapshotKeepsWhatRan {
 
     private static final String DOC = "doc-1";
@@ -81,14 +81,14 @@ class TestScenario56ASnapshotKeepsWhatRan {
                 .anySatisfy(code -> assertThat(code).isEqualTo(LOGON_ONLY))
                 .anySatisfy(code -> assertThat(code).isEqualTo(CSV.configuration()));
 
-        // A stream falls short under it and is held against that snapshot.
+        // A stream falls short under the binding and is deferred against that snapshot.
         final Script silent = Script.of();
         assertThatThrownBy(() -> task(scenarios, silent).stream(doc, Scenarios.LEARNER, learned, stream(2L, MIXED),
                 new TextSink()))
                 .isInstanceOf(DeferTaskException.class);
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER, 2L).orElseThrow().failedAgainst()).isEqualTo(first);
 
-        // The worker relearns: the same fragment, edited in place (A58), under a new snapshot.
+        // The worker relearns, editing the same fragment in place and keeping a new snapshot.
         final Script relearning = script(scenarios, TRANSLATES_BOTH);
         assertThat(scenarios.worker(relearning).advance(10)).isEqualTo(1);
         relearning.verifyExhausted();
@@ -102,7 +102,7 @@ class TestScenario56ASnapshotKeepsWhatRan {
         assertThat(scenarios.snapshots.forBinding(learned.getUuid())).extracting(Snapshot::id)
                 .containsExactly(first, rebound.getSnapshot());
 
-        // The stamp moved, so the held stream is scored again, and now clears.
+        // The binding's snapshot changed, so the deferred stream is scored again, and now clears.
         final StageRun decided = task(scenarios, silent).decide(doc, Scenarios.LEARNER, stream(2L, MIXED));
         assertThat(decided.decision()).describedAs(decided.decision().toString()).isInstanceOf(Bound.class);
         final TextSink sink = new TextSink();
@@ -112,11 +112,11 @@ class TestScenario56ASnapshotKeepsWhatRan {
         assertThat(sink.text()).contains("<Action>Logoff</Action>");
     }
 
-    /// A task that judged its stream against the snapshot a relearning has just replaced finds its record
-    /// short of a bar the learner no longer stands at. It neither marks the learner nor opens a session — that
-    /// would relearn what has just been learned, and ask the model for it — but waits against the old
-    /// stamp; and since the promotion's wake came before its row was written, the learning job's pass is
-    /// what wakes it, to be scored against the new snapshot.
+    /// Covers a task that finds a record short of the bar while judging against a snapshot that a relearning
+    /// has just replaced. It neither marks the learner nor opens a session, which would relearn what has just
+    /// been learned and ask the model again. Instead it waits against the old snapshot. Because the
+    /// promotion's wake came before its deferral row was written, it is the learning job's next pass that
+    /// wakes it, to be scored against the new snapshot.
     @Test
     void aStreamJudgedAgainstAReplacedSnapshotIsTriedAgainRatherThanRelearned() {
         final Scenarios scenarios = new Scenarios();
@@ -131,9 +131,9 @@ class TestScenario56ASnapshotKeepsWhatRan {
                 .isInstanceOf(DeferTaskException.class);
         final int attempts = scenarios.attempts.forDocument(DOC, 10).size();
 
-        // A task serves stream 3 under the snapshot in force, and while it runs — the records before the
-        // logoff already handed on — the worker relearns and promotes. The logoff then falls short of the
-        // bar the learner stood at when the run began.
+        // A task serves stream 3 under the current snapshot. While it runs, after the records before the
+        // logoff have been passed on, the worker relearns and promotes. The logoff then falls short under the
+        // binding as it was when the run began.
         final Script relearning = script(scenarios, TRANSLATES_BOTH);
         final ContentHandler relearnedMidRun = new DefaultHandler() {
             private boolean relearned;
@@ -168,7 +168,7 @@ class TestScenario56ASnapshotKeepsWhatRan {
                 .extracting(Deferral::inputId)
                 .doesNotContain(3L);
 
-        // The learning job's pass wakes it, and it clears under the snapshot in force.
+        // The learning job's pass wakes it, and it clears under the current snapshot.
         assertThat(scenarios.worker(Script.of()).advance(10)).isZero();
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).contains(3L);
         final StageRun decided = task(scenarios, silent).decide(doc, Scenarios.LEARNER, stream(3L, MIXED));
@@ -185,8 +185,8 @@ class TestScenario56ASnapshotKeepsWhatRan {
         scenarios.inputs.put(stream(2L, MIXED));
         final Binding learned = learn(scenarios, doc, LOGON_ONLY);
         final Script silent = Script.of();
-        // The first stream was emitted under the first snapshot by the session that learned it; a second
-        // stream falls short and the binding is relearned in place.
+        // The first stream was served under the first snapshot by the session that learned from it. A second
+        // stream falls short, and the binding is relearned in place.
         assertThatThrownBy(() -> task(scenarios, silent).stream(doc, Scenarios.LEARNER, learned, stream(2L, MIXED),
                 new TextSink()))
                 .isInstanceOf(DeferTaskException.class);
@@ -195,8 +195,8 @@ class TestScenario56ASnapshotKeepsWhatRan {
         relearning.verifyExhausted();
         assertThat(stylesheet(scenarios, learned.getPipeline())).isEqualTo(TRANSLATES_BOTH);
 
-        // As processed: the first stream goes back through the code that produced its output — the
-        // logon-only stylesheet — though the fragment now translates both.
+        // Reprocessed as processed, the first stream goes back through the code that produced its output (the
+        // logon-only stylesheet), even though the fragment now translates both.
         final StageRun again = scenarios.stage(document -> silent, scenarios.learnerBindings)
                 .reprocess(doc, Scenarios.LEARNER, stream(1L, CSV.input()));
         assertThat(again.decision()).describedAs(again.decision().toString()).isInstanceOf(Bound.class);
@@ -211,7 +211,7 @@ class TestScenario56ASnapshotKeepsWhatRan {
         final Binding learned = learn(scenarios, doc, TRANSLATES_BOTH);
         final Script silent = Script.of();
 
-        // Edited by hand: the stylesheet now admits nothing but a logon.
+        // The stylesheet is edited by hand so that it translates only logons.
         edit(scenarios, learned.getPipeline(), LOGON_ONLY);
         final StageRun decided = task(scenarios, silent).decide(doc, Scenarios.LEARNER, stream(2L, MIXED));
 
@@ -221,20 +221,20 @@ class TestScenario56ASnapshotKeepsWhatRan {
                 .isEqualTo(fresh.getSnapshot());
         assertThat(scenarios.snapshots.byId(fresh.getSnapshot()).orElseThrow().code().values())
                 .anySatisfy(code -> assertThat(code).isEqualTo(LOGON_ONLY));
-        // And the edit is what serves: the logoffs fall short, against the new stamp.
+        // The edited stylesheet is what serves: the logoffs fall short, and the stream is deferred against
+        // the new snapshot.
         assertThatThrownBy(() -> task(scenarios, silent).stream(doc, Scenarios.LEARNER, fresh, stream(2L, MIXED),
                 new TextSink()))
                 .isInstanceOf(DeferTaskException.class);
         assertThat(scenarios.deferrals.of(Scenarios.LEARNER,
                 2L).orElseThrow().failedAgainst()).isEqualTo(fresh.getSnapshot());
-        // Served again before anything else changes: no third snapshot.
+        // Serving again before anything else changes takes no third snapshot.
         task(scenarios, silent).decide(doc, Scenarios.LEARNER, stream(3L, CSV.input()));
         assertThat(scenarios.snapshots.forBinding(learned.getUuid())).hasSize(2);
     }
 
-    // A fragment shared with a neighbouring learner is retired with binding by looking (design 06 phase J
-    // slice 2a): a learner is one element in one pipeline, so no second learner can come to share the
-    // first's fragment.
+    // There is no test of a fragment shared between learners: a learner is one element in one pipeline, so
+    // no two learners can share a fragment.
 
     @Test
     void aRetractedBindingTakesItsSnapshotsWithIt() {
@@ -268,7 +268,7 @@ class TestScenario56ASnapshotKeepsWhatRan {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(xslt));
     }
 
-    /// The fragment's stylesheet document.
+    /// Finds the fragment's stylesheet document.
     private static DocRef stylesheetRef(final Scenarios scenarios, final DocRef fragment) {
         return scenarios.stores.pipelines.readDocument(fragment).getPipelineData().getAddedProperties().stream()
                 .map(PipelineProperty::getValue)

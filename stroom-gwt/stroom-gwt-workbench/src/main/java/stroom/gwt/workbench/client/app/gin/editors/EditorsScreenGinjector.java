@@ -169,8 +169,9 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
     /// @return A Learning Flow document's editor, as `LearningFlowPlugin` opens it.
     LearningFlowEditor getLearningFlowEditor();
 
-    /// @return A supervised stage's pane in the stepping screen, as `LearningFlowPlugin` registers
-    /// it with `ElementStepDetailsPaneRegistry`.
+    /// @return The pane the stepping screen shows for a Learning Flow element, which explains what the
+    /// element decided for the stream, as `LearningFlowPlugin` registers it with
+    /// `ElementStepDetailsPaneRegistry`.
     StageDecisionPaneController getStageDecisionPane();
 
     // AI

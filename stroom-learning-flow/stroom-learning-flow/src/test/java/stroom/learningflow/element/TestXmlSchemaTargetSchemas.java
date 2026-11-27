@@ -29,17 +29,17 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Task 7, decision D1 option A: the one schema a document's translations must write, read from the
-/// `XMLSchema` document it names.
+/// Tests how the target schema, the one schema a document's translations must write, is read from the
+/// `XMLSchema` document the Learning Flow document names.
 class TestXmlSchemaTargetSchemas {
 
     private final NodeFixture node = new NodeFixture();
 
     @Test
     void aSchemaDescribesItselfFromItsXsdRatherThanFromItsName() {
-        // The version and the root element come out of the XSD, so a schema installed under another name
-        // still says what it is; the namespace and system id are the document's, since that is what
-        // xsi:schemaLocation and the validator go by.
+        // The version and the root element are read from the XSD, so a schema installed under another name
+        // is still described correctly. The namespace and system id come from the XMLSchema document, because
+        // those are what xsi:schemaLocation and the validator use.
         final TargetSchema target = node.targetSchemas().resolve(node.eventLoggingSchemaRef()).orElseThrow();
 
         assertThat(target.namespaceURI()).isEqualTo(TargetSchema.EVENT_LOGGING);
@@ -56,8 +56,8 @@ class TestXmlSchemaTargetSchemas {
 
     @Test
     void theCriteriaPickOutOneVersionRatherThanAWholeGroup() {
-        // The point of decision D1: EVENTS holds seven versions of event-logging, and a document writes
-        // one of them. A system id is unique in Stroom, so the namespace and it name a single document.
+        // The EVENTS schema group holds several versions of event-logging, but a document writes exactly one.
+        // A system id is unique in Stroom, so the namespace and system id together identify a single schema.
         final TargetSchema target = node.targetSchemas().resolve(node.eventLoggingSchemaRef()).orElseThrow();
 
         assertThat(target.criteria().getNamespaceURI()).isEqualTo(TargetSchema.EVENT_LOGGING);
@@ -77,8 +77,8 @@ class TestXmlSchemaTargetSchemas {
 
     @Test
     void aTargetThatIsNotSetOrHasGoneIsEmptyRatherThanAFailure() {
-        // A document part way through its setup, and a document whose schema somebody deleted. Both are
-        // for the readiness check to say in words; neither may throw where a stream is being judged.
+        // A document part way through its set-up, or one whose schema has been deleted. The readiness check
+        // reports both in words, so neither may throw while a stream is being judged.
         final TargetSchemas targetSchemas = node.targetSchemas();
 
         assertThat(targetSchemas.resolve(null)).isEmpty();
@@ -91,8 +91,9 @@ class TestXmlSchemaTargetSchemas {
 
     @Test
     void aVersionIsOrderedAsNumbersSoThatFourBeatsThirtyFour() {
-        // "4.1.0" after "3.4.2" as numbers, which as text it would not be; and a version that does not
-        // read sorts first, so that a schema which does not say what it is never wins the default.
+        // Versions are compared part by part as numbers, so "3.10.0" sorts after "3.9.0", which it would not as
+        // text. A version that cannot be parsed sorts first, so a schema that does not declare a usable version
+        // is never chosen as the default.
         assertThat(XmlSchemaTargetSchemas.compareVersions("4.1.0", "3.4.2")).isPositive();
         assertThat(XmlSchemaTargetSchemas.compareVersions("3.10.0", "3.9.0")).isPositive();
         assertThat(XmlSchemaTargetSchemas.compareVersions("3.0.0", "3")).isZero();
@@ -103,8 +104,9 @@ class TestXmlSchemaTargetSchemas {
 
     @Test
     void everythingAboutATargetComesFromOnePlace() {
-        // The acceptance criterion behind decision D1: the prompts, the target checks and the conformance
-        // check are given the same resolved schema, so that changing the setting changes all three.
+        // The prompts, the target checks and the conformance check are all meant to use this one resolved
+        // schema, so that changing the setting changes all three. This checks that the resolved schema carries
+        // the XMLSchema document's reference and name.
         final Optional<TargetSchema> resolved = node.targetSchemas().resolve(node.eventLoggingSchemaRef());
 
         assertThat(resolved).get().satisfies(target -> {

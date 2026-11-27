@@ -22,7 +22,7 @@ import stroom.docref.HasDisplayValue;
 public enum RecordKind implements HasDisplayValue {
     /// A real translation: an event with something in its detail.
     TRANSLATION("Translated"),
-    /// A marked Unknown event (A51, A53).
+    /// A marked Unknown event, written for a kind of record the model could not translate.
     UNKNOWN("Marked Unknown"),
     /// Nothing: a kind of record that yields no event, e.g. a header line.
     NONE("Nothing");

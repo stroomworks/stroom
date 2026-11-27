@@ -39,6 +39,8 @@ import jakarta.inject.Singleton;
 import java.util.ArrayList;
 import java.util.List;
 
+/// The document store for Learning Flow documents. It gives a new document a usable flow and target schema,
+/// and validates a document's flow, checks and promotion mode whenever it is saved or imported.
 @Singleton
 public class LearningFlowStoreImpl
         extends AbstractDocumentStore<LearningFlowDoc>
@@ -62,30 +64,27 @@ public class LearningFlowStoreImpl
         this.targetSchemas = targetSchemas;
     }
 
-    /// The setup a new Learning Flow starts from.
+    /// The example flow a new Learning Flow starts with.
     ///
-    /// `DIRECT` for now: on the feeds measured so far it reached the same scores at half the tokens
-    /// (design 02 §6.3). Decision N3 makes it `ESCALATING`, which is a change of this one name once a
-    /// `TestLiveScenarios` run against a live model has confirmed it (Track 2 step 1c).
+    /// It is `DIRECT` because, on the feeds measured so far, that reached the same scores as `ESCALATING` for
+    /// half the tokens. The intention is to switch to `ESCALATING` once a `TestLiveScenarios` run against a
+    /// live model has confirmed it is better.
     static final FlowExample DEFAULT_EXAMPLE = FlowExample.DIRECT;
 
-    /// A new Learning Flow, with the steps of [#DEFAULT_EXAMPLE] and the latest event-logging schema
-    /// installed as its target (task 7, decision D1).
+    /// Creates a new Learning Flow with the steps of [#DEFAULT_EXAMPLE], and the latest installed
+    /// event-logging schema as its target schema.
     ///
-    /// The built-in setups are JSON on the server now (Track 2 step 1c), so a document built in shared
-    /// code cannot carry one: `LearningFlowDoc` starts with no steps, and this is what gives a new
-    /// document a flow it can actually learn by. It has to happen here, because [#writeDocument] refuses
-    /// a flow the stage cannot hold (A33) and a flow with no steps is one of those — a document created
-    /// without this could not be saved.
+    /// The built-in example flows are held as JSON on the server, so shared code cannot build a document
+    /// with one, and `LearningFlowDoc` starts with no steps. The steps must be added here, because
+    /// [#writeDocument] refuses a flow that cannot be run, and a flow with no steps is one of those.
     ///
-    /// The target schema is settled here for the same reason it is saved rather than looked up each
-    /// time: installing a newer event-logging later must not change what a document that already exists
-    /// writes. Every question the document asks names this schema, so a document and its prompts always
-    /// agree; a node with no event-logging installed gives a document no target, and the readiness check
-    /// is what says so.
+    /// The target schema is fixed when the document is created, and saved on it rather than looked up each
+    /// time, so that installing a newer event-logging schema later does not change what an existing document
+    /// produces. Every question the document asks the model names this schema. If no event-logging schema is
+    /// installed the document gets no target, and the document's readiness check reports that.
     ///
     /// @param name The document's name.
-    /// @return The new document.
+    /// @return The new document's reference.
     @Override
     public DocRef createDocument(final String name) {
         final DocRef docRef = super.createDocument(name);
@@ -96,15 +95,15 @@ public class LearningFlowStoreImpl
         return docRef;
     }
 
-    /**
-     * What the editor cannot check is checked on save, with the fault named, rather than at run time by the
-     * supervisor: the flow must be one the stage can hold (A33), and the checks must keep to their rules
-     * (the one model of checks: compile and permitted always gates, thresholds from 0 to 1).
-     */
+    /// Validates a document before it is saved, including on import, so that a fault is reported with a
+    /// clear message at save time rather than found when the first stream arrives. The flow must be one
+    /// that can be run, and the check settings must be valid (the compile and permitted checks must be
+    /// gates, and every threshold must be between 0 and 1). Moving to automatic promotion needs an extra
+    /// permission (see [#refuseUnpermittedAutomatic]). The document is stamped with the version of the
+    /// built-in question text it was saved against.
     @Override
     public LearningFlowDoc writeDocument(final LearningFlowDoc document) {
-        // A33: a flow the stage cannot hold is refused here, naming what is wrong, rather than found when
-        // the first stream arrives; and the document is stamped with the built-in text it was saved against.
+        // The flow is validated both structurally and against the built-in question templates.
         final List<String> problems = new ArrayList<>(document.getFlow().problems());
         problems.addAll(Templates.problems(document.getFlow()));
         if (!problems.isEmpty()) {
@@ -120,18 +119,18 @@ public class LearningFlowStoreImpl
                 .build());
     }
 
-    /// Switching a Learning Flow to *use new translations as soon as they pass* needs
-    /// `APPROVE_SMART_PIPELINES_AUTOMATICALLY` (SIM-1, decided 19 November 2026).
+    /// Refuses to save a Learning Flow being switched to automatic promotion (*use new translations as soon
+    /// as they pass*) unless the user has the `APPROVE_SMART_PIPELINES_AUTOMATICALLY` permission.
     ///
     /// Approving one translation needs EDIT on its pipeline, so the pipeline's owner decides. Setting the
-    /// mode to automatic approves **every future translation, for every feed this Learning Flow serves,
-    /// with nobody looking** — a wider act than editing the Learning Flow, and one no existing permission
-    /// fits: OWNER usually belongs to whoever created the document, and ADMINISTRATOR is too coarse.
+    /// mode to automatic approves **every future translation, for every feed this Learning Flow serves, with
+    /// nobody looking**. That is a wider act than editing the Learning Flow, and no existing permission fits
+    /// it: OWNER usually belongs to whoever created the document, and ADMINISTRATOR is too broad.
     ///
-    /// Checked here rather than in the editor so that it holds **on import** too, as Content Templates
-    /// check their run-as user. Only the move *to* automatic is checked: switching back to waiting for
-    /// approval is the safer direction and needs only EDIT, and someone without the permission can still
-    /// edit the rest of a Learning Flow that is already automatic.
+    /// The check is made here rather than in the editor so that it also applies **on import**, in the same
+    /// way that Content Templates check their run-as user. Only the change *to* automatic is checked.
+    /// Switching back to review is the safer direction and needs only EDIT, and a user without the
+    /// permission can still edit the rest of a Learning Flow that is already automatic.
     ///
     /// @param document The document as it is to be saved.
     private void refuseUnpermittedAutomatic(final LearningFlowDoc document) {
@@ -150,12 +149,12 @@ public class LearningFlowStoreImpl
         }
     }
 
-    /// The document as it is stored, or null where there is none to read — a new document, or one whose
-    /// read is refused. A document that cannot be read was not already automatic as far as this caller is
-    /// concerned, which is the safe reading.
+    /// Reads the document as currently stored, or returns null if there is none to read, i.e. a new document
+    /// or one the read of which fails. The caller treats an unreadable document as not already automatic,
+    /// which is the safe assumption.
     ///
-    /// @param uuid The document's uuid.
-    /// @return It, or null.
+    /// @param uuid The document's UUID, which may be null.
+    /// @return The stored document, or null.
     private LearningFlowDoc readDocumentQuietly(final String uuid) {
         try {
             return uuid == null
@@ -166,14 +165,14 @@ public class LearningFlowStoreImpl
         }
     }
 
-    /**
-     * A Learning Flow document depends on its model document, and on nothing else: since A41 the bindings
-     * are rows and the fragments are named by them, not by the document, so an exported document
-     * carries its configuration and none of what it learned — as a processor filter's state is not part of
-     * the pipeline it runs. Declaring the model here is what makes a content-pack import re-point it at the
-     * imported copy, what lets a copied document follow it, and what draws the edge in the explorer's
-     * dependency view; the inherited null would silently disable all three.
-     */
+    /// Declares the document's dependencies, which are its model document and nothing else.
+    ///
+    /// Bindings are stored as rows, and fragments are referenced by bindings, not by the document, so an
+    /// exported document carries its configuration and none of what was learned under it (just as a
+    /// processor filter's state is not part of the pipeline it runs). Declaring the model here makes a
+    /// content-pack import re-point it at the imported copy, lets a copied document follow it, and shows the
+    /// dependency in the explorer's dependency view. The inherited default (null) would silently disable all
+    /// three.
     @Override
     protected DependencyRemapFunction<LearningFlowDoc> getDependencyRemapFunction() {
         return (doc, remapper) -> {

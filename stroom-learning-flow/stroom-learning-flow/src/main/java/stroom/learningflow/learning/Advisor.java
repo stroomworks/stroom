@@ -20,57 +20,65 @@ import stroom.learningflow.stage.Guidance.Given;
 
 import java.util.List;
 
-/**
- * The AI seam of design §10, as the conversation of A21 sees it: one question at a time, each carrying the
- * exchanges before it. A node implements this over {@code stroom-ai}; a test implements it with canned
- * replies. Nothing on this side of the seam knows which.
- */
+/// Puts one question to the model and returns its reply. [Conversation] asks every question of a learning
+/// session through this interface, passing the exchanges before it so the model sees the session's history.
+///
+/// A node implements it over `stroom-ai`, and tests implement it with scripted replies, so the conversation
+/// does not know which it is talking to.
 public interface Advisor {
 
-    /**
-     * @param transcript Every exchange of the attempt so far, oldest first. Empty for the first question.
-     * @param question   The question to put to the model.
-     * @return The model's reply, verbatim. Parsing it is the caller's job.
-     */
+    /// Asks the model one question.
+    ///
+    /// @param transcript Every exchange of the attempt so far, oldest first. Empty for the first question.
+    /// @param question   The question to put to the model.
+    /// @return The model's reply, verbatim. Parsing it is the caller's job.
     String ask(List<Exchange> transcript, Question question);
 
-    /// The same, with what a supervisor has said about this learner (A46) — carried into the question, in
-    /// front of it, as context rather than as a turn of its own.
+    /// Asks the model one question, with the guidance a person has left for this learner. The guidance is
+    /// put in front of the question as context, not sent as a turn of its own.
     ///
-    /// Defaulted so that an advisor with no use for it needs to know nothing: a scripted one answers
-    /// what it was told to answer, and guidance is for the thing that has to be persuaded.
+    /// The default ignores the guidance, because an advisor that does not talk to a model (such as a
+    /// scripted one in a test) has no use for it.
     ///
-    /// @param guidance Everything standing at the moment the question is asked, oldest first. Read per
-    ///                 question rather than per attempt, so that a hint given while an attempt is parked
-    ///                 is carried by the turn that resumes it (A5, A28).
+    /// @param transcript Every exchange of the attempt so far, oldest first. Empty for the first question.
+    /// @param question   The question to put to the model.
+    /// @param guidance   All the guidance in force when the question is asked, oldest first. It is read for
+    ///                   each question rather than once per attempt, so that a hint given while an attempt
+    ///                   is parked is included in the turn that resumes it.
+    /// @return The model's reply, verbatim.
     default String ask(final List<Exchange> transcript,
                        final Question question,
                        final List<Given> guidance) {
         return ask(transcript, question);
     }
 
-    /// What the answer just given was actually asked with (A46): the ids a turn records having carried.
+    /// Returns the ids of the guidance the last answer was actually given with, for the turn to record.
     ///
-    /// For an advisor that put the question, that is the guidance it was offered. For one that replayed
-    /// an answer from the record (A45), it is what the *recorded* turn carried — because a re-walk
-    /// replays what was used and not what has since been added, and only the advisor knows which of the
-    /// two just happened.
+    /// For an advisor that put the question to the model, that is the guidance it was offered. For one that
+    /// replayed a recorded answer while resuming an attempt, it is the guidance the *recorded* turn had,
+    /// because a replay repeats what was used rather than what has been added since. Only the advisor knows
+    /// which of the two just happened.
     ///
-    /// @param offered What was given to the [#ask] that has just returned.
+    /// @param offered The guidance passed to the [#ask] that has just returned.
+    /// @return The ids of the guidance the answer was given with.
     default List<Long> carried(final List<Given> offered) {
         return offered.stream().map(Given::id).toList();
     }
 
-    /**
-     * Tokens the model has charged this advisor for so far, where it says; zero where it does not. The
-     * conversation reads it before and after each question to hold an attempt to its token budget (A5).
-     */
+    /// The tokens the model has charged this advisor for so far, where the model reports them, or zero where
+    /// it does not. The conversation reads it before and after each question to keep an attempt within its
+    /// token budget.
+    ///
+    /// @return The tokens used so far.
     default long tokensUsed() {
         return 0;
     }
 
-    /// Whether the next question would be answered from a record rather than put to anyone (A45): true
-    /// of an advisor re-walking an attempt while its recorded turns last, false of every other.
+    /// Whether the next question will be answered from a recorded turn rather than put to the model. It is
+    /// true for an advisor that is replaying a resumed attempt while recorded turns remain, and false for
+    /// every other.
+    ///
+    /// @return True while answers are being replayed from the record.
     default boolean replaying() {
         return false;
     }

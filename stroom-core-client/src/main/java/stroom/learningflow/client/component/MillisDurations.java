@@ -21,14 +21,15 @@ import stroom.util.shared.time.TimeUnit;
 
 import java.util.List;
 
-/// A document's durations, which it keeps in milliseconds, as a [SimpleDuration] for a
-/// [stroom.widget.duration.client.DurationPicker] to show, and back. The picker offers seconds to years,
-/// so a duration is shown in the largest of seconds, minutes, hours, days and weeks that holds it
-/// exactly; months and years are only ever what a person chose (approximate, as
-/// [SimpleDuration#getApproxMillis()] says).
+/// Converts the durations a Learning Flow document stores in milliseconds to a [SimpleDuration] for a
+/// [stroom.widget.duration.client.DurationPicker] to show, and back again.
+///
+/// The picker offers units from seconds to years. A stored duration is shown in the largest of weeks, days,
+/// hours, minutes and seconds that divides it exactly. Months and years are never chosen here because they
+/// are not a fixed length (see [SimpleDuration#getApproxMillis()]); they appear only if a person picks them.
 public final class MillisDurations {
 
-    // Largest first; months and years aren't exact, so a duration read is never shown in them
+    // Largest first. Months and years are left out because they are not a fixed number of milliseconds.
     private static final List<TimeUnit> UNITS = List.of(
             TimeUnit.WEEKS,
             TimeUnit.DAYS,
@@ -40,11 +41,11 @@ public final class MillisDurations {
         // Static helpers only
     }
 
-    /// The duration to show for a number of milliseconds: in the largest unit that holds it exactly,
-    /// else in whole seconds, the nearest, at least one.
+    /// Gets the duration to show for a number of milliseconds. It is expressed in the largest unit that
+    /// divides it exactly; failing that, it is rounded to the nearest whole second, with a minimum of one.
     ///
     /// @param millis The duration in milliseconds.
-    /// @return The duration to show.
+    /// @return The duration to show in the picker.
     public static SimpleDuration toDuration(final long millis) {
         for (final TimeUnit unit : UNITS) {
             final long size = unitMillis(unit);
@@ -55,12 +56,13 @@ public final class MillisDurations {
         return new SimpleDuration(Math.max(1L, Math.round(millis / 1000.0)), TimeUnit.SECONDS);
     }
 
-    /// The milliseconds for the duration shown. Where it is still the one shown for what was read, what
-    /// was read is kept, so that a duration that is not whole seconds isn't changed by being shown.
+    /// Gets the milliseconds to store for the duration in the picker. If the person has not changed the
+    /// picker (or it is empty), the originally read value is returned unchanged, so that a stored duration
+    /// that is not a whole number of seconds is not rounded just by opening and saving the document.
     ///
-    /// @param shown The duration the picker holds.
-    /// @param read  The milliseconds that were read.
-    /// @return The milliseconds to write.
+    /// @param shown The duration the picker holds, or null.
+    /// @param read  The milliseconds originally read from the document.
+    /// @return The milliseconds to write back to the document.
     public static long toMillis(final SimpleDuration shown, final long read) {
         if (shown == null || shown.equals(toDuration(read))) {
             return read;

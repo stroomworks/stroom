@@ -23,10 +23,9 @@ import stroom.learningflow.learning.Question;
 
 import java.util.List;
 
-/**
- * The advisor of a document that names no model: a stage that would ask fails on the stream, loudly,
- * rather than pretending to learn. A document in {@code DISABLED} mode never reaches it.
- */
+/// The [Advisor] for a Learning Flow document that names no model. Asking it throws a
+/// [ModelNotChosenException], so an attempt that needs the model stops with a clear reason rather than
+/// pretending to learn. A document whose learning mode is `DISABLED` never asks it.
 public class NoModelAdvisor implements Advisor {
 
     @Override

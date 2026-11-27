@@ -27,17 +27,17 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Audit finding S4: **one sample size limit, in bytes, that the prompt honours.**
+/// Tests that there is one sample size limit, measured in bytes, and that the prompt honours it.
 ///
-/// The sample the model was shown used to be cut twice: once to the Learning Flow's limit, and again by
-/// a fixed 6,000 characters inside the prompt. With the default limit of 8,192 the model never saw the
-/// last quarter of its own sample, while the parser's split was judged on all of it — and raising the
-/// limit to give a strong model more context did nothing at all above 6,000.
+/// The sample is cut only to the Learning Flow's limit. A second, fixed cut inside the prompt would hide part
+/// of the sample from the model while the parser's split was still judged on all of it, and would make raising
+/// the limit to give a strong model more context do nothing.
 class TestSampleSizeLimit {
 
     @Test
     void theWholeSampleReachesTheQuestion() {
-        // 7,000 characters: under the default limit of 8,192, over the 6,000 the prompt used to cut at
+        // 7,000 characters: under the default limit of 8,192, and over the 6,000 at which an earlier version
+        // of the prompt cut the sample
         final String sample = "x".repeat(7_000);
 
         assertThat(QuestionText.builtIn(null).render(new Question.Chain(new Sample(sample, Map.of()),
@@ -58,16 +58,16 @@ class TestSampleSizeLimit {
 
     @Test
     void theLimitIsCountedInBytesNotCharacters() {
-        // The editor has always said "(bytes)" while the code counted characters, so a feed in a language
-        // that does not fit in one byte a character was given up to three times the sample it was set to
-        // have — and every model is billed by what it is sent
+        // The editor describes the limit in bytes. Counting characters instead would give a feed whose
+        // characters take more than one byte up to three times the sample it was set to have, and every model
+        // is billed by what it is sent
         final LearningFlowDoc doc = LearningFlowDoc.builder()
                 .uuid("d")
                 .name("d")
                 .sampleSizeLimit(100)
                 .heldOutFraction(0.0)
                 .build();
-        // Three bytes a character, one character a line
+        // Three bytes per character, one character per line
         final String data = "€\n".repeat(200);
 
         final String prefix = LearningPrefix.learningPrefix(data, doc);
@@ -78,8 +78,7 @@ class TestSampleSizeLimit {
 
     @Test
     void aSampleCutFromItsStreamSaysSoWhenAStepGivesUp() {
-        // Supervisor visibility item 3: a person told "couldn't write the parser" is owed the fact that
-        // the model saw a fraction of the stream
+        // A person told "couldn't write the parser" needs to know that the model saw only part of the stream
         final Sample cut = new Sample("shown", Map.<String, String>of()).cutFrom(1_000);
 
         assertThat(cut.notShown()).isEqualTo(995);

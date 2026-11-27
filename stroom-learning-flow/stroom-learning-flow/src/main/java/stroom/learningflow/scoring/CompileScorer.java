@@ -22,11 +22,9 @@ import stroom.learningflow.shared.ScorerParameters;
 
 import java.util.Optional;
 
-/**
- * The compile gate as a scorer (design §8.1): a step that ran scores one; a step that could not —
- * refused by the Data Splitter schema, rejected by Saxon — scores zero, and its diagnostics are the
- * feedback, which §8.1 calls the highest-value feedback the model can receive.
- */
+/// The compile check as a scorer. A step that produced output scores one. A step that could not run (e.g.
+/// refused by the Data Splitter schema or rejected by Saxon) scores zero, and its diagnostics are the
+/// feedback, which is the most useful feedback the model can receive.
 public final class CompileScorer implements Scorer {
 
     @Override

@@ -25,8 +25,9 @@ import stroom.util.logging.LogUtil;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-/// The wake in a node (design 04 §5.3, design 06 §4.3): the deferred tasks of every filter on the
-/// pipeline back to `CREATED` through the processor task service.
+/// The node's implementation of [Wake], used when a promotion makes a learner able to serve. It moves the
+/// deferred tasks of every processor filter on the pipeline back to `CREATED`, through the processor task
+/// service, so they are processed again.
 @Singleton
 public class TaskWake implements Wake {
 

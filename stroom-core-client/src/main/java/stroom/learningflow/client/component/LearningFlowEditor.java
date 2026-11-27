@@ -35,14 +35,15 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
-/// A Learning Flow document's editor (design 07): **Feeds**, the document's feeds and what each needs,
-/// which it opens on; **Setup**, everything the document holds, on one page in the order a translation
-/// meets it (how it is learned, its quality checks, approving it, monitoring it in use); then Documentation and
-/// Permissions. Which streams reach the document is its pipelines' filters' to say.
+/// The editor for a Learning Flow document. It has four tabs: **Pipelines**, which it opens on, listing the
+/// Smart Pipelines that learn under the document and what each needs; **Setup**, every setting the document
+/// holds, on one page in the order a translation meets them (how it is learned, its quality checks, approving
+/// it, monitoring it in use); then Documentation and Permissions. Which streams reach the document is decided
+/// by its pipelines' processor filters, not by the document.
 ///
-/// The Feeds tab says, across its top, whether the document will learn anything ([Readiness]), worked out
-/// from the document as the Setup tab has it; its fixes are made in the Setup tab's sections, which is why
-/// the editor makes and owns both from the start.
+/// Across its top, the Pipelines tab says whether the document will learn anything ([Readiness]), worked out
+/// from the document as the Setup tab currently has it. Its fixes are made in the Setup tab's sections, which
+/// is why the editor creates and owns both tabs from the start.
 public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
 
     private static final TabData FEEDS = new TabDataImpl("Pipelines");
@@ -52,19 +53,21 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
 
     private final FeedsTabController feeds;
     private final SetupTabController setup;
-    /// The built-in default setups, which the readiness check names the approach against (Track 2 step 1c).
+    /// The default setups, fetched from the server, which the readiness check uses to name the document's
+    /// learning steps.
     private final FlowExamplesCache flowExamples;
-    /// Whether the document's own tab is the one shown in Stroom.
+    /// Whether this document's content tab is the one shown in Stroom.
     private boolean contentVisible = true;
 
-    /// Makes the editor, with its tabs.
+    /// Creates the editor, with its tabs.
     ///
     /// @param eventBus                 The application's event bus.
-    /// @param view                     Its component.
-    /// @param feedsProvider            Makes the Feeds tab.
-    /// @param setupProvider            Makes the Setup tab.
-    /// @param documentationTabProvider Makes the Documentation tab's editor.
-    /// @param permissionsProvider      Makes the Permissions tab.
+    /// @param view                     The tab panel the tabs are shown in.
+    /// @param feedsProvider            Creates the Pipelines tab.
+    /// @param setupProvider            Creates the Setup tab.
+    /// @param documentationTabProvider Creates the Documentation tab's editor.
+    /// @param permissionsProvider      Creates the Permissions tab.
+    /// @param flowExamples             Fetches and caches the default setups from the server.
     @Inject
     public LearningFlowEditor(final EventBus eventBus,
                                 final LinkTabPanel view,
@@ -78,7 +81,8 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         feeds = make(feedsProvider);
         setup = make(setupProvider);
 
-        // The feeds are what is saved, not what is being edited: learning runs under the saved document
+        // The Pipelines tab is given the saved document, not the one being edited, because learning runs
+        // under the saved document. So it has no write function
         addOwnedTab(FEEDS, feeds, FeedsTabController::read);
         addOwnedTab(SETUP, setup, SetupTabController::read, SetupTabController::write);
         addDocumentationTab(DOCUMENTATION,
@@ -91,18 +95,18 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         feeds.setOnFix(this::fix);
     }
 
-    /// Shows the Setup tab's AI model and instructions, e.g. from a pipeline whose feed waits because learning
-    /// is switched off.
+    /// Shows the Setup tab's AI model and instructions section, e.g. when opened from a pipeline whose feed is
+    /// waiting because learning is switched off.
     public void showLearning() {
         showSection(SetupSection.LEARNING);
     }
 
     @Override
     protected void onRead(final DocRef docRef, final LearningFlowDoc doc) {
-        // The default setups are the server's now (Track 2 step 1c), and the readiness check names which
-        // one the approach is, so they are fetched before it is drawn. Where they are already in hand
-        // this answers at once; where the fetch fails the approach reads as the document's own, which is
-        // what it says rather than a wrong name.
+        // The readiness check names which default setup the document's steps match, and the default setups
+        // are defined on the server, so they are fetched before it is drawn. If they have already been
+        // fetched the cache answers at once. If the fetch fails, the steps are described as the document's
+        // own setup rather than given a wrong name.
         flowExamples.get(examples -> {
             if (!isDisposed()) {
                 feeds.setReadiness(Readiness.of(doc, examples), false);
@@ -110,8 +114,9 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         }, taskMonitor());
     }
 
-    /// Whether the document will learn anything is worked out again each time the Feeds tab is shown, from
-    /// the document as the Setup tab has it, so that a change made there is seen before it is saved.
+    /// Each time the Pipelines tab is shown, whether the document will learn anything is worked out again from
+    /// the document as the Setup tab currently has it, so that the effect of a change made there is seen
+    /// before it is saved.
     @Override
     protected void afterSelectTab(final TabData tab) {
         if (FEEDS.equals(tab)) {
@@ -120,7 +125,7 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         feeds.setShowing(contentVisible && FEEDS.equals(tab));
     }
 
-    /// The Feeds tab is read again only while it is on screen.
+    /// The Pipelines tab is refreshed only while it is on screen.
     @Override
     public void onContentTabVisible(final boolean visible) {
         contentVisible = visible;
@@ -138,9 +143,9 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         }
     }
 
-    // A readiness check's fix: the Setup tab shown (which reads the document into it, if it hasn't been shown
-    // before) at the fix's section and, where the document can be changed, the change made there, for the
-    // person to see and save
+    // Applies a fix offered by the readiness check. It shows the Setup tab (which reads the document into it,
+    // if it hasn't been shown before) at the fix's section and, if the document can be edited, makes the
+    // change there for the person to see and save
     private void fix(final Fix fix) {
         final boolean editable = !Boolean.TRUE.equals(context(Contexts.READ_ONLY));
         showSection(fix.getSection());
@@ -150,7 +155,7 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
                     setup.switchLearningOn();
                 }
             }
-            // Once the tab is on the page and scrolled
+            // Deferred until the tab is on the page and scrolled
             case CHOOSE_MODEL -> Scheduler.get().scheduleDeferred(setup::focusModel);
             case USE_STANDARD_CHECKS -> {
                 if (editable) {
@@ -158,14 +163,14 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
                 }
             }
             case OPEN_APPROACH -> {
-                // Shown by its section
+                // Showing the section is all this fix does
             }
             default -> throw new IllegalArgumentException("Unknown fix " + fix);
         }
     }
 
-    /// A stopped run's suggestion followed on the Setup tab, from the pipeline whose run stopped: the limits,
-    /// the learning steps or the model.
+    /// Follows, on the Setup tab, a suggestion made when a pipeline's learning run stopped: to change the
+    /// limits, the learning steps or the AI model.
     ///
     /// @param action The suggestion's action.
     public void followSuggestion(final SuggestionAction action) {
@@ -182,7 +187,7 @@ public class LearningFlowEditor extends DocumentEditor<LearningFlowDoc> {
         }
     }
 
-    // The Setup tab shown, scrolled to a section once it is laid out
+    // Shows the Setup tab, scrolled to a section once it has been laid out
     private void showSection(final SetupSection section) {
         selectTab(SETUP);
         Scheduler.get().scheduleDeferred(() -> setup.showSection(section));

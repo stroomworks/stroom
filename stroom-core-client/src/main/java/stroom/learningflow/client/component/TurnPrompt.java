@@ -27,9 +27,12 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// The content of the dialog that shows what a learning run's question was put to the model with
-/// (decision N9, Track 2 step 4): what a reader should know about it, then the prompt, rebuilt from the
-/// run's own words over its stream; or, where it can't be shown, why. [TurnPromptController] shows it.
+/// The content of the dialog that shows the prompt that was sent to the model for one question of a learning
+/// run.
+///
+/// Prompts are not stored. The server rebuilds the prompt from the templates and texts recorded for the run and
+/// from the run's stream. The dialog shows notes about the rebuilt prompt above the prompt itself, or, if the
+/// prompt cannot be shown, the reason why. [TurnPromptController] shows it.
 public class TurnPrompt extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -39,31 +42,32 @@ public class TurnPrompt extends Component {
     @UiField
     TextArea prompt;
 
-    /// Makes the dialog's content, saying the prompt is being rebuilt.
+    /// Makes the dialog's content, initially showing that the prompt is being rebuilt.
     public TurnPrompt() {
         initWidget(BINDER.createAndBindUi(this));
         showRebuilding();
     }
 
-    /// Says the prompt is being rebuilt, which reads the stream and walks the run again.
+    /// Shows that the prompt is being rebuilt. Rebuilding reads the stream and replays the run, so it can take
+    /// a while.
     public void showRebuilding() {
         said.setText("Rebuilding the prompt from the run's own words and its stream…");
         prompt.setVisible(false);
     }
 
-    /// Shows the prompt, with what a reader should know about it above it.
+    /// Shows the rebuilt prompt, with notes about it above it.
     ///
-    /// @param text  The prompt.
-    /// @param notes What to know about it.
+    /// @param text  The prompt as it was sent to the model.
+    /// @param notes Notes about the rebuilt prompt, e.g. that Stroom has been upgraded since the run.
     public void showPrompt(final String text, final List<String> notes) {
         said.setText(String.join(" ", notes));
         prompt.setValue(text);
         prompt.setVisible(true);
     }
 
-    /// Says why the prompt can't be shown.
+    /// Shows the reason the prompt cannot be shown, in place of the prompt.
     ///
-    /// @param reason Why.
+    /// @param reason The reason, in words for the user.
     public void showRefusal(final String reason) {
         said.setText(reason);
         prompt.setVisible(false);

@@ -20,13 +20,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * Why a person rejected a draft (A25): the reason is the learner's, and the model is not asked about that
- * learner again until somebody says otherwise.
- * <p>
- * The rejection is offered in the Supervisor view, beside the attempt that drafted it (A28), and this is
- * what it carries.
- */
+/// The reason a person gives for rejecting a draft binding, or for retracting one that is serving, sent from
+/// the Supervisor.
+///
+/// Rejecting a draft gives the learner up with this reason, so the model is not asked about that learner
+/// again until someone sends it back to learn, and the streams waiting on it error with the reason. Retracting
+/// a serving binding records the reason against it, and the learner learns afresh from its next stream.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class RejectRequest {
 

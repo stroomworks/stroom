@@ -30,10 +30,12 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// One rule of a step on the Setup tab, read as a sentence: "If *the records don't read all the input*
-/// then *go back to 2 · Find what one record is*", both chosen from menus, and a button to remove it.
-/// The menus offer only what the step can raise and where it can go ([ApproachFlow#conditions],
-/// [ApproachFlow#destinations]); the step card fills them.
+/// One rule of a learning-flow step on the Setup tab, shown as a sentence such as "If *the records don't read
+/// all the input* then *go back to 2 · Find what one record is*", with a button to remove it.
+///
+/// The condition and the destination are each chosen from a menu. The menus offer only the outcomes the step
+/// can produce and the places it can go ([ApproachFlow#conditions], [ApproachFlow#destinations]); the step
+/// card ([StepCard]) fills them.
 public class RuleRow extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -66,11 +68,12 @@ public class RuleRow extends Component {
 
     /// Shows the rule.
     ///
-    /// @param conditions   What it may fire on.
-    /// @param chosen       What it fires on.
-    /// @param destinations Where it may go.
-    /// @param goes         Where it goes.
-    /// @param number       Its place among the step's rules, counted from one, which names its menus.
+    /// @param conditions   The conditions the rule may be triggered by, for the condition menu.
+    /// @param chosen       The condition the rule is triggered by.
+    /// @param destinations The places the rule may go to, for the destination menu.
+    /// @param goes         The place the rule goes to.
+    /// @param number       The rule's position among the step's rules, counted from one, used in the menus'
+    ///                     accessible names.
     public void setRule(final List<Condition> conditions,
                         final Condition chosen,
                         final List<Destination> destinations,
@@ -87,12 +90,12 @@ public class RuleRow extends Component {
         remove.setTitle("Remove rule " + number);
     }
 
-    /// @param onCondition Told what the rule now fires on, when the user chooses it.
+    /// @param onCondition Called with the new condition when the user chooses one.
     public void setOnCondition(final Consumer<Condition> onCondition) {
         this.onCondition = onCondition;
     }
 
-    /// @param onDestination Told where the rule now goes, when the user chooses it.
+    /// @param onDestination Called with the new destination when the user chooses one.
     public void setOnDestination(final Consumer<Destination> onDestination) {
         this.onDestination = onDestination;
     }
@@ -102,9 +105,9 @@ public class RuleRow extends Component {
         this.onRemove = onRemove;
     }
 
-    /// Puts the focus on one of its menus, e.g. after the card is redrawn under it.
+    /// Puts the keyboard focus on one of the rule's menus, e.g. to restore it after the step card is redrawn.
     ///
-    /// @param onDestinationMenu Whether the destination's menu, else the condition's.
+    /// @param onDestinationMenu True to focus the destination menu, false to focus the condition menu.
     public void focus(final boolean onDestinationMenu) {
         if (onDestinationMenu) {
             destination.focus();

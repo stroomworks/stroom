@@ -22,8 +22,10 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// A57, A78, A79: a stream that has waited past the document's maximum deferral age is raised, and still
-/// waits; the flag is computed as the row is read.
+/// Tests that a stream that has waited longer than the document's maximum deferral age is flagged as raised.
+///
+/// A raised stream goes on waiting; the flag only draws attention to it. It is computed from the stream's age
+/// when the row is read, not stored.
 class TestDeferralRaised {
 
     @Test

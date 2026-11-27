@@ -23,10 +23,11 @@ import stroom.svg.shared.SvgImage;
 
 import jakarta.inject.Inject;
 
-/// A branch off a fragment's parser during a serving run: the parser's output goes to the split and the
-/// transform as it always did, and to the tap as well, which keeps the record being transformed so that
-/// a record whose output falls short can be shown as the parser cut it (design 04 §4). Added by the
-/// runner and no part of the fragment.
+/// An internal pipeline element that [PipelineFragmentRunner] adds as a second child of a fragment's
+/// parser during a serving run. The parser's output still goes to the split and the transform, and also
+/// to this tap, which forwards it to the handler held by [FragmentTap]. That handler keeps the record
+/// currently being transformed, so that a record whose output falls short of the bar can be shown as the
+/// parser produced it. It is not part of the stored fragment.
 @ConfigurableElement(
         type = FragmentTapFilter.TYPE,
         roles = {

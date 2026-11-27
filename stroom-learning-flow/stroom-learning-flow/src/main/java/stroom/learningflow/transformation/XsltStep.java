@@ -22,11 +22,11 @@ import stroom.pipeline.shared.XsltDoc;
 
 import java.util.Optional;
 
-/// The `XSLTFilter` element as a step of the A21 conversation, described but not run: what it is called,
+/// Describes the `XSLTFilter` element as a step of a learning session, without running it: its element type,
 /// the id it takes in a fragment and the document it is configured with.
 ///
-/// A node runs it in a pipeline, wrapped in [stroom.learningflow.element.PipelineStepRunner], which takes
-/// this description and replaces what the step does. The Tier 1 harness runs it with Saxon directly,
+/// A node runs the stylesheet in a real pipeline, through [stroom.learningflow.element.PipelineStepRunner],
+/// which uses this description but replaces [#run]. The scenario test harness runs it with Saxon directly,
 /// through the test fixture `StandInXsltStep`.
 public final class XsltStep implements StepRunner {
 
@@ -51,7 +51,7 @@ public final class XsltStep implements StepRunner {
         return Optional.of(CONFIGURED);
     }
 
-    /// Not run here: a stylesheet is run in a pipeline, by the runner that wraps this description.
+    /// Not supported: a stylesheet is run in a pipeline, by the runner that wraps this description.
     ///
     /// @throws UnsupportedOperationException Always.
     @Override

@@ -40,9 +40,11 @@ import java.util.List;
 import java.util.Optional;
 import javax.xml.transform.sax.TransformerHandler;
 
-/// Stroom's `JSONParser` as a step: JSON in, the XML of the `http://www.w3.org/2013/XSL/json` vocabulary out,
-/// through the same reader the pipeline element uses. It takes no configuration, so it is a run-only step
-/// (design 01 §10): the chain question may choose it, and no configuration question is asked for it.
+/// Runs Stroom's `JSONParser` as one step of a learning session. It reads JSON and writes XML in the
+/// `http://www.w3.org/2013/XSL/json` vocabulary, using the same reader as the pipeline element.
+///
+/// The parser takes no configuration, so it is a run-only step: the chain question may choose it, but no
+/// configuration question is asked for it.
 public final class JsonStep implements StepRunner {
 
     public static final String ELEMENT_TYPE = JSONParser.ELEMENT_TYPE;
@@ -68,7 +70,7 @@ public final class JsonStep implements StepRunner {
         return true;
     }
 
-    /// JSON, so the split question is the array whose items are records (A31).
+    /// The input is JSON, so the split question asks the model which array holds the records.
     @Override
     public InputKind consumes() {
         return InputKind.JSON;

@@ -20,15 +20,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/// One thing wrong with a learning flow (A88): what, and which step it is about where it is about one,
-/// so that an editor can paint the step rather than list the message beneath the whole.
+/// One thing wrong with a learning flow: the message, and the step it is about where it is about one, so
+/// that the editor can mark that step rather than list the message beneath the whole flow.
 ///
-/// A problem stops the flow being held; a warning is only said, so that a flow the user is still working on
-/// can be saved.
+/// A problem stops the document being saved; a warning is only shown, so that a flow the user is still
+/// working on can be saved.
 ///
-/// Only [LearningFlow#check(List)] raises warnings, and only the Setup tab calls it, so the warnings are
-/// the editor's. [LearningFlow#problems()], which the store refuses a save with, asks [LearningFlow#check()],
-/// which raises none; it filters on severity so that it still refuses only problems if a warning ever
+/// Only [LearningFlow#check(List)] raises warnings, and only the Setup tab calls it, so warnings are shown
+/// only in the editor. [LearningFlow#problems()], which a save is refused with, uses [LearningFlow#check()],
+/// which raises none; it still filters on severity, so that only problems refuse a save if a warning ever
 /// reaches it.
 public class FlowProblem {
 
@@ -37,7 +37,7 @@ public class FlowProblem {
     private final String message;
     private final Severity severity;
 
-    /// Makes a problem, which stops the flow being held.
+    /// Creates a problem, which stops the document being saved.
     ///
     /// @param step    The index of the step it is about, or null for the flow as a whole.
     /// @param message What is wrong.
@@ -45,11 +45,11 @@ public class FlowProblem {
         this(step, message, Severity.PROBLEM);
     }
 
-    /// Makes a problem or a warning.
+    /// Creates a problem or a warning.
     ///
     /// @param step     The index of the step it is about, or null for the flow as a whole.
     /// @param message  What is wrong.
-    /// @param severity Whether it stops the flow being held.
+    /// @param severity Whether it stops the document being saved.
     public FlowProblem(final Integer step, final String message, final Severity severity) {
         this.step = step;
         this.message = Objects.requireNonNull(message);
@@ -65,18 +65,18 @@ public class FlowProblem {
         return message;
     }
 
-    /// @return Whether this stops the flow being held, or is only said.
+    /// @return Whether this stops the document being saved, or is only shown.
     public Severity getSeverity() {
         return severity;
     }
 
-    /// @return Whether this stops the flow being held.
+    /// @return Whether this stops the document being saved.
     public boolean isProblem() {
         return severity == Severity.PROBLEM;
     }
 
-    /// The messages of one severity alone, in order. A warning doesn't stop a flow being held, so what the
-    /// store refuses a save with is the problems'.
+    /// The messages of one severity only, in order. A warning doesn't stop a save, so a save is refused with
+    /// the messages of the problems alone.
     ///
     /// @param problems The problems.
     /// @param severity The severity wanted.
@@ -117,11 +117,11 @@ public class FlowProblem {
     // --------------------------------------------------------------------------------
 
 
-    /// Whether something wrong with a flow stops it being held, or is only said.
+    /// Whether something wrong with a flow stops the document being saved, or is only shown.
     public enum Severity {
-        /// The flow cannot be held until it is put right.
+        /// The document cannot be saved until this is put right.
         PROBLEM,
-        /// The flow can be held; the user is told so that they can put it right.
+        /// The document can be saved; the user is told so that they can put it right.
         WARNING
     }
 }

@@ -32,21 +32,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/// The learning flow (A33, A34, A37; design 01 §10.2): the graph of questions, checks and transitions the
-/// Learning Flow document holds, and the templates it overrides. An attempt follows the flow; what it
-/// says and hears is its conversation. A document naming no steps is read as [FlowExample#DIRECT]'s.
+/// The learning flow a Learning Flow document holds: the graph of steps (questions and their transitions) that
+/// a learning session walks, plus the prompt templates the document overrides. What a session asks the model
+/// and hears back while following the flow is its conversation. A flow with no steps is invalid; it is not
+/// given a default set of steps.
 @JsonPropertyOrder({"steps", "templates", "builtInVersion"})
 @JsonInclude(Include.NON_NULL)
 public class LearningFlow {
 
-    /// The document's own steps, in the order they are first entered.
+    /// The document's own steps, in the order a session first reaches them.
     @JsonProperty
     private final List<FlowStep> steps;
     /// Only the templates this document changes.
     @JsonProperty
     private final Map<Template, String> templates;
-    /// The version of the built-in text this document was last saved against, so that a run read back can be
-    /// told apart from a later default; null until saved by a node that knows.
+    /// The version of the built-in template text this document was last saved against, so that a session read
+    /// back later can be told apart from one run under a newer default; null until saved by a server that sets
+    /// it.
     @JsonProperty
     private final Integer builtInVersion;
 
@@ -54,16 +56,16 @@ public class LearningFlow {
     public LearningFlow(@JsonProperty("steps") final List<FlowStep> steps,
                         @JsonProperty("templates") final Map<Template, String> templates,
                         @JsonProperty("builtInVersion") final Integer builtInVersion) {
-        // No steps is no steps (Track 2 step 1c): the built-in setups are the server's now, and a flow
-        // that quietly became `Direct` would be a Learning Flow behaving in a way nobody chose. An empty
-        // flow already has a meaning — [#check] opens with "The flow has no steps" — which the Setup
-        // tab, the readiness banner and the store's A33 refusal all say.
+        // An empty flow stays empty rather than being given the Direct example's steps, because a flow that
+        // silently gained steps would behave in a way nobody chose. An empty flow is reported as invalid by
+        // [#check] ("The flow has no steps"), which the Setup tab, the readiness banner and the refusal to
+        // save all show.
         this.steps = Collections.unmodifiableList(new ArrayList<>(steps == null
                 ? List.of()
                 : steps));
         final Map<Template, String> overrides = new EnumMap<>(Template.class);
         if (templates != null) {
-            // A blank override is no override: the document keeps following the built-in.
+            // A blank override is dropped, so the document keeps using the built-in text.
             templates.forEach((template, text) -> {
                 if (text != null && !text.trim().isEmpty()) {
                     overrides.put(template, text);
@@ -74,8 +76,7 @@ public class LearningFlow {
         this.builtInVersion = builtInVersion;
     }
 
-    /// A flow with an example's steps as its own and the built-in text.
-    /// @return The steps in the order they are first entered.
+    /// @return The steps in the order a session first reaches them.
     public List<FlowStep> getSteps() {
         return steps;
     }
@@ -90,7 +91,8 @@ public class LearningFlow {
         return builtInVersion;
     }
 
-    /// The step `goto` reaches by a name, or null where no step has it.
+    /// @param id A step name, as a transition gives it.
+    /// @return The step with that name, or null where no step has it.
     public FlowStep step(final String id) {
         for (final FlowStep step : steps) {
             if (step.effectiveId().equals(id)) {
@@ -100,12 +102,17 @@ public class LearningFlow {
         return null;
     }
 
-    /// What is wrong with the steps, structurally: CHAIN first, once and without transitions, CONFIGURE or
-    /// ADMIT last, SPLIT and TARGET at most once each, every id unique and none a reserved name, every `goto`
-    /// naming a step, `end` or an exit. Empty where the steps are a flow the stage can hold. Each problem
-    /// names the step it is about where it is about one (A88), and is said in the words of [FlowWords]: a
-    /// person reads it on the Setup tab and when a save is refused. The templates' variables are the
-    /// server's to check, since it holds the built-in text.
+    /// Checks the structure of the steps. The rules are: there is at least one step; a CHAIN step comes first,
+    /// once and without transitions; a CONFIGURE or ADMIT step comes last; there is at least one CONFIGURE step,
+    /// and every other kind appears at most once; every id is unique and none is a reserved name; every
+    /// transition goes to a step, `end` or an exit; and only a transition for spent candidates goes to the
+    /// ADMIT (fallback) step.
+    ///
+    /// Each problem names the step it is about, where it is about one, so that the editor can mark that step,
+    /// and uses the wording of [FlowWords], since a person reads it on the Setup tab and when a save is refused.
+    /// The templates' variables are checked on the server, which holds the built-in text.
+    ///
+    /// @return The problems; empty where the steps make a valid flow.
     public List<FlowProblem> check() {
         final List<FlowProblem> problems = new ArrayList<>();
         if (steps.isEmpty()) {
@@ -145,14 +152,15 @@ public class LearningFlow {
             final FlowStep step = steps.get(i);
             final String named = FlowWords.capitalise(FlowWords.step(steps, i));
             // A step's id is never shown or edited; a step added on the Setup tab is given one of its own,
-            // so deleting the step and adding it again is the way to put a bad one right.
+            // so deleting the step and adding it again is how a person fixes a bad one.
             if (Transition.isReserved(step.effectiveId())) {
                 problems.add(new FlowProblem(i, named + " has the id '" + step.effectiveId()
                                                 + "', which the flow keeps for itself; delete the step and add it "
                                                 + "again"));
             }
             final FlowStep first = ids.putIfAbsent(step.effectiveId(), step);
-            // Two of a kind that may appear once have been reported above, unless one was named on purpose.
+            // Two steps of a kind that may appear only once have already been reported above, unless one of
+            // them was given an explicit id.
             final boolean reported = first != null && first.getKind() == step.getKind()
                                      && step.getKind() != QuestionKind.CONFIGURE
                                      && first.getId() == null && step.getId() == null;
@@ -173,8 +181,8 @@ public class LearningFlow {
                 }
             }
             if (step.getKind() == QuestionKind.CHAIN && !step.getTransitions().isEmpty()) {
-                // No later step can run without a chain: a refused chain is re-asked, and one whose candidates
-                // are spent abandons.
+                // No later step can run without a chain, so a refused chain is asked again, and one whose
+                // candidates are spent leaves the flow by its default exit.
                 problems.add(new FlowProblem(i, "'" + FlowWords.stepName(QuestionKind.CHAIN, null)
                                                 + "' can't have rules: nothing else can run until the elements are "
                                                 + "chosen"));
@@ -188,9 +196,9 @@ public class LearningFlow {
                                                     + "' on " + FlowWords.step(steps, i) + " goes to '"
                                                     + transition.getGoTo() + "', which isn't a step"));
                 } else if (ids.get(transition.getGoTo()).getKind() == QuestionKind.ADMIT && !transition.onSpent()) {
-                    // The exhaustion step is reached when the candidates are spent and by no other route
-                    // (design 04 §4): a flow that sent a model there sooner would be asking for the
-                    // admitted form before the trying was done.
+                    // The fallback step may be reached only when a step's candidates are spent. A flow that
+                    // went there sooner would let the model write marked Unknowns before it had finished
+                    // trying to translate the records.
                     problems.add(new FlowProblem(i, "The rule 'if " + FlowWords.condition(transition.getOn())
                                                     + "' on " + FlowWords.step(steps, i) + " uses the fallback, "
                                                     + "which only a rule for running out of tries may"));
@@ -200,9 +208,9 @@ public class LearningFlow {
         return problems;
     }
 
-    /// What is wrong with the flow, with the warnings a document's checks raise: a rule that fires on a
-    /// check falling short never fires where that check is Off (the one model of checks). The warnings are
-    /// about a step, so that its card can say so; they don't stop the flow being held.
+    /// Checks the flow as [#check()] does, and adds warnings that depend on the document's checks: a rule
+    /// (transition) that fires when a check falls short can never fire if that check is Off. Each warning
+    /// names its step, so that the step's card can show it; warnings do not stop the document being saved.
     ///
     /// @param checks The document's checks; null or empty for none, when only [#check()]'s problems are
     ///               returned.
@@ -231,17 +239,18 @@ public class LearningFlow {
         return problems;
     }
 
-    /// The messages of [#check()] that stop the flow being held, in order: what the store refuses a save
-    /// with.
+    /// The messages of the problems [#check()] finds, in order, which are what a save is refused with.
     ///
-    /// [#check()] raises no warnings, so the filter changes nothing today; it is here so that the store
-    /// still refuses only problems if a warning ever reaches this path. The warnings a document's checks
-    /// raise come from [#check(List)], which only the Setup tab asks.
+    /// [#check()] raises no warnings, so the severity filter currently changes nothing; it is there so that
+    /// a save is still refused only for problems if a warning ever reaches this path. Warnings that depend on
+    /// the document's checks come from [#check(List)], which only the Setup tab calls.
+    ///
+    /// @return The problem messages; empty where the flow is valid.
     public List<String> problems() {
         return FlowProblem.messages(check(), FlowProblem.Severity.PROBLEM);
     }
 
-    /// The element types the chain question chooses from (A21, A95): the Chain step's, or every learnable one
+    /// @return The element types the chain question chooses from: the Chain step's, or every learnable one
     /// where it names none or the flow has no Chain step.
     public List<String> allowedElements() {
         for (final FlowStep step : steps) {
@@ -252,7 +261,9 @@ public class LearningFlow {
         return FlowStep.LEARNABLE_ELEMENTS;
     }
 
-    /// This flow with its Chain step naming other elements; a flow with no Chain step is returned as it is.
+    /// @param elements The element types the Chain step should name.
+    /// @return A copy of this flow with its Chain step naming those elements, or this flow unchanged where it
+    /// has no Chain step.
     public LearningFlow withChainElements(final List<String> elements) {
         final List<FlowStep> changed = new ArrayList<>();
         boolean found = false;
@@ -269,17 +280,20 @@ public class LearningFlow {
                 : this;
     }
 
-    /// This flow with other steps.
+    /// @param steps The new steps.
+    /// @return A copy of this flow with those steps.
     public LearningFlow withSteps(final List<FlowStep> steps) {
         return new LearningFlow(steps, templates, builtInVersion);
     }
 
-    /// This flow with other template overrides.
+    /// @param templates The new template overrides.
+    /// @return A copy of this flow with those overrides.
     public LearningFlow withTemplates(final Map<Template, String> templates) {
         return new LearningFlow(steps, templates, builtInVersion);
     }
 
-    /// This flow stamped with the built-in text's version it is saved against.
+    /// @param version The version of the built-in template text the flow is being saved against.
+    /// @return A copy of this flow recording that version.
     public LearningFlow withBuiltInVersion(final int version) {
         return new LearningFlow(steps, templates, version);
     }

@@ -22,15 +22,15 @@ import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
 import stroom.pipeline.xmlschema.XmlSchemaStore;
 import stroom.xmlschema.shared.XmlSchemaDoc;
 
-/// The schema version a scenario's canned answers actually write (task 7, decision D1).
+/// Finds the event-logging schema version that the scenario tests' canned answers are written for.
 ///
-/// A new document starts on the **latest** event-logging installed, and a test node installs all seven
-/// versions, so a document made here targets 4.1.0. A scenario's answers are not a model's: they are
-/// fixture files, and every one of them writes `Version="3.0.0"` — which event-logging 4.1.0 refuses
-/// outright, its `VersionSimpleType` allowing the single value `"4.1.0"`.
+/// A new Learning Flow document targets the latest installed event-logging schema, and a test node
+/// installs all seven versions, so a document made in a test targets 4.1.0. The canned answers are fixture
+/// files rather than a model's output, and every one writes `Version="3.0.0"`, which 4.1.0 rejects because
+/// its `VersionSimpleType` allows only `"4.1.0"`.
 ///
-/// So a scenario says which version its own fixtures write, rather than relying on being judged against
-/// a whole group. A scenario about a live model would say nothing and take the default.
+/// A scenario therefore sets its document's target schema to the version its fixtures write. A test that
+/// uses a live model would not need to and would keep the default.
 public final class TargetSchemaFixture {
 
     /// The system id of the version the module's fixtures and demo content are written for.
@@ -39,7 +39,9 @@ public final class TargetSchemaFixture {
     private TargetSchemaFixture() {
     }
 
-    /// @param schemaStore A node's schema store.
+    /// Looks up the event-logging 3.0.0 schema document in a test node.
+    ///
+    /// @param schemaStore The test node's schema store.
     /// @return The `XMLSchema` document for the version the fixtures write.
     public static DocRef eventLogging300(final XmlSchemaStore schemaStore) {
         final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();

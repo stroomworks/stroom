@@ -38,15 +38,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-/// The stage pane (A30, design 01 §11.7): what a supervised stage did with the stream at the stepping
-/// cursor, shown where the code pane would be. Its decision; the stream, its document, what serves it and
-/// the record, as terms; the fragment that processed it, as a link; what the scorers made of each step of
-/// the chain; and every exchange with the model where the stream was learned. Read only.
-/// [StageDecisionPaneController] fills it.
+/// The pane the pipeline stepper shows for a Smart Pipeline element, in place of the code pane other elements
+/// have. It shows what the element did with the stream at the current stepping position.
+///
+/// It shows the element's decision; a list of details (the stream, the Learning Flow document, the binding
+/// that serves it, its score and the record boundary); a link to the fragment that processed the stream; the
+/// scores for each element of the fragment's chain; and, if the stream was learned from, every exchange with
+/// the model. The pane is read-only. [StageDecisionPaneController] fills it.
 public class StageDecisionPane extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
-    // A row's term and its value, apart, in the scores and the conversation
+    // CSS classes for a row's term and its value in the scores and transcript tables
     private static final Attribute TERM = Attribute.className("stage-decision-pane__term");
     private static final Attribute VALUE = Attribute.className("stage-decision-pane__value");
     private static final SafeHtml DL = SafeHtmlUtils.fromSafeConstant("dl");
@@ -73,14 +75,15 @@ public class StageDecisionPane extends Component {
         fragment.setOnClick(() -> onOpenFragment.run());
     }
 
-    /// @param text What the stage decided, in its own words; empty for nothing.
+    /// @param text The element's decision, as the element worded it; null or empty for none.
     public void setDecision(final String text) {
         decision.setText(NullSafe.string(text));
     }
 
-    /// Shows the stream and what served it as terms, in order, e.g. "Feed", "Document", "Score".
+    /// Shows details of the stream and what served it as a list of terms, in order, e.g. "Feed", "Document",
+    /// "Score".
     ///
-    /// @param terms The terms and their values; empty for nothing.
+    /// @param terms The terms and their values; empty to show nothing.
     public void setSummary(final Map<String, String> terms) {
         if (terms.isEmpty()) {
             summary.setHTML(SafeHtmlUtils.EMPTY_SAFE_HTML);
@@ -96,24 +99,26 @@ public class StageDecisionPane extends Component {
         summary.setHTML(html.toSafeHtml());
     }
 
-    /// @param name The name of the fragment the stream was processed by, offered as a link; null where
-    ///             nothing was bound.
+    /// @param name The name of the fragment that processed the stream, shown as a link; null if no binding
+    ///             served it, which hides the link.
     public void setFragment(final String name) {
         fragment.setText(NullSafe.string(name));
         fragment.setVisible(name != null);
     }
 
-    /// @param onOpenFragment Run when the fragment's link is pressed.
+    /// @param onOpenFragment Run when the fragment's link is clicked.
     public void setOnOpenFragment(final Runnable onOpenFragment) {
         this.onOpenFragment = onOpenFragment;
     }
 
-    /// What each check made of each step of the chain (design 01 §8.4; the one model of checks), in chain
-    /// order: every check that ran, with the value it gave, the bar it had to clear, and whether it was a
-    /// gate or only advice. A step passes when every gate passes, so there is no total to show; the figure
-    /// beside the step is the average of the checks that ran.
+    /// Shows the scores for each element of the fragment's chain, in chain order. For each element it lists
+    /// every check that ran, with the score it gave, the threshold it had to meet, and whether it was a gate
+    /// or only advisory.
     ///
-    /// @param stages The verdicts, or empty for none.
+    /// An element passes when every gate passes, so there is no overall total; the figure shown beside each
+    /// element is the average of the checks that ran.
+    ///
+    /// @param stages The verdicts, one per element; null or empty to show nothing.
     public void setVerdicts(final List<StageVerdict> stages) {
         if (NullSafe.isEmptyCollection(stages)) {
             verdicts.setHTML(SafeHtmlUtils.EMPTY_SAFE_HTML);
@@ -147,10 +152,10 @@ public class StageDecisionPane extends Component {
         verdicts.setHTML(html.toSafeHtml());
     }
 
-    /// Every exchange with the model, where this stream was learned. Empty where it was served, which is
-    /// every stream after the first of its learner.
+    /// Shows every exchange with the model, if this stream was learned from. It is empty if the stream was
+    /// served by an existing translation, which is the case for every stream after the first a learner sees.
     ///
-    /// @param turns The turns, or empty for none.
+    /// @param turns The turns; null or empty to show nothing.
     public void setTranscript(final List<SupervisorTurn> turns) {
         if (NullSafe.isEmptyCollection(turns)) {
             transcript.setHTML(SafeHtmlUtils.EMPTY_SAFE_HTML);

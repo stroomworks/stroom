@@ -8,8 +8,8 @@
 
   <xsl:template match="/">
     <Events xsi:schemaLocation="event-logging:3 file://event-logging-v3.0.0.xsd" Version="3.0.0">
-      <!-- One record is one object with a time: a top-level value in JSON lines, an item of the events
-           array in the document form -->
+      <!-- One record is one object with a time: a top-level value in the JSON lines form, or an item of
+           the events array in the single-document form -->
       <xsl:apply-templates select="//map[string/@key = 'time']"/>
     </Events>
   </xsl:template>

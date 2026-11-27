@@ -23,11 +23,12 @@ import stroom.learningflow.LearningFlowDbConfig;
 import java.util.List;
 import javax.sql.DataSource;
 
-/// The tables of A26 and the connection to them, and nothing else. This module is installed in the
-/// bootstrap injector, which holds only data sources and configuration so that it can run the Flyway
-/// migrations before the application exists: anything bound here that asks for an application service —
-/// a cache manager, the entity event bus — stops the node before it starts. Those bindings live in
-/// [LearningFlowDaoModule], which the application injector installs.
+/// The Guice module that provides the Learning Flow's database connection and runs its Flyway migrations.
+///
+/// It binds nothing else, because it is installed in the bootstrap injector, which holds only data sources
+/// and configuration so that it can run the migrations before the application exists. Anything bound here
+/// that needed an application service, such as a cache manager or the entity event bus, would stop the
+/// node starting. Those bindings are in [LearningFlowDaoModule], which the application injector installs.
 public class LearningFlowDbModule
         extends AbstractFlyWayDbModule<LearningFlowDbConfig, LearningFlowDbConnProvider> {
 

@@ -18,12 +18,12 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/// The checks that judge a candidate (A37; design 01 §10.2; the one model of checks,
-/// `docs/learning-flow-checks-model-design.md`): each is Off, Advice or Gate on the Learning Flow
-/// ([CheckSetting]), and each step check is the source of a `<check>-short` outcome. Most wrap a scorer of
-/// §8.4; `WHOLENESS`, `PRESERVATION` and `FIDELITY` are judged by the conversation itself, and
-/// `REGRESSION` (the regression corpus) when a relearn or Improve is promoted. `COMPILE` is always a gate.
-/// A new check is new code.
+/// The checks that judge a candidate translation. Each is set to Off, Advice or Gate on the Learning Flow
+/// document (see [CheckSetting]), and each check that judges a step produces its own `<check>-short` outcome
+/// when a candidate falls short of it. Most are measured by a scorer. `WHOLENESS`, `PRESERVATION` and
+/// `FIDELITY` are judged by the learning conversation itself, and `REGRESSION` (the regression corpus) when a
+/// relearning or an improvement is promoted over an existing binding. `COMPILE` is always a gate. Adding a check
+/// means writing new code.
 public enum Check implements HasDisplayValue {
     COMPILE("compile", "Compile", true, 1.0, false),
     COVERAGE("coverage", "Input coverage", true, 0.9, false),
@@ -41,8 +41,7 @@ public enum Check implements HasDisplayValue {
     REGRESSION("regression", "Regression corpus", false, null, false);
 
     private final String displayValue;
-    /// The check's name as a message or a list shows it, e.g. "Input coverage": the name its scorer had
-    /// before the one model of checks, so that what people read is unchanged.
+    /// The check's name as a message or a list shows it, e.g. "Input coverage".
     private final String name;
     private final boolean scored;
     private final Double defaultThreshold;
@@ -71,9 +70,9 @@ public enum Check implements HasDisplayValue {
         return name;
     }
 
-    /// @return Whether a scorer measures this check, so that it takes parameters and a scorer must be
-    ///         installed for it. The rest — whole records, keeping what the targets need, matching the
-    ///         agreed targets, the regression corpus — are judged by the conversation or by promotion.
+    /// @return Whether a scorer measures this check, so that it may take parameters and a scorer must be
+    ///         installed for it. The rest (whole records, keeping what the targets need, matching the
+    ///         agreed targets, the regression corpus) are judged by the conversation or by promotion.
     public boolean isScored() {
         return scored;
     }
@@ -95,8 +94,9 @@ public enum Check implements HasDisplayValue {
         return judgesRecords;
     }
 
-    /// @return Whether this check judges a step of a flow, and so has an outcome a step's rule can name.
-    ///         The compile gate's outcome is its own, and the regression corpus judges promotion, not a step.
+    /// @return Whether this check judges a step of a flow, and so has an outcome a step's rule (transition)
+    ///         can name. The compile check has its own outcome, `compile-failed`, and the regression corpus
+    ///         judges promotion, not a step.
     public boolean isStepCheck() {
         return this != COMPILE && this != REGRESSION;
     }

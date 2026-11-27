@@ -18,15 +18,16 @@ package stroom.learningflow.stage;
 
 import java.util.Map;
 
-/// The prompts a run's turns were put to the model with, rebuilt from its recorded words over its stream
-/// (decision N9): what [Stage#rebuild] returns.
+/// The prompts that were sent to the model for a session's turns, rebuilt from the session's recorded text
+/// and its input stream so that a person can inspect them. Prompts are rebuilt rather than stored so that
+/// they are not a copy of the stream's data. Returned by [Stage#rebuild].
 ///
-/// @param prompts         The prompt each turn of the run's first walk was put to the model with, by its
-///                        number: the system text with the guidance it carried, and the question.
-/// @param withdrawn       How many notes each turn carried that have since been withdrawn and so can't be
-///                        shown, by its number; turns with none are absent.
-/// @param olderThanBuiltIn Whether the run was asked against an older built-in template version, so the
-///                        checks' wording in the feedback may have changed since.
+/// @param prompts         The prompt sent for each turn of the session's first round, keyed by turn number:
+///                        the system text with the guidance it included, and the question.
+/// @param withdrawn       For each turn, keyed by turn number, how many pieces of guidance it included that
+///                        have since been withdrawn and so can't be shown; turns with none are absent.
+/// @param olderThanBuiltIn Whether the session ran against an older version of the built-in templates, in
+///                        which case the wording of the checks in the feedback may have changed since.
 public record Rebuilt(Map<Integer, String> prompts, Map<Integer, Integer> withdrawn, boolean olderThanBuiltIn) {
 
     public Rebuilt {

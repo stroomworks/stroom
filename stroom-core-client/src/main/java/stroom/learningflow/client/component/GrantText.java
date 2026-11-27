@@ -19,19 +19,19 @@ package stroom.learningflow.client.component;
 import stroom.learningflow.shared.LearningFlowDoc;
 import stroom.learningflow.shared.SupervisorAttempt;
 
-/// What a grant to a parked session (A65, A77) is said as: what the grant dialog ([GrantEditorController])
-/// tells a person before they grant, and what Learning Status says a paused run has been given
-/// (design 06 A145). Plain logic, so that it is tested without a browser.
+/// Builds the text describing a grant of more tokens or time to a parked session: what the grant dialog
+/// ([GrantEditorController]) tells a person before they grant more, and how the Learning Status tab describes
+/// what a paused run has been given. It is a plain class so that the wording can be tested without a browser.
 public final class GrantText {
 
     private GrantText() {
         // Static utility
     }
 
-    /// What the session has spent and been granted, against what its document allows.
+    /// Describes what the session has spent and been granted, compared with the budgets its document allows.
     ///
     /// @param attempt The parked session.
-    /// @param doc     Its document, for its budgets, or null where it has not been read.
+    /// @param doc     The session's Learning Flow document, for its budgets, or null if it has not been fetched.
     /// @return The sentence the grant dialog shows above its fields.
     public static String soFar(final SupervisorAttempt attempt, final LearningFlowDoc doc) {
         final StringBuilder text = new StringBuilder("It has spent ").append(attempt.getTokensSpent())
@@ -56,7 +56,7 @@ public final class GrantText {
                            + "carried on has the whole of it again.").toString();
     }
 
-    /// Minutes where the time is whole minutes, seconds otherwise.
+    /// Formats a duration in minutes if it is a whole number of minutes, or in seconds otherwise.
     ///
     /// @param ms The time in milliseconds.
     /// @return E.g. `5 min` or `90 s`.

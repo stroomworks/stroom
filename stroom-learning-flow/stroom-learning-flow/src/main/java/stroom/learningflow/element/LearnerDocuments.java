@@ -35,13 +35,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/// The document a learner runs under, as its pipeline says now (design 06 phase J slice 2b): the
-/// Learning Flow document named on the element, read from the pipeline as it is merged, so that one
-/// inherited from a parent counts.
+/// Finds the Learning Flow document a learner currently runs under, by reading the document property of
+/// the learner's Smart Pipeline element from its pipeline. The pipeline is read merged with its parents, so
+/// a document set on an inherited element counts.
 ///
-/// A request names the learner and the document separately, and what a person may do about a learner is
-/// decided by its pipeline. Asking the pipeline is what joins learner and document: rows record the
-/// document too, but only as of when they were written.
+/// A request about a learner names the learner and the document separately, and the permission checks
+/// are done against the document. Reading the pipeline is how the two are reliably linked: stored rows
+/// also record the document, but only as it was when they were written.
 public class LearnerDocuments {
 
     private final Provider<PipelineStore> pipelineStoreProvider;
@@ -57,15 +57,16 @@ public class LearnerDocuments {
         this.securityContextProvider = securityContextProvider;
     }
 
-    /// The document the learner's element names.
+    /// Gets the UUID of the Learning Flow document that the learner's element names.
     ///
-    /// Read as the processing user: the question is whether a learner belongs to a document the person
-    /// has already been permitted on, and the answer shows them nothing of the pipeline. A person may
-    /// supervise a document without being able to open every pipeline that uses it.
+    /// The pipeline is read as the processing user. The caller only needs to know whether the learner
+    /// belongs to a document the person already has permission on, and the answer reveals nothing else
+    /// about the pipeline. A person may supervise a document without being able to open every pipeline
+    /// that uses it.
     ///
     /// @param learner The learner.
-    /// @return The document, if the pipeline exists and its element of that id is a Learning Flow stage
-    /// naming one.
+    /// @return The document's UUID, if the pipeline exists and its element with that id is a Smart
+    /// Pipeline element naming a document.
     public Optional<String> documentOf(final Learner learner) {
         return elementOf(learner)
                 .map(element -> element.properties().get(LearningFlowElements.DOCUMENT_PROPERTY))
@@ -73,12 +74,12 @@ public class LearnerDocuments {
                 .map(DocRef::getUuid);
     }
 
-    /// The learner's element as its pipeline has it now, merged, so that a property inherited from a parent
-    /// counts: the pipeline, and the element's properties by name. Read as the processing user, as
-    /// [#documentOf] is.
+    /// Reads the learner's element from its pipeline as it is now, merged with its parents so that
+    /// inherited properties count. Like [#documentOf], it reads as the processing user.
     ///
     /// @param learner The learner.
-    /// @return The element, if the pipeline exists and its element of that id is a Learning Flow stage.
+    /// @return The pipeline and the element's properties, if the pipeline exists and its element with
+    /// that id is a Smart Pipeline element.
     Optional<Element> elementOf(final Learner learner) {
         return securityContextProvider.get().asProcessingUserResult(() -> read(learner));
     }
@@ -89,7 +90,7 @@ public class LearnerDocuments {
             pipeline = pipelineStoreProvider.get().readDocument(
                     new DocRef(PipelineDoc.TYPE, learner.pipelineUuid()));
         } catch (final RuntimeException e) {
-            // A pipeline that cannot be read has no element.
+            // A pipeline that cannot be read is treated as having no such element.
             return Optional.empty();
         }
         if (pipeline == null) {
@@ -119,14 +120,14 @@ public class LearnerDocuments {
 
     /// A learner's element, read from its pipeline.
     ///
-    /// @param pipeline   The pipeline, as stored: its name and uuid.
-    /// @param properties The element's properties as merged, by name.
+    /// @param pipeline   The pipeline as stored, which gives its name and UUID.
+    /// @param properties The element's properties after merging with parent pipelines, by name.
     record Element(PipelineDoc pipeline, Map<String, PipelinePropertyValue> properties) {
 
-        /// A property's text, where it has any: a blank value is an unset one.
+        /// Gets a property's string value, treating a blank value as unset.
         ///
         /// @param property The property's name.
-        /// @return Its value as text, stripped, or empty where it is unset or blank.
+        /// @return Its value with surrounding whitespace removed, or empty if it is unset or blank.
         Optional<String> text(final String property) {
             return Optional.ofNullable(properties.get(property))
                     .map(PipelinePropertyValue::getString)

@@ -47,13 +47,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Design 02 §5, scenario 31 (A28): a person answers a turn. The model's splitter keeps half of each
- * record and the attempt is given up at its candidate limit. A person puts their own configuration in
- * place of the model's — <em>edit and re-run from here</em> — and the attempt runs again from that turn:
- * everything before it is replayed from the record, the person's answer is given where the model's was,
- * and the model is asked only what comes after. The transcript says who answered each turn.
- */
+/// Tests a person answering a turn of a session in place of the model, so that they can rescue a session.
+///
+/// In the main case, the model's splitter keeps only half of each record and the attempt gives up at its
+/// candidate limit. A person replaces the model's configuration with their own ("edit and re-run from here")
+/// and the attempt runs again from that turn: the turns before it are replayed from the record, the person's
+/// answer is used where the model's was, and the model is asked only the questions that come after. The
+/// transcript records who answered each turn.
 class TestScenario31APersonAnswersATurn {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -67,7 +67,8 @@ class TestScenario31APersonAnswersATurn {
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc());
         final Input input = scenarios.inputs.put(stream(1L));
-        // One candidate, and the model spends it on a splitter that drops the fields the event needs.
+        // Only one candidate is allowed, and the model spends it on a splitter that drops fields the event
+        // needs.
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(TWO_FIELDS));
@@ -86,8 +87,8 @@ class TestScenario31APersonAnswersATurn {
         assertThat(theirs.answeredBy()).describedAs("answered by the model, as every turn was so far")
                 .isEqualTo(model);
 
-        // A person puts their own configuration in its place. Nothing runs here: the answer is written
-        // and the attempt waits, since a person's request must not wait on a model.
+        // A person puts their own configuration in its place. Nothing runs yet: the answer is stored and the
+        // attempt waits for the worker, because a person's web request must not wait on a model.
         final Script carrying = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
         scenarios.supervisorActions().amend(doc, abandoned.id(), theirs.number(), Scenarios.fenced(FOUR_FIELDS),
@@ -102,8 +103,8 @@ class TestScenario31APersonAnswersATurn {
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER))
                 .describedAs("re-running says the learner is not settled after all").isEmpty();
 
-        // The worker carries it on: everything before the person's turn is replayed, their answer is
-        // given where the model's was, and only what comes after is asked.
+        // The worker resumes the attempt: everything before the person's turn is replayed, their answer is
+        // used where the model's was, and only the questions after it are asked.
         assertThat(scenarios.worker(carrying).advance(10)).isEqualTo(1);
 
         carrying.verifyExhausted();
@@ -120,15 +121,15 @@ class TestScenario31APersonAnswersATurn {
 
     @Test
     void aTurnAnAttemptStoppedAtIsRecordedUnansweredSoThatAPersonCanAnswerIt() {
-        // A deferred attempt asks nobody and stops at its first question (A5). What it stopped at is a
-        // turn of its own, with no answer and no answerer: without it a person has nothing to answer.
+        // An attempt opened by a task asks nobody and stops at its first question. That question is recorded
+        // as a turn with no answer and no answerer, so that a person has something to answer.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc().copy()
                 .build());
         scenarios.inputs.put(stream(1L));
 
-        // The task opens the session and asks nobody (A60): it stops at the first question, recorded for
-        // whoever will answer it.
+        // The task opens the session without asking the model, because learning never runs on a processing
+        // thread. It stops at the first question, recorded for whoever will answer it.
         scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER, stream(1L));
 
         final Recorded parked = scenarios.attempts.forDocument(DOC, 10).get(0);
@@ -141,7 +142,7 @@ class TestScenario31APersonAnswersATurn {
         assertThat(stopped.answer()).isNull();
         assertThat(stopped.answeredBy()).describedAs("nobody has answered it").isNull();
 
-        // A person answers it instead, and the attempt goes on from what they said.
+        // A person answers it instead, and the attempt carries on from their answer.
         final Script carrying = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
@@ -160,9 +161,9 @@ class TestScenario31APersonAnswersATurn {
 
     @Test
     void aTurnNumberThatNamesNothingChangesNothing() {
-        // A person's mistyped turn number, or a stale one from a view: the attempt must be left exactly as
-        // it was. Opening it again first and failing afterwards would wipe what it came to and tell them
-        // their request had failed.
+        // For a mistyped turn number, or a stale one from an out-of-date view, the attempt must be left
+        // exactly as it was. Reopening it first and failing afterwards would wipe its outcome while telling
+        // the person their request had failed.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc());
         scenarios.inputs.put(stream(1L));
@@ -184,8 +185,8 @@ class TestScenario31APersonAnswersATurn {
         assertThat(scenarios.attempts.awaiting(10))
                 .describedAs("and the worker has nothing to pick up").isEmpty();
 
-        // The same of the wrong document: an attempt belongs to the document that raised it, and
-        // resetting another document's learner would clear state that has nothing to do with this.
+        // The same applies to the wrong document. An attempt belongs to the document that opened it, and
+        // resetting a learner through another document would clear state that has nothing to do with it.
         final LearningFlowDoc other = doc().copy().uuid("doc-2").build();
         assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(other, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
@@ -195,16 +196,16 @@ class TestScenario31APersonAnswersATurn {
 
     @Test
     void anAttemptBeingWalkedNowIsNotAmendedUnderneathTheWalk() {
-        // A45, A28: the answers of an attempt a node is carrying on are that walk's to give. A person's
-        // answer written into it would be overwritten by the next turn the walk records, and they would
-        // be told it had been taken.
+        // While a node is working through an attempt, only that node records its answers. A person's answer
+        // written into it would be overwritten by the next turn the node records, even though the person had
+        // been told it was accepted.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc().copy()
                 .build());
         scenarios.inputs.put(stream(1L));
         scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER, stream(1L));
         final Recorded parked = scenarios.attempts.forDocument(DOC, 10).get(0);
-        // A worker takes it up, and is walking it now.
+        // A worker claims the attempt and is working through it now.
         assertThat(scenarios.attempts.claimed(parked.id(), "node-1", Scenarios.NOW.toEpochMilli(),
                 Scenarios.NOW.toEpochMilli() + 60_000L)).isTrue();
 
@@ -213,7 +214,7 @@ class TestScenario31APersonAnswersATurn {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("being carried on now");
 
-        // The node carrying it stops without finishing: its claim lapses, and the answer may be given.
+        // The node working on it stops without finishing. Once its claim expires, the answer is accepted.
         scenarios.attempts.heartbeat(parked.id(), Scenarios.NOW.toEpochMilli() - 1);
         scenarios.supervisorActions().amend(doc, parked.id(), 1, "DSParser -> XSLTFilter", OPERATOR);
 
@@ -226,13 +227,13 @@ class TestScenario31APersonAnswersATurn {
                 .isGreaterThan(Scenarios.NOW.toEpochMilli());
     }
 
-    /// What an attempt drafted goes with the answer that produced it.
+    /// Amending an attempt removes the draft it wrote, along with the turns after the one answered.
     ///
-    /// The turns after the one answered are discarded because they are a consequence of an answer that
-    /// has changed, and a draft binding is the last of those consequences. Left in place it is a draft
-    /// nothing awaits: the reset clears the pointer that says which learner is waiting for it, so
-    /// approving or rejecting it throws, every stream of the learner is sentinelled by it, and the only
-    /// way out is deleting the binding by hand.
+    /// Those turns are discarded because they followed from an answer that has changed, and the draft binding
+    /// is the last thing that followed from them. If it were left in place, nothing would refer to it: the
+    /// reset clears the learner's record of which draft awaits review, so approving or rejecting it would
+    /// fail, every stream of the learner would be errored because of it, and the only way out would be to
+    /// delete the binding by hand.
     @Test
     void amendingAnAttemptTakesBackWhatItDrafted() {
         final Scenarios scenarios = new Scenarios();
@@ -265,8 +266,8 @@ class TestScenario31APersonAnswersATurn {
 
     @Test
     void anAttemptCannotBeRunAgainWhileAnotherHoldsItsLearner() {
-        // A45: re-running takes the learner back, and a learner another attempt is learning is not free. A
-        // person is told rather than two attempts learning one learner at once.
+        // Running an attempt again needs it to claim the learner, and a learner that another attempt is
+        // learning is not free. The person is told so, rather than two attempts learning one learner at once.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc());
         scenarios.inputs.put(stream(1L));
@@ -275,7 +276,7 @@ class TestScenario31APersonAnswersATurn {
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(TWO_FIELDS));
         scenarios.process(model, doc, stream(1L)).learned();
         final Recorded abandoned = scenarios.attempts.forDocument(DOC, 10).get(0);
-        // Another node takes the learner in the meantime, by opening an attempt for it.
+        // Meanwhile another node claims the learner by opening an attempt for it.
         final long theirs = scenarios.attempts.opened(new Attempt(Scenarios.LEARNER, DOC, "DOOR-ACCESS",
                 "Raw Events",
                         2L, "node-2", PromotionMode.AUTOMATIC, Long.MAX_VALUE),
@@ -286,8 +287,9 @@ class TestScenario31APersonAnswersATurn {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cannot be run again");
 
-        // That node's lease lapses and it still holds the learner: a lapsed session is resumed by the next
-        // worker, not swept aside for an answer to an older attempt (design 04 §4, scenario 58).
+        // That node's lease expires but it still holds the learner: a session whose lease has expired is
+        // resumed by the next worker (as in TestScenario58ASessionWhoseNodeDiesIsCarriedOnByAnother), not
+        // pushed aside for an answer to an older attempt.
         scenarios.attempts.heartbeat(theirs, Scenarios.NOW.toEpochMilli() - 1);
         assertThatThrownBy(() -> scenarios.supervisorActions()
                 .amend(doc, abandoned.id(), 1, "DSParser -> XSLTFilter", OPERATOR))
@@ -308,9 +310,10 @@ class TestScenario31APersonAnswersATurn {
 
     @Test
     void theRecordOfWhatIsOverIsPrunedAndTheListDoesNotCarryTranscripts() {
-        // Design 01 §12 item 8, and A28's list/detail split: what a node keeps is bounded, and a page of
-        // attempts is not a page of transcripts. The twins must agree, or a scenario passing over the
-        // in-memory one proves nothing about the rows.
+        // Finished attempts are pruned so that what is kept stays bounded, and the attempt list does not load
+        // transcripts, which only the detail view reads. The in-memory and database implementations must
+        // behave the same way, or a scenario passing against the in-memory one proves nothing about the
+        // database.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(doc());
         scenarios.inputs.put(stream(1L));

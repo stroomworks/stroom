@@ -29,17 +29,18 @@ import stroom.util.logging.LogUtil;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-/// A pipeline's deletion, as its learning hears of it (design 06 A120, A134, A135): the learning is
-/// marked deleted, to be read in the Supervisor until it ages out, and the streams waiting on it wait no
-/// more, since no task of a deleted pipeline will run them again. An open session is the worker's to
-/// abandon, when it next comes to it.
+/// Handles pipeline delete and create events for Learning Flow. When a pipeline is deleted, its learning
+/// is marked deleted, so the Supervisor can show it as deleted until the retention job removes it, and
+/// the streams waiting on it are released, since no task of a deleted pipeline will run them again. Any
+/// open session is abandoned by the background worker the next time it reaches it.
 ///
-/// A pipeline can come back: an export of it imported keeps its uuid, and Stroom says it is created. Its
-/// learning is then its own again, and the mark goes, or the pipeline would run while its sessions were
-/// abandoned, the Supervisor hid it, and the retention job forgot what it was learning.
+/// A pipeline can come back: importing an export of it keeps its UUID, and Stroom raises a create event.
+/// Its learning is then unmarked; otherwise the pipeline would run while its sessions were abandoned, the
+/// Supervisor hid it, and the retention job removed what it had learned.
 ///
-/// Every node hears the event, and the marking is the same whichever does it first. A delete or a
-/// return no node heard is found by the retention job, which calls [#deleted] or [#restored] for it.
+/// Every node receives the event, and marking gives the same result whichever node does it first. A
+/// delete or restore that no node received an event for is found by the retention job
+/// ([AttemptRetention]), which calls [#deleted] or [#restored].
 @Singleton
 @EntityEventHandler(type = PipelineDoc.TYPE, action = {EntityAction.DELETE, EntityAction.CREATE})
 public class PipelineDeletions implements EntityEvent.Handler {
@@ -66,21 +67,22 @@ public class PipelineDeletions implements EntityEvent.Handler {
                 restored(pipelineUuid);
             }
         } catch (final RuntimeException e) {
-            // The event is everybody's: a failure here is this feature's, and the retention job finds the
-            // pipeline gone, or back, at midnight and marks it then.
+            // The event is shared with other handlers, so a failure here is logged rather than thrown. The
+            // retention job will find the pipeline deleted or restored at its next run and mark it then.
             LOGGER.error(() -> LogUtil.message("The learning of pipeline {} could not be marked after {}: {}",
                     pipelineUuid, event.getAction(), e.getMessage()), e);
         }
     }
 
-    /// Mark a deleted pipeline's learning deleted, where it keeps any, and let go of the streams waiting
-    /// on it.
+    /// Marks a deleted pipeline's learning as deleted, if it has any, and releases the streams waiting on
+    /// it.
     ///
-    /// @param pipelineUuid The pipeline.
+    /// @param pipelineUuid The UUID of the deleted pipeline.
     public void deleted(final String pipelineUuid) {
         final boolean marked = deletedPipelines.deleted(pipelineUuid, System.currentTimeMillis());
-        // Whether or not this marked it: a stream a task was still deciding when the mark was made can
-        // write its row after it, and the next hearing lets that go too.
+        // Release waiting streams whether or not this call made the mark, because a task that was still
+        // deciding a stream when the mark was made can write its waiting row afterwards, and a later call
+        // needs to release that too.
         final int released = deferrals.releasedAll(pipelineUuid);
         if (marked || released > 0) {
             LOGGER.info(() -> LogUtil.message(
@@ -89,9 +91,10 @@ public class PipelineDeletions implements EntityEvent.Handler {
         }
     }
 
-    /// The pipeline is there, and its learning is no longer marked deleted, where it was.
+    /// Clears the deleted mark from a pipeline's learning, if it was marked, because the pipeline exists
+    /// again.
     ///
-    /// @param pipelineUuid The pipeline.
+    /// @param pipelineUuid The UUID of the restored pipeline.
     public void restored(final String pipelineUuid) {
         if (deletedPipelines.restored(pipelineUuid)) {
             LOGGER.info(() -> LogUtil.message("Pipeline {} is back: its learning is no longer marked deleted",

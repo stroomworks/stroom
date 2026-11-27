@@ -42,20 +42,21 @@ import stroom.util.shared.Clearable;
 import com.google.inject.AbstractModule;
 import com.google.inject.Scopes;
 
-/// The runtime state of A26 as tables: the seams the stage has used against memory since slice 8, bound
-/// here to rows so that what a node learns survives its restart and reaches every other node (A41, A42).
+/// The Guice module that binds the Learning Flow's state interfaces to their database implementations, so
+/// that what a node learns survives a restart and is shared with every other node. Tests bind the same
+/// interfaces to in-memory implementations instead.
 ///
-/// Separate from [LearningFlowDbModule] because these bindings need the application — a cache manager
-/// and the entity event bus — and the module that opens the data source is installed long before there is
-/// one, in the injector that runs the migrations.
+/// It is separate from [LearningFlowDbModule] because these bindings need application services (a cache
+/// manager and the entity event bus), while that module is installed earlier, in the injector that runs the
+/// database migrations before the application exists.
 public class LearningFlowDaoModule extends AbstractModule {
 
     @Override
     protected void configure() {
         super.configure();
 
-        // Said out loud so that an injector without them names what is missing rather than the
-        // constructor of a cache several links down.
+        // Declared explicitly so that an injector without them reports what is missing, rather than
+        // failing in the constructor of a cache several dependencies away.
         requireBinding(CacheManager.class);
         requireBinding(EntityEventBus.class);
 
@@ -69,13 +70,14 @@ public class LearningFlowDaoModule extends AbstractModule {
         bind(CorpusIndex.class).to(CorpusIndexDao.class);
         bind(Snapshots.class).to(SnapshotsDao.class);
         bind(Volumes.class).to(VolumesDao.class);
-        // One table of marks, and the retention job's view of every table a learner keeps rows in.
+        // One class implements both: the marks on deleted pipelines, and the retention job's access to
+        // every table that holds a learner's rows.
         bind(DeletedPipelines.class).to(DeletedPipelinesDao.class);
         bind(KeptLearning.class).to(DeletedPipelinesDao.class);
-        // The two the hot path reads for every stream are bound as the rows behind a cache, and the cache
-        // is what everything else asks for (design 01 §12 item 8): a learner's bindings read from the database
-        // once per stream per node is the first thing to give at volume. Nothing but the cache asks the
-        // database, and what writes through it tells every node to let go of its copy.
+        // Bindings and learner states are read for every stream, so they are cached. The DAOs are bound
+        // with the @Rows annotation for the caches to use, and everything else gets the cached versions.
+        // Reading a learner's bindings from the database for every stream on every node would not scale.
+        // A write through a cache tells every node to evict its copy.
         bind(LearnerBindings.class).annotatedWith(Rows.class).to(LearnerBindingsDao.class);
         bind(LearnerStates.class).annotatedWith(Rows.class).to(LearnerStatesDao.class);
         bind(LearnerBindings.class).to(CachedLearnerBindings.class).in(Scopes.SINGLETON);

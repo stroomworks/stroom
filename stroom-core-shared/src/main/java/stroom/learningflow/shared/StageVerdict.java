@@ -24,13 +24,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * The scorecard's verdict on one step of a chain, as a surface shows it (design 01 §8.4): every check
- * that applied, the weighted total of those that carry weight, and whether the step passed.
- * <p>
- * The steps are in chain order and named by position rather than by element, because what a step is
- * belongs to the fragment and a reader has the fragment in front of them.
- */
+/// The checks' verdict on one element of a chain, as the stepper's Learning Flow pane shows it: the score of
+/// every check that applied, their average, and whether the element passed, meaning that no gate fell below
+/// its threshold.
+///
+/// Verdicts are in chain order and identified by position (from 1) rather than by element, because the
+/// reader has the fragment, and so its elements, in front of them.
 @JsonInclude(Include.NON_NULL)
 public class StageVerdict {
 

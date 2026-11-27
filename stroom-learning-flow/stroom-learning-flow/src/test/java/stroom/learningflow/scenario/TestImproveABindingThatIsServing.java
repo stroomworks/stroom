@@ -44,19 +44,19 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Ruling A46: **a way in for a binding that is not failing.** A binding serving at 0.93 is above every
-/// threshold, nothing has flagged it, and until now there was no door marked "make this better".
+/// Tests a person asking a serving binding to improve, when nothing is failing and nothing has flagged it.
 ///
-/// An improvement does not wait for traffic. The records the binding was accepted on are kept per binding
-/// (A18) with the score each achieved, so an attempt has both a sample to learn from and the bar to
-/// beat without a stream arriving — a feed that ships once a day can be improved at eleven in the
-/// morning. The incumbent serves throughout and a candidate takes over only through the ordinary gate.
+/// An improvement does not wait for a stream to arrive. The records a binding was accepted on are kept in its
+/// regression corpus, with the score each achieved, so an improvement session has both a sample to learn from
+/// and a standard to beat without any new stream. This means a feed that arrives once a day can be improved
+/// at any time. The existing binding serves throughout, and a candidate replaces it only by passing the
+/// normal promotion gate.
 class TestImproveABindingThatIsServing {
 
     private static final String FEED = "DOOR-ACCESS";
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
-    /// A transform that makes nothing of the records it is given: it compiles and runs, so what it
-    /// fails is the gate that counts what came out.
+    /// A transform that produces no events from the records it is given. It compiles and runs, so the only
+    /// check it fails is the one that counts the events produced.
     private static final String YIELDS_NOTHING = """
             <xsl:stylesheet xmlns="event-logging:3" xpath-default-namespace="records:2"
                             xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="2.0">
@@ -75,7 +75,7 @@ class TestImproveABindingThatIsServing {
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(learned.produced()).isNotNull();
 
-        // Asked for out of the blue: no stream arrives, and the regression set is the sample.
+        // The improvement is requested with no stream arriving, so the regression corpus is the sample.
         final Script improving = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
@@ -106,11 +106,11 @@ class TestImproveABindingThatIsServing {
         scenarios.process(learn(scenarios), doc, stream()).learned();
         final Binding bound = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
 
-        // Seeded by hand. What the gate is about is the entry a candidate is held to — a record the binding
-        // was accepted on that the candidate makes less of is not an improvement (A66) — and an entry
-        // that says it yielded an event, over a record that holds nothing to make one of, is the cheapest
-        // way to have one. Its text is an ordinary line, so the sample the candidate learns from still
-        // parses and the candidate still clears the floor; it is the entry that refuses it.
+        // The corpus is replaced by hand with one entry. A candidate that does worse than the binding on any
+        // record the binding was accepted on is not an improvement. The simplest way to make a candidate do
+        // worse is an entry claiming an event was produced from a record that holds nothing to produce one
+        // from. The entry's text is an ordinary line, so the sample still parses and the candidate still
+        // clears the score threshold; it is the corpus comparison alone that refuses it.
         scenarios.regressionSet.discard(bound.getUuid());
         final String[] lines = CSV.input().split("\n");
         scenarios.regressionSet.accept("doc-1", bound.getUuid(), FEED, "Raw Events", List.of(new Accepted(
@@ -153,8 +153,9 @@ class TestImproveABindingThatIsServing {
                 .hasMessageContaining("no accepted records");
     }
 
-    /// The four states in which an improvement must refuse rather than proceed, each of which would
-    /// undo something somebody else decided.
+    /// Checks that an improvement does not override decisions made elsewhere. It is refused when learning is
+    /// disabled or a draft is already awaiting review, and it leaves a learner's mark for relearning in place
+    /// until it has actually promoted.
     @Test
     void anImprovementRefusesWhatOtherDecisionsHaveSettled() {
         final Scenarios scenarios = new Scenarios();
@@ -178,9 +179,9 @@ class TestImproveABindingThatIsServing {
                 .hasMessageContaining("already awaiting review");
         scenarios.states.reset(Scenarios.LEARNER);
 
-        // And a learner marked for relearning has learned again by hand once the improvement promotes:
-        // the mark is spent then, not when it is asked for. A failed improvement must leave the mark
-        // standing, since the thing it was marked for has not been dealt with.
+        // A learner marked for relearning counts as relearned once the improvement promotes, so the mark is
+        // cleared then, not when the improvement is requested. An improvement that fails must leave the mark
+        // in place, since whatever it was marked for has not been dealt with.
         scenarios.states.markForRelearning(Scenarios.LEARNER, "doc-1", "drifting");
         final Script improving = learn(scenarios);
         scenarios.stage(document -> improving, scenarios.learnerBindings)
@@ -197,9 +198,10 @@ class TestImproveABindingThatIsServing {
                 .isEmpty();
     }
 
-    /// A46: the ask opens an attempt and parks it, and the worker puts the questions. A model
-    /// conversation is minutes long; run inside the web request that asks for it, it holds an HTTP
-    /// thread for all of them, cannot survive the node restarting, and is lost when the browser gives up.
+    /// Checks that requesting an improvement only opens an attempt awaiting the model, and the background
+    /// worker asks the questions. A model conversation can take minutes. Run inside the web request, it would
+    /// hold an HTTP thread throughout, would not survive the node restarting, and would be lost if the browser
+    /// timed out.
     @Test
     void askingOpensAnAttemptForTheWorkerAndAsksTheModelNothing() {
         final Scenarios scenarios = new Scenarios();
@@ -228,7 +230,7 @@ class TestImproveABindingThatIsServing {
                 .describedAs("there is no stream behind it: its sample is the corpus")
                 .isNull();
 
-        // And the worker carries it on, finding that sample in the regression set.
+        // The worker then resumes the attempt, taking its sample from the regression corpus.
         assertThat(scenarios.worker(improving).advance(10)).isEqualTo(1);
         improving.verifyExhausted();
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER))
@@ -238,8 +240,8 @@ class TestImproveABindingThatIsServing {
                 .satisfies(binding -> assertThat(binding.getUuid()).isEqualTo(bound.getUuid()));
     }
 
-    /// An improvement whose binding or records have gone while it waited is closed rather than asked
-    /// about nothing: a candidate judged on nothing would be a promotion in disguise.
+    /// An improvement whose corpus records have gone while it waited is not resumed and the model is not
+    /// asked. A candidate judged against no records would be promoted without having beaten anything.
     @Test
     void anImprovementWhoseRecordsHaveGoneIsClosedRatherThanAsked() {
         final Scenarios scenarios = new Scenarios();
@@ -250,7 +252,7 @@ class TestImproveABindingThatIsServing {
         scenarios.stage(document -> improving, scenarios.learnerBindings)
                 .improve(doc, bound.getUuid(), null, "jo");
 
-        // Retracted, relearned or pruned while it waited.
+        // This stands for the binding being retracted, relearned or pruned while the attempt waited.
         scenarios.regressionSet.discard(bound.getUuid());
 
         assertThat(scenarios.worker(improving).advance(10))
@@ -259,8 +261,8 @@ class TestImproveABindingThatIsServing {
         assertThat(improving.asked()).describedAs("and the model was not asked").isEmpty();
     }
 
-    /// An improvement is asked about the corpus alone. There is no stream to read a feed and type off,
-    /// and a learner does not know its feed (A126), so nothing is shown that might not be true of every
+    /// An improvement's questions show the corpus alone. There is no stream to take a feed and stream type
+    /// from, and a learner is not tied to one feed, so no header is shown that might not hold for every
     /// stream the learner serves.
     @Test
     void theQuestionsAreAboutTheCorpusAndNoFeed() {
@@ -294,8 +296,8 @@ class TestImproveABindingThatIsServing {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Named, because a document with no scorers scores every chain 1.0 and no candidate
-                // could ever be worse than what it would replace.
+                // The checks are set explicitly, because a document with no scorers scores every chain 1.0,
+                // and then no candidate could ever be worse than the binding it would replace.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

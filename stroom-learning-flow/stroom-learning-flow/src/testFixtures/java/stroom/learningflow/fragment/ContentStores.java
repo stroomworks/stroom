@@ -49,34 +49,31 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * The three real document stores a fragment is written to — pipeline, text converter and XSLT — over
- * in-memory persistence. The text converter and XSLT store implementations are package-private and
- * injected, and their modules would drag in REST resources and a URI resolver with dependencies of
- * their own, so they are reached by name through Guice, which constructs them as a node would. The
- * pipeline store also wants the processor services, for deleting a pipeline's filters, and a registry of
- * the other stores, for deleting a pipeline's embedded documents. Deleting a draft fragment (A58) reaches
- * the first, so the processor services answer every call with nothing; a learned fragment embeds no
- * document, so the registry is absent.
- */
+/// The three real document stores that a learned fragment is written to (pipeline, text converter and
+/// XSLT), backed by in-memory persistence, for tests that write and run fragments without a Stroom node.
+///
+/// The text converter and XSLT store implementations are package-private and injected, and their Guice
+/// modules would pull in REST resources and a URI resolver with dependencies of their own. So they are
+/// bound by class name and constructed by Guice, as a node would construct them.
+///
+/// The pipeline store also needs the processor services, to delete a pipeline's processor filters, and a
+/// registry of the other stores, to delete a pipeline's embedded documents. Deleting a draft fragment calls
+/// the processor services, so they are stubbed to do nothing. A learned fragment embeds no documents, so
+/// the registry is left out.
 public final class ContentStores {
 
-    /// The explorer's pattern for a folder's name (`FolderExplorerActionHandler`), which it holds a folder
-    /// to as it makes one: a folder no node could make is refused here too.
+    /// The pattern the explorer checks a new folder's name against (see `FolderExplorerActionHandler`),
+    /// so that a folder name a node would refuse is refused here too.
     private static final Pattern FOLDER_NAME = Pattern.compile("^[a-zA-Z0-9_\\- \\.\\(\\)]{1,}$");
 
     public final PipelineStore pipelines;
-    /**
-     * Follows {@code parentPipeline} through the same store, so a fragment that inherits from a template
-     * runs merged in Tier 1 as it would in a pipeline.
-     */
+    /// Follows `parentPipeline` through the same store, so that in the in-memory scenario tests a
+    /// fragment that inherits from a template runs merged with it, as it would in a real pipeline.
     public final PipelineStackLoader stackLoader;
     public final TextConverterStore textConverters;
     public final XsltStore xslts;
-    /**
-     * Creates straight through the stores: there is no explorer here, so the folder is ignored and every
-     * document is in the one folder a free name is found in.
-     */
+    /// Creates documents directly in the stores. There is no explorer here, so the folder is ignored and
+    /// every document is in one flat namespace, in which free names are found.
     public final ContentCreator creator;
 
     public ContentStores() {
@@ -140,7 +137,8 @@ public final class ContentStores {
         };
     }
 
-    /// A fragment as text, read from these stores: what a snapshot is taken from.
+    /// Returns a reader of a fragment's configuration text from these stores, which is what a snapshot is
+    /// taken from.
     public FragmentCodes codes() {
         return new FragmentCodes(pipelines, textConverters, xslts);
     }
@@ -149,8 +147,8 @@ public final class ContentStores {
         return new FragmentWriter(creator, pipelines, textConverters, xslts);
     }
 
-    /// A stand-in that answers every call with nothing: the pipeline store reaches for the processor
-    /// services when a pipeline is deleted, and there are no processors here.
+    /// Creates a stand-in that returns false, zero or null from every call. The pipeline store calls the
+    /// processor services when a pipeline is deleted, and there are no processors here.
     ///
     /// @param type The interface to stand in for.
     /// @param <T>  The interface.

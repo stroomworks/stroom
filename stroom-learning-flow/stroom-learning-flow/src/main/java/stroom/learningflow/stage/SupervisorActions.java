@@ -27,11 +27,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Optional;
 
-/// What a person does to a learning run or a learner from its Learning Status tab, beyond approving or
-/// rejecting what it learned ([Promotion]): give a paused run more to spend, send it to its fallback,
-/// answer a question instead of the model, send a learner back to learn, or give it up (A28, A46, A65,
-/// A77). Each writes rows and leaves the work to the learning job: a person's request never waits on a
-/// model. Part of simplification option iii.
+/// The actions a person can take on a learning session or a learner from the Supervisor (the Learning
+/// Status tab), other than approving or rejecting a draft, which [Promotion] handles. A person can grant a
+/// parked session more budget, send it to the exhaustion step, answer a question instead of the model, send
+/// a learner back to learn again, or give a learner up.
+///
+/// Each action only writes rows and leaves the actual work to the deferred learning job, so that a person's
+/// request never waits on a model. Called by `SupervisorService`, which checks permissions first.
 public final class SupervisorActions {
 
     private final Attempts attempts;
@@ -44,15 +46,16 @@ public final class SupervisorActions {
     private final Clock clock;
     private final Duration lease;
 
-    /// @param attempts        The runs.
-    /// @param learnerBindings The bindings, whose drafts a changed answer discards.
+    /// @param attempts        The sessions and their turns.
+    /// @param learnerBindings The bindings, whose drafts are discarded when a person changes an answer.
     /// @param states          Each learner's state.
-    /// @param regressionSet   The records each binding was accepted on.
-    /// @param snapshots       The configuration each binding serves with.
-    /// @param targetSchemas   Resolves a document's target schema, which says whether it has a fallback.
-    /// @param wake            Wakes a learner's pipeline.
-    /// @param clock           The time.
-    /// @param lease           How long a claim lasts unless renewed (A45).
+    /// @param regressionSet   The corpus records each binding was accepted on.
+    /// @param snapshots       The configuration snapshots each binding serves with.
+    /// @param targetSchemas   Resolves a document's target schema, which says whether marked Unknowns
+    ///                        are available as a fallback.
+    /// @param wake            Wakes a pipeline's deferred tasks.
+    /// @param clock           The source of the current time.
+    /// @param lease           How long a claim on a learner lasts unless it is renewed by a heartbeat.
     public SupervisorActions(final Attempts attempts,
                              final LearnerBindings learnerBindings,
                              final LearnerStates states,
@@ -73,9 +76,9 @@ public final class SupervisorActions {
         this.lease = lease;
     }
 
-    /// Give a parked session more to spend (A65, A77): tokens and milliseconds beyond the document's
-    /// budgets, recorded against the attempt alone, and the attempt opened again for the worker to carry
-    /// on with them. Only a parked attempt takes a grant: one still running has budget, and one that
+    /// Grants a parked session more budget: tokens and milliseconds beyond the document's budgets,
+    /// recorded against this session alone. The session is then reopened for the worker to resume. Only a
+    /// parked session can be granted more, because one still running still has budget and one that has
     /// finished has nothing to spend it on.
     ///
     /// @param tokens Tokens to add; zero for none.
@@ -89,49 +92,46 @@ public final class SupervisorActions {
         carriedOn(recorded);
     }
 
-    /// Send a parked session to the exhaustion step (A65, A76): the attempt is opened again for the
-    /// worker, which carries it on from its recorded turns and, at the first transform question it would
-    /// put to the model, takes the flow's spent transition instead — to `ADMIT`, where the flow has one.
-    /// Only a parked attempt is sent.
+    /// Sends a parked session to the exhaustion step. The session is reopened for the worker, which
+    /// resumes it from its recorded turns. At the first transform question it would put to the model, it
+    /// instead takes the flow's transition for spent candidates, which leads to the `ADMIT` step if the flow
+    /// has one. Only a parked session can be sent.
     public void exhaust(final LearningFlowDoc doc, final long attemptId) {
         final Recorded recorded = parked(doc, attemptId);
-        // Marked Unknowns are event-logging's: another target has no fallback to finish with (task 7, W1-3)
+        // Marked Unknowns are event-logging events, so a document with another target schema has no
+        // fallback to finish with
         final Optional<TargetSchema> target = targetSchemas.of(doc);
         if (target.isPresent() && !target.get().isEventLogging()) {
             throw new IllegalStateException("Finish with Unknowns writes event-logging's marked Unknown events, "
                                             + "and " + target.get().name() + " has none; answer the step, or "
                                             + "leave the AI a note, instead");
         }
-        // The sending first, so that no worker takes the attempt between the reopening and it; on a
-        // parked row it stands harmlessly until the attempt is reopened and closed.
+        // The flag is set before the session is reopened, so that no worker can pick up the session in
+        // between without it. On a parked row the flag does no harm until the session is reopened.
         attempts.exhaustNext(attemptId);
         carriedOn(recorded);
     }
 
-    /**
-     * A person's answer in place of a turn's (A28): *answer instead*, for the question an attempt stopped
-     * at, and *edit and re-run from here*, for one it had already been answered. Either way the attempt
-     * is left waiting, for the worker to carry on from what it has now been told — the answer is written
-     * and nothing is run here, since a person's request must not wait on a model.
-     * <p>
-     * The turns after the one answered are discarded: what they were is a consequence of an answer that
-     * has changed, and re-walking derives them again (A45). An attempt that had finished is opened again
-     * and takes its learner's claim back, which fails where another attempt holds it — and an attempt a node
-     * is walking right now is refused, since its answers are that walk's to give and a person's answer
-     * would be overwritten by the turn it is about to record.
-     *
-     * @param answeredBy Who answered: recorded against the turn, and not overwritten when the attempt is
-     *                   re-walked (A28).
-     */
+    /// Records a person's answer in place of the model's for one turn. This serves both *answer instead*,
+    /// for the question a session stopped at, and *edit and re-run from here*, for a question that was
+    /// already answered. Either way the answer is written and the session is left for the worker to resume
+    /// from it; nothing is run here, because a person's request must not wait on a model.
+    ///
+    /// The turns after the one answered are discarded, because they followed from an answer that has now
+    /// changed; the worker derives them again when it replays the session. A session that had finished is
+    /// reopened and takes back its learner's claim, which fails if another session holds the claim. A session
+    /// that a node is running right now is also refused, because that node would overwrite the person's
+    /// answer with the turn it is about to record.
+    ///
+    /// @param answeredBy Who answered. Recorded against the turn, and kept when the session is replayed.
     public void amend(final LearningFlowDoc doc,
                       final long attemptId,
                       final int turnNumber,
                       final String answer,
                       final String answeredBy) {
         final Recorded recorded = attemptOf(doc, attemptId);
-        // Before anything is changed: an attempt is not opened again for a turn it has not got, or a
-        // person who mistyped a number would reopen a finished attempt, wipe what it came to and be told
-        // their request failed.
+        // Checked before anything is changed. Otherwise a person who mistyped a turn number would reopen a
+        // finished session, wipe its result, and then be told their request failed.
         if (recorded.turns().stream().noneMatch(turn -> turn.number() == turnNumber)) {
             throw new IllegalArgumentException("Attempt " + attemptId + " has no turn " + turnNumber);
         }
@@ -141,12 +141,11 @@ public final class SupervisorActions {
                                             + recorded.attempt().learner());
         }
         attempts.amended(attemptId, turnNumber, answer, answeredBy);
-        // What the attempt drafted goes with the answer that produced it. The turns after the one
-        // answered are discarded for exactly this reason — they are a consequence of an answer that has
-        // changed — and a draft binding is the last of those consequences. Left in place it would be a
-        // draft nothing awaits: the reset below clears the pointer that says the learner is waiting for
-        // it, so approving or rejecting it would throw, every stream of the learner would be sentinelled
-        // by it, and the only way out would be deleting the binding by hand.
+        // Any draft the session wrote is discarded too, for the same reason the later turns are: it
+        // followed from an answer that has changed. If it were kept, the reset below would clear the
+        // pointer saying the learner awaits review of it, so approving or rejecting it would fail, every
+        // stream of the learner would be held back by it, and the only way out would be deleting the
+        // binding by hand.
         if (recorded.bindingUuid() != null) {
             learnerBindings.byUuid(recorded.bindingUuid())
                     .map(LearnerBindings.Held::binding)
@@ -157,42 +156,40 @@ public final class SupervisorActions {
                         snapshots.discard(draft.getUuid());
                     });
         }
-        // A person re-running an attempt is saying the learner is not settled: whatever this attempt
-        // concluded about it — given up, marked, a draft awaiting someone — is undone, or the re-run would
-        // be refused by the state its own first run left behind (A28).
+        // A person re-running a session is saying the learner is not settled, so whatever the session
+        // concluded about it (given up, marked to relearn, a draft awaiting review) is undone. Otherwise
+        // the re-run would be refused because of the state its own first run left behind.
         states.reset(recorded.attempt().learner());
     }
 
-    /**
-     * Send a learner back to learn afresh (A28): what a person does to an attempt they are reading when
-     * the binding it wrote is not the binding they want and no particular turn is to blame. The learner's next
-     * stream relearns, with the incumbent serving until the relearning settles (A29).
-     *
-     * @param learner The learner.
-     * @param reason  Why, in the words a person gave: the model opens its next attempt with it.
-     */
+    /// Sends a learner back to learn afresh. A person does this when the binding a session wrote is not
+    /// what they want and no particular turn is to blame. The learner's next stream starts a relearning,
+    /// and the serving binding goes on serving until the relearning finishes.
+    ///
+    /// @param learner The learner to send back.
+    /// @param reason  Why, in the person's words; the learner's next session opens with it.
     public void relearn(final LearningFlowDoc doc, final Learner learner, final String reason) {
         if (states.reasonGivenUp(learner).isPresent()) {
-            // A learner that gave up stays given up until something says otherwise, and a mark alone
-            // says nothing: every path reads the give-up first and sentinels the stream before it ever
-            // looks at the mark. Sending a learner back *is* saying otherwise, so the give-up goes — and
-            // with it the rest of what was concluded, since it is being started afresh.
+            // Marking alone would have no effect on a given-up learner, because every path checks for a
+            // give-up first and errors the stream before it looks at the mark. Sending a learner back
+            // overrides the give-up, so the learner's whole state is reset, since it is starting afresh.
             states.reset(learner);
         }
         states.markForRelearning(learner, doc.getUuid(), reason);
     }
 
-    /// A person gives a learner up (design 06 A115): it learns no more, its streams with nothing serving
-    /// them error with the reason rather than wait, and an open session is not carried on. What serves it
-    /// goes on serving. Sending it back to learn again undoes it ([#relearn]). Its pipeline is woken, so
-    /// that the streams waiting on it come to their end now rather than at the retry delay.
+    /// Gives a learner up at a person's request. It learns no more, and streams that nothing serves error
+    /// with the reason rather than wait; a binding that is serving goes on serving. Sending the learner back
+    /// to learn again ([#relearn]) undoes this. Its pipeline is woken, so that the streams waiting on it are
+    /// errored now rather than after the retry delay.
     ///
-    /// @param learner The learner.
-    /// @param reason  Why, in the words a person gave: its streams error with it.
+    /// @param learner The learner to give up.
+    /// @param reason  Why, in the person's words; its streams error with this reason.
     /// @param by      Who gave it up.
     public void giveUp(final LearningFlowDoc doc, final Learner learner, final String reason, final String by) {
-        // A draft is decided before a give-up is read, so its streams would go on waiting for a review
-        // after the learner had been given up. Rejecting it is giving the learner up, and discards the draft.
+        // A draft awaiting review is checked before a give-up, so the learner's streams would go on waiting
+        // for a review after it had been given up. Rejecting the draft gives the learner up and discards
+        // the draft, so the person is told to do that instead.
         final Optional<String> draft = states.draftAwaiting(learner);
         if (draft.isPresent()) {
             throw new IllegalStateException("Draft binding " + draft.get() + " awaits review: reject it, which "
@@ -202,7 +199,7 @@ public final class SupervisorActions {
         wake(learner);
     }
 
-    /// The attempt, which must be the document's.
+    /// Gets the session, which must belong to the given document.
     private Recorded attemptOf(final LearningFlowDoc doc, final long attemptId) {
         final Recorded recorded = attempts.byId(attemptId)
                 .orElseThrow(() -> new IllegalArgumentException("No attempt " + attemptId));
@@ -213,7 +210,7 @@ public final class SupervisorActions {
         return recorded;
     }
 
-    /// The attempt, which must be the document's and parked for a person.
+    /// Gets the session, which must belong to the given document and be parked for a person.
     private Recorded parked(final LearningFlowDoc doc, final long attemptId) {
         final Recorded recorded = attemptOf(doc, attemptId);
         if (recorded.status() != AttemptStatus.PARKED) {
@@ -223,8 +220,7 @@ public final class SupervisorActions {
         return recorded;
     }
 
-    /// The attempt opened again for the worker to carry on, which fails where another attempt holds its
-    /// learner's claim.
+    /// Reopens the session for the worker to resume. Fails if another session holds its learner's claim.
     private void carriedOn(final Recorded recorded) {
         final long attemptId = recorded.id();
         if (!attempts.reopened(attemptId, clock.millis(), claimUntil())) {
@@ -233,7 +229,7 @@ public final class SupervisorActions {
         }
     }
 
-    /// When a claim taken now lapses if nothing renews it (A45).
+    /// The time at which a claim taken now expires if no heartbeat renews it.
     private long claimUntil() {
         return clock.millis() + lease.toMillis();
     }

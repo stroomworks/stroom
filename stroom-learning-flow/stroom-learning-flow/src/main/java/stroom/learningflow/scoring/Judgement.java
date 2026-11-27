@@ -18,10 +18,8 @@ package stroom.learningflow.scoring;
 
 import stroom.learningflow.shared.CheckSetting;
 
-/**
- * A score against the Learning Flow's setting for its check: whether it met the threshold, and if the
- * check is a gate, whether the candidate can pass at all.
- */
+/// A score judged against the Learning Flow's setting for its check: whether it met the threshold and,
+/// if the check is a gate, whether the candidate fails because of it.
 public record Judgement(CheckSetting setting, Score score) {
 
     public boolean metThreshold() {

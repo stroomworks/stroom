@@ -16,11 +16,13 @@
 
 package stroom.learningflow.shared;
 
-/// The marker of a learned Unknown (A53, A62, A74): a `Data` item named [#MARKER] inside
-/// `EventDetail/Unknown`, whose value is the model's name for the record type it admitted it could not
-/// translate. Defined once, here, so that the text that asks for it, the scorer that accepts it and
-/// anything downstream that reads it cannot drift apart. An Unknown without it is a bare Unknown, which
-/// the quality scorer refuses as it always did.
+/// Defines the marker that identifies a deliberately learned Unknown event.
+///
+/// When the model cannot translate a kind of record, the fallback (exhaustion) step asks it to write an
+/// `Unknown` event carrying a `Data` item named [#MARKER] inside `EventDetail/Unknown`, whose value is the
+/// model's name for that record type. The marker is defined once, here, so that the prompt text that asks for
+/// it, the scorer that accepts it and anything downstream that reads it all agree. An Unknown without the
+/// marker is a bare Unknown, which the extraction quality scorer refuses.
 public final class LearnedUnknown {
 
     /// The `Name` of the marker `Data` item.

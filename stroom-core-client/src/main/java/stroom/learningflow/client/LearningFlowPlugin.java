@@ -41,8 +41,9 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.function.Consumer;
 import javax.inject.Singleton;
 
-/// Opens, loads and saves Learning Flow documents ([LearningFlowEditor]), and gives the stepper the
-/// pane a supervised stage shows in place of its code pane (A30).
+/// The client plugin for the Learning Flow document type. It opens, loads and saves Learning Flow documents
+/// ([LearningFlowEditor]), and registers with the pipeline stepper the pane that a Smart Pipeline element
+/// shows in place of a code pane.
 @Singleton
 public class LearningFlowPlugin extends DocumentPlugin<LearningFlowDoc> {
 
@@ -56,12 +57,12 @@ public class LearningFlowPlugin extends DocumentPlugin<LearningFlowDoc> {
     ///
     /// @param eventBus                 The application's event bus.
     /// @param editorProvider           Makes a document's editor.
-    /// @param restFactory              Loads and saves documents.
-    /// @param contentManager           Shows the editors.
+    /// @param restFactory              Makes the REST requests that load and save documents.
+    /// @param contentManager           Shows the editors as tabs.
     /// @param entityPluginEventManager Handles the documents' events.
     /// @param securityContext          The user's permissions.
-    /// @param stepDetailsRegistry      Where the stepper finds the panes element types show.
-    /// @param stagePaneProvider        Makes a supervised stage's pane.
+    /// @param stepDetailsRegistry      The registry the stepper uses to find the pane for each element type.
+    /// @param stagePaneProvider        Makes the stepper pane for a Smart Pipeline element.
     @Inject
     public LearningFlowPlugin(final EventBus eventBus,
                                 final Provider<LearningFlowEditor> editorProvider,
@@ -75,9 +76,9 @@ public class LearningFlowPlugin extends DocumentPlugin<LearningFlowDoc> {
         this.eventBus = eventBus;
         this.editorProvider = editorProvider;
         this.restFactory = restFactory;
-        // The stepper shows a supervised stage's decision where an element's code pane would be (A30).
-        // It knows nothing about this feature: the feature says which of its elements have a pane and
-        // what shows it, and does so here because the plugin is where the feature meets the client.
+        // The stepper shows a Smart Pipeline element's decision where other elements show a code pane. The
+        // stepper knows nothing about Learning Flow, so the feature registers its own pane for its element
+        // type. This plugin does it because it is the feature's entry point in the client.
         stepDetailsRegistry.register(LearningFlowElements.PARSER, stagePaneProvider::get);
     }
 

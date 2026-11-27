@@ -27,11 +27,11 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// A Learning Flow's Pipelines tab ([FeedsTab]; design 07): its Smart Pipelines alone (A115, A142, by
-/// `LearnerCriteria.docUuid`), a table of every pipeline that learns under it ([FeedListController]), each with
-/// a button that opens the pipeline at its Learning Status tab. Above them, whether the Learning Flow will learn
-/// anything ([Readiness]), which its owner works out from the document as its tabs have it, and whose fixes it
-/// hands to its owner.
+/// Fills a Learning Flow's Pipelines tab ([FeedsTab]) with a table of the Smart Pipelines that learn under
+/// that document alone ([FeedListController]), each with a button that opens the pipeline at its Learning
+/// Status tab. Above the table it shows whether the Learning Flow will learn anything ([Readiness]). The
+/// document editor works that out from the document as its tabs currently have it, and this controller passes
+/// any fix the user asks for back to the editor to make.
 public class FeedsTabController extends Controller {
 
     private final FeedsTab view;
@@ -39,11 +39,11 @@ public class FeedsTabController extends Controller {
     private Consumer<Fix> onFix = fix -> {
     };
 
-    /// Made by GIN, with its tab.
+    /// Created by GIN.
     ///
     /// @param eventBus The application's event bus.
     /// @param view     The tab.
-    /// @param feedList The list of its pipelines.
+    /// @param feedList The controller for the list of the document's pipelines.
     @Inject
     public FeedsTabController(final EventBus eventBus,
                               final FeedsTab view,
@@ -59,15 +59,16 @@ public class FeedsTabController extends Controller {
     /// Shows a Learning Flow's pipelines.
     ///
     /// @param docRef The Learning Flow.
-    /// @param doc    Its content, as saved.
+    /// @param doc    Its content, as saved. Not used; the pipelines are found by the document's UUID.
     public void read(final DocRef docRef, final LearningFlowDoc doc) {
         feedList.showLearningFlow(docRef.getUuid());
     }
 
-    /// Shows what stops the document learning anything, where something does; nothing where it will learn.
+    /// Shows the banner saying what stops the document learning anything, or hides it if the document will
+    /// learn.
     ///
-    /// @param readiness What is right and wrong with it, as its tabs have it.
-    /// @param changed   Whether it has changes that aren't saved.
+    /// @param readiness What is right and wrong with the document, as its tabs currently have it.
+    /// @param changed   Whether the document has unsaved changes.
     public void setReadiness(final Readiness readiness, final boolean changed) {
         view.setReadinessShown(!readiness.isReady());
         if (!readiness.isReady()) {
@@ -75,20 +76,20 @@ public class FeedsTabController extends Controller {
         }
     }
 
-    /// @param onFix Told the fix the user asks for, for the document's other tabs to make.
+    /// @param onFix Called with the fix the user asks for, so that the document's other tabs can make it.
     public void setOnFix(final Consumer<Fix> onFix) {
         this.onFix = onFix;
     }
 
-    /// Says whether the tab is on screen: its pipelines are read again every ten seconds only while it is, and
-    /// at once when it comes back.
+    /// Tells the tab whether it is on screen. Its pipelines are refreshed every ten seconds only while it is,
+    /// and immediately when it comes back on screen.
     ///
-    /// @param showing Whether it is the tab shown, in the document shown.
+    /// @param showing Whether it is the selected tab of the document being shown.
     public void setShowing(final boolean showing) {
         feedList.setShowing(showing);
     }
 
-    /// Reads the pipelines again.
+    /// Fetches the pipelines again.
     public void refresh() {
         feedList.refresh();
     }

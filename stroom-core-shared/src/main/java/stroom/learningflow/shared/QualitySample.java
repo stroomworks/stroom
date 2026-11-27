@@ -22,9 +22,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/// One record a Smart Pipeline's translation in use was learned and checked on, for a QA person to read beside what
-/// it became: the record as it was received, where the parser knew where it cut, else as the parser made it; and the
-/// output it was accepted with.
+/// One record that a Smart Pipeline's translation in use was learned and checked on, shown on the Quality
+/// Assurance tab beside what it became. It holds the record as it was received (where the parser recorded where
+/// it cut the input), the record as the parser made it, and the output it was accepted with.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class QualitySample {
 
@@ -60,7 +60,7 @@ public class QualitySample {
         this.target = target;
     }
 
-    /// @return The record's own text as it was received, or null where the parser doesn't know where it cut.
+    /// @return The record's own text as it was received, or null where the parser did not record where it cut.
     public String getText() {
         return text;
     }

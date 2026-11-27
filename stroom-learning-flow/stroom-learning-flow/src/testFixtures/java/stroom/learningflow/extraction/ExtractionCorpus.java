@@ -25,11 +25,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
 
-/**
- * The extraction-stage ground truth of design §2.1: the {@code TestDS3} corpus in {@code stroom-pipeline},
- * read as triples of configuration, input and expected output. The corpus is used as it stands, from its
- * own module, so that the evaluation and the Data Splitter's own tests can never drift apart.
- */
+/// Known-good and known-bad Data Splitter cases, for testing how Data Splitter configurations are compiled
+/// and scored. They are read from the `TestDS3` test resources in `stroom-pipeline`, as triples of
+/// configuration, input and expected output.
+///
+/// The cases are read from that module as they stand, rather than copied, so that these tests and the Data
+/// Splitter's own tests can never drift apart.
 public final class ExtractionCorpus {
 
     private static final Path DIR = ProjectPathUtil.getRepoRoot()
@@ -42,10 +43,8 @@ public final class ExtractionCorpus {
     private ExtractionCorpus() {
     }
 
-    /**
-     * A case whose configuration is known to be good: run over its input, it produces exactly the expected
-     * records without raising an error.
-     */
+    /// A case whose configuration is known to be good: run over its input, it produces exactly the expected
+    /// records without raising an error.
     public record Golden(String stem, String configuration, String input, String expectedRecords) {
 
         private static final String RECORD = "<record>";
@@ -64,10 +63,9 @@ public final class ExtractionCorpus {
         }
     }
 
-    /**
-     * A case whose configuration is known to be bad, whether it fails to compile or runs and raises errors.
-     * The corpus records what it does produce, but that is not a golden and is not kept here.
-     */
+    /// A case whose configuration is known to be bad: it either fails to compile or runs and raises errors.
+    /// The test resources also hold the output it does produce, but that is not a correct result, so it is
+    /// not read here.
     public record Failing(String stem, String configuration, String input) {
 
         @Override

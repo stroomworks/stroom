@@ -35,26 +35,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * A real model behind the {@link Advisor} seam, for the live smoke of design 02 §6.1: the scenarios run
- * as written, with a model answering in place of a {@link Script}. Each question is put as
- * {@link QuestionText} renders it, after the system text and the attempt's transcript so far, so the
- * model sees the whole conversation as design 01 §10 requires. Usage is counted for the write-up.
- * <p>
- * Configured from the environment, as {@code TestExtractionReconstruction} is: {@code LEARNING_FLOW_BASE_URL}
- * and {@code LEARNING_FLOW_LEARNING_MODEL} for an OpenAI-compatible endpoint, {@code LEARNING_FLOW_API_KEY}
- * if it wants one, {@code LEARNING_FLOW_TEMPERATURE} only for a model that takes one. Samples go to
- * that endpoint unredacted (A17 is not built), so it must be one the data may be sent to.
- */
+/// An [Advisor] backed by a real model, for the live tests (such as `TestLiveScenarios`), which run the
+/// scenarios with a model answering in place of a [Script].
+///
+/// Each question is rendered by [QuestionText] and sent after the system text and the attempt's
+/// conversation so far, so the model sees the whole conversation, as it would in a node. Tokens and time
+/// are counted for the test report.
+///
+/// It is configured from the environment, as `TestExtractionReconstruction` is: `LEARNING_FLOW_BASE_URL`
+/// and `LEARNING_FLOW_LEARNING_MODEL` for an OpenAI-compatible endpoint, `LEARNING_FLOW_API_KEY` if the
+/// endpoint needs one, and `LEARNING_FLOW_TEMPERATURE` only for a model that accepts it. Samples are sent
+/// to the endpoint unredacted, so it must be one the data may be sent to.
 public final class LiveAdvisor implements Advisor {
 
     public static final String BASE_URL = "LEARNING_FLOW_BASE_URL";
     public static final String MODEL = "LEARNING_FLOW_LEARNING_MODEL";
     public static final String API_KEY = "LEARNING_FLOW_API_KEY";
-    /**
-     * A sampling temperature, sent only when set: the newest models refuse the parameter outright, and
-     * the ones that take it default sensibly.
-     */
+    /// A sampling temperature, sent only when set, because the newest models reject the parameter and the
+    /// ones that accept it have sensible defaults.
     public static final String TEMPERATURE = "LEARNING_FLOW_TEMPERATURE";
 
     private final ChatModel model;
@@ -68,18 +66,16 @@ public final class LiveAdvisor implements Advisor {
         this.words = words;
     }
 
-    /**
-     * @return An advisor over the endpoint the environment names, speaking for the document as the node's
-     * advisor would, or empty when it names none.
-     */
+    /// Creates an advisor for the endpoint named in the environment, which asks questions for the document
+    /// as a node's advisor would.
+    ///
+    /// @return The advisor, or empty if the environment names no endpoint.
     public static Optional<LiveAdvisor> fromEnvironment(final LearningFlowDoc doc) {
         return modelFromEnvironment().map(model -> new LiveAdvisor(model, QuestionText.of(doc)));
     }
 
-    /**
-     * The chat model the environment names, or empty when it names none: for whatever else wants to put a
-     * question to the same endpoint the same way.
-     */
+    /// Returns the chat model named in the environment, or empty if none is named, for other code that
+    /// needs to call the same endpoint in the same way.
     public static Optional<ChatModel> modelFromEnvironment() {
         final String baseUrl = System.getenv(BASE_URL);
         if (baseUrl == null || baseUrl.isBlank()) {
@@ -133,9 +129,7 @@ public final class LiveAdvisor implements Advisor {
         return millis;
     }
 
-    /**
-     * One question put and answered, with what it cost.
-     */
+    /// One question asked and answered, with its cost in tokens and time.
     public record Turn(String kind, String prompt, String reply, long tokens, long millis) {
 
     }

@@ -27,9 +27,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/// One check as a Learning Flow applies it (the one model of checks, UM-2 and UM-3): whether it is Off,
-/// Advice or a Gate, the lowest value that passes, and the check's own parameters. There is no weight: a
-/// candidate passes when every gate passes.
+/// How a Learning Flow document applies one check: whether it is Off, Advice or a Gate, the lowest value that
+/// passes, and the check's own parameters. Checks have no weights; a candidate passes when every gate passes.
 @JsonPropertyOrder({"check", "state", "threshold", "parameters"})
 @JsonInclude(Include.NON_NULL)
 public class CheckSetting {

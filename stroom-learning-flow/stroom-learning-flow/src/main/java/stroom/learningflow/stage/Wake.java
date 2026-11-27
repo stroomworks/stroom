@@ -16,16 +16,18 @@
 
 package stroom.learningflow.stage;
 
-/// What a promotion does for the streams waiting on its learner (design 04 §5.3, design 06 §4.3): the
-/// deferred tasks of every filter on the learner's pipeline go back to `CREATED` ahead of the retry
-/// delay, and ordinary FIFO by task id processes them oldest first. Every filter, since a reprocess
-/// filter a person made beside the one that feeds the pipeline waits on the same thing. In a node this is
-/// the processor task service's wake; in a scenario it is a record of what was woken.
+/// Wakes the streams waiting on a learner, e.g. after a promotion. The deferred tasks of every processor
+/// filter on the learner's pipeline are moved back to `CREATED` without waiting for the retry delay, and
+/// ordinary task ordering by id then processes them oldest first.
+///
+/// Every filter on the pipeline is woken, because a reprocess filter a person made beside the filter that
+/// feeds the pipeline is waiting for the same thing. A node uses the processor task service; tests record
+/// what was woken.
 public interface Wake {
 
-    /// Wake the deferred tasks of a pipeline's filters.
+    /// Wakes the deferred tasks of all of a pipeline's processor filters.
     ///
-    /// @param pipelineUuid The pipeline.
+    /// @param pipelineUuid The UUID of the pipeline.
     /// @return How many tasks were woken.
     int wake(String pipelineUuid);
 }

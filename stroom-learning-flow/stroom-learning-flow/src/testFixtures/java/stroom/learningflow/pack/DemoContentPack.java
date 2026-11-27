@@ -49,43 +49,43 @@ import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/// The demo content pack: everything a person needs in front of them before they can watch this feature
-/// learn a feed, as a zip Stroom will import.
+/// Builds the demo content pack: a zip that Stroom can import, holding everything a person needs in order
+/// to watch this feature learn a feed.
 ///
-/// Without it, seeing the feature work means building a Learning Flow document, a model reference,
-/// four feeds, a pipeline and a processor filter for each by hand, and getting every reference between them
-/// right. That is an afternoon before anything happens, and an afternoon in which a demo can fail for
-/// reasons that have nothing to do with what is being demonstrated.
+/// Without it, seeing the feature work means building a Learning Flow document, a model document, four
+/// feeds, and a pipeline and processor filter for each feed by hand, with every reference between them
+/// right. That takes a long time, and a demo set up that way can fail for reasons unrelated to what is
+/// being demonstrated.
 ///
-/// The settings come from [DemoDocument], which is also what design 02 §5 scenario 51 is run with, so
-/// the pack ships a configuration that has been seen to learn four unrelated formats rather than a
-/// plausible one. What the pack adds is the wiring the scenario has no need of: the model the stage
-/// calls, the feeds to point it at, and for each feed the pipeline the stage sits in and the filter
-/// that processes it: one pipeline per feed, as a Content Template makes them (A103, A126), since a
-/// learner learns one translation for whatever its pipeline is given.
+/// The settings come from [DemoDocument], which `TestScenario51AnyFormatFromAnyFeed` also uses, so the pack
+/// ships a configuration that has been shown to learn four unrelated formats. The pack adds the parts the
+/// scenario does not need: the model the Smart Pipeline element calls, the feeds, and for each feed a
+/// pipeline containing the element and a processor filter. There is one pipeline per feed, as a Content
+/// Template would make them, because a learner learns one translation for whatever its pipeline is given.
 ///
-/// **The written form** is the import/export format Stroom has always read: one `.node` file naming a
-/// document's uuid, type, name and explorer path, beside the document's own assets under the same
-/// prefix — `.meta` for every document's JSON, and `.json` for a pipeline's elements. It is written here
-/// rather than exported from a running Stroom so that building the pack needs no database.
+/// **The format** is Stroom's standard import/export format: for each document, a `.node` file giving its
+/// UUID, type, name and explorer path, with the document's own files beside it under the same prefix
+/// (`.meta` for the document's JSON, and `.json` for a pipeline's elements). It is written here rather
+/// than exported from a running Stroom, so that building the pack needs no database.
 ///
-/// **No secret is in it.** The model document names a stored secret; the person running the demo creates
-/// that secret with their own API key.
+/// **The pack contains no secrets.** The model document names a stored secret, which the person running
+/// the demo creates with their own API key.
 public final class DemoContentPack {
 
     public static final String FOLDER = "Smart Pipelines Demo";
     public static final String DOCUMENT_NAME = "Any feed";
     public static final String MODEL_NAME = "Learning model";
 
-    /// The name of a stored secret holding the API key. The pack carries the name; the key is the
-    /// person's own and is never in source control.
+    /// The name of a stored secret holding the API key. The pack contains only the name; the key belongs
+    /// to the person running the demo and is never in source control.
     public static final String API_KEY_NAME = "learning-flow";
 
-    /// Four feeds of four unrelated formats, and the document is told nothing about any of them.
+    /// Four feeds in four unrelated formats. The document is told nothing about any of them.
     public static final List<String> FEEDS =
             List.of("DOOR-ACCESS", "APP-EVENTS", "FIREWALL", "MAINFRAME");
 
-    /// Fixed so that importing the pack twice updates the same documents rather than making a second set.
+    /// Fixed UUIDs, so that importing the pack twice updates the same documents rather than creating a
+    /// second set.
     public static final String DOCUMENT_UUID = "bbc4cf72-ad52-463c-b6e8-e5cfd37f77a0";
     public static final String MODEL_UUID = "871334dc-5286-4409-8179-a5c27e4e2044";
     /// Each feed's pipeline, in the order of [#FEEDS].
@@ -101,8 +101,8 @@ public final class DemoContentPack {
             "c83eb45c-c8ee-4063-9ae2-4e7f0fa4e78e",
             "433c53ed-6f3e-4d1d-b62c-9cb88cd1654a");
     /// The processor each feed's filter runs under, in the order of [#FEEDS]. An exported filter names
-    /// its processor, and the importer makes the processor from that name where the installation has
-    /// none; without it the import of the filter fails on a null uuid.
+    /// its processor, and the importer creates the processor if the installation does not have it; without
+    /// this, importing the filter fails on a null UUID.
     private static final List<String> PROCESSOR_UUIDS = List.of(
             "0f1b9f8c-6d61-4f0c-9d0e-3a57ec5e3e9d",
             "9bfcb071-5082-4dd0-84d2-286d2c3885ff",
@@ -114,21 +114,21 @@ public final class DemoContentPack {
             "aebaa96e-fd68-4e46-9ed1-0a036609d5b4",
             "0d0a2c36-2a2a-4f07-9d06-1f4f1c1a2f65");
 
-    /// The element id the document is attached to, which is also the name a person sees in the pipeline
-    /// tree and in the Supervisor's error messages.
+    /// The id of the pipeline element that uses the document, which is also the name a person sees in the
+    /// pipeline tree and in the Supervisor's error messages.
     public static final String STAGE_ELEMENT = "Learning Flow";
 
-    /// The version every document in the pack is at. A document in Stroom always has one — it is what a
-    /// save checks before it writes — and the column it lands in does not take null, so a pack whose
-    /// documents had none imported as an explorer entry with nothing behind it. Fixed rather than
-    /// random, so that writing the pack twice writes the same bytes.
+    /// The version given to every document in the pack. A Stroom document always has a version (a save
+    /// checks it before writing), and the column it is stored in does not accept null, so a document
+    /// without one imports as an explorer entry with no document behind it. It is fixed rather than
+    /// random, so that writing the pack twice produces the same bytes.
     private static final String VERSION = "5b3a2c74-1f3e-4a26-9c55-7bd9f0b6d0a1";
 
-    /// The base name the entries of a feed's data zip share: Stroom pairs a `.meta` with its `.dat` by
-    /// it, and one stream per zip needs only one pair.
+    /// The base name shared by the entries of a feed's data zip. Stroom pairs a `.meta` file with its
+    /// `.dat` file by base name, and with one stream per zip only one pair is needed.
     private static final String DATA_BASE = "001";
 
-    /// The time every entry in the zip is stamped with; see [#writeZip].
+    /// The fixed time every zip entry is stamped with; see [#write].
     private static final long WRITTEN = 1_767_225_600_000L;
 
     private static final String CONTENT_ROOT = "stroomContent";
@@ -136,15 +136,16 @@ public final class DemoContentPack {
     private static final String META = ".meta";
     private static final String JSON = ".json";
 
-    /// One file per feed, in the order of [#FEEDS]: the data design 02 §5 scenario 51 learns from. It is
-    /// not content and the importer ignores it; it is there so that a demo has something to post.
-    /// Written out one by one rather than from a `Map.of`, whose iteration order is different in every
-    /// JVM: the pack is committed, and a file order that changed from one writing to the next would put
-    /// a diff in front of a person who had changed nothing.
+    /// One sample data file per feed, in the order of [#FEEDS], from the same data that scenario 51 learns
+    /// from. The importer ignores these files; they are there so that a demo has something to post.
+    ///
+    /// They are added one by one rather than with `Map.of`, whose iteration order can differ between
+    /// JVMs. The pack is committed to source control, and a file order that changed from one build to the
+    /// next would show a diff when nothing had changed.
     private static final Map<String, Supplier<String>> SAMPLES = samples();
 
-    /// Which sample each feed's data zip carries, named rather than taken by position, so that adding a
-    /// feed to [#FEEDS] without a sample fails where it is written and not where it is posted.
+    /// Which sample each feed's data zip contains. It is mapped by name rather than by position, so that
+    /// adding a feed to [#FEEDS] without a sample fails when the zips are written, not when data is posted.
     private static final Map<String, String> FEED_SAMPLES = feedSamples();
 
     private DemoContentPack() {
@@ -168,7 +169,8 @@ public final class DemoContentPack {
         return samples;
     }
 
-    /// The Learning Flow document the pack ships: scenario 51's settings, an identity, and the model.
+    /// Returns the Learning Flow document the pack ships: the settings from [DemoDocument], a fixed
+    /// identity, and the model.
     ///
     /// @return The document.
     public static LearningFlowDoc document() {
@@ -182,13 +184,13 @@ public final class DemoContentPack {
                         how to configure is allowed, so \
                         the first question it asks the model is which of them this feed needs.""")
                 .model(modelRef())
-                // A real model takes far longer than a scripted one, so a run of the demo gets twenty
-                // minutes rather than the document's default of one.
+                // A real model takes far longer than a scripted one, so the demo allows twenty minutes
+                // per run rather than the document's default of one.
                 .attemptBudgetMs(Duration.ofMinutes(20).toMillis())
                 .build();
-        // The store stamps a saved document with the built-in question text it was saved against, and a
-        // document that arrived without the stamp would say its templates were of no known version until
-        // someone saved it. The pack is written as a saved document, so it carries the stamp.
+        // The store stamps a saved document with the version of the built-in question text it was saved
+        // against. A document imported without the stamp would report its templates as being of unknown
+        // version until someone saved it, so the pack writes the stamp as a save would.
         return configured.copy()
                 .flow(configured.getFlow().withBuiltInVersion(Templates.VERSION))
                 .build();
@@ -199,13 +201,14 @@ public final class DemoContentPack {
         return new DocRef(LearningFlowDoc.TYPE, DOCUMENT_UUID, DOCUMENT_NAME);
     }
 
-    /// @return A reference to the model document the stage calls.
+    /// @return A reference to the model document the Smart Pipeline element calls.
     public static DocRef modelRef() {
         return new DocRef(OpenAIModelDoc.TYPE, MODEL_UUID, MODEL_NAME);
     }
 
-    /// A filter has no name of its own; Stroom's exporter gives it one made of the pipeline it runs and
-    /// the head of its uuid, and this is that name, so the pack is written as an export of it would be.
+    /// Returns a reference to a feed's processor filter. A filter has no name of its own; Stroom's
+    /// exporter names it from its pipeline and the start of its UUID, and the same name is used here, so
+    /// that the pack matches what an export would produce.
     ///
     /// @param feed One of [#FEEDS].
     /// @return A reference to the feed's processor filter.
@@ -216,7 +219,7 @@ public final class DemoContentPack {
     }
 
     /// @param feed One of [#FEEDS].
-    /// @return A reference to the pipeline the feed's stage sits in.
+    /// @return A reference to the feed's pipeline, which contains its Smart Pipeline element.
     public static DocRef pipelineRef(final String feed) {
         return new DocRef(PipelineDoc.TYPE, PIPELINE_UUIDS.get(index(feed)), pipelineName(feed));
     }
@@ -228,7 +231,7 @@ public final class DemoContentPack {
     }
 
     /// @param feed One of [#FEEDS].
-    /// @return The uuid of the processor the feed's filter runs under.
+    /// @return The UUID of the processor the feed's filter runs under.
     public static String processorUuid(final String feed) {
         return PROCESSOR_UUIDS.get(index(feed));
     }
@@ -241,8 +244,9 @@ public final class DemoContentPack {
         return index;
     }
 
-    /// The model reference: Anthropic's OpenAI-compatible endpoint and a Claude model, to be edited for
-    /// whatever other OpenAI-compatible endpoint is to hand; the key is named rather than carried.
+    /// Returns the model document: Anthropic's OpenAI-compatible endpoint and a Claude model, which can be
+    /// edited to use any other OpenAI-compatible endpoint. It names the stored secret holding the API key
+    /// rather than containing the key.
     ///
     /// @return The model document.
     public static OpenAIModelDoc model() {
@@ -274,14 +278,15 @@ public final class DemoContentPack {
                 .toList();
     }
 
-    /// `Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter → XMLWriter →
-    /// StreamAppender`: the supervised stage standing where a parser and its translation would be, and
-    /// the ordinary tail of an event pipeline after it.
+    /// Returns the elements of each feed's pipeline: `Source → LearningFlow → SchemaFilter →
+    /// RecordOutputFilter → RecordCountFilter → XMLWriter → StreamAppender`. The Smart Pipeline element
+    /// stands where a parser and its translation would normally be, followed by the usual end of an
+    /// event pipeline.
     ///
     /// The appender names no feed, so a feed's events are written back to the feed they came from. Each
-    /// feed has a pipeline of these, as a Content Template would make from a template pipeline.
+    /// feed has a pipeline like this, as a Content Template would make from a template pipeline.
     ///
-    /// @param document The Learning Flow document the stage is configured by.
+    /// @param document The Learning Flow document that configures the Smart Pipeline element.
     /// @return The pipeline's elements, links and properties.
     public static PipelineData pipelineData(final DocRef document) {
         return new PipelineDataBuilder()
@@ -319,10 +324,11 @@ public final class DemoContentPack {
                 .build();
     }
 
-    /// A filter over one feed's raw events, so that posting data is the only thing left to do.
+    /// Returns a processor filter over one feed's raw events, so that posting data is the only thing left
+    /// to do.
     ///
-    /// It carries no id and no tracker: those belong to the installation that imports it, and a filter
-    /// that carried them would be refused on import. It names its processor, which the importer makes.
+    /// It has no id and no tracker, because those belong to the installation that imports it, and a filter
+    /// that had them would be refused on import. It names its processor, which the importer creates.
     ///
     /// @param feed One of [#FEEDS].
     /// @return The feed's processor filter.
@@ -368,13 +374,13 @@ public final class DemoContentPack {
         return files;
     }
 
-    /// One feed's sample as a zip Stroom will take: the `.meta` that names the feed and the type, and
-    /// the data beside it under the same base name.
+    /// Returns the files of one feed's sample zip, in a form Stroom accepts: a `.meta` file that names the
+    /// feed and the stream type, and the data beside it under the same base name.
     ///
-    /// The `.meta` is what lets the zip be posted to the data feed endpoint without anything else being
-    /// said — the feed is in the file rather than in the request. Uploaded through **Data -> Upload**
-    /// instead, the feed chosen in the dialog overrides it (`DataUploadTaskHandler` builds an attribute
-    /// map that overrides embedded meta), so choose the feed this zip is named after.
+    /// The `.meta` file lets the zip be posted to the data feed endpoint with nothing else specified,
+    /// because the feed is named in the file rather than in the request. If it is uploaded through
+    /// **Data -> Upload** instead, the feed chosen in the dialog overrides it (`DataUploadTaskHandler`
+    /// builds an attribute map that overrides the embedded meta), so choose the feed the zip is named after.
     ///
     /// @param feed One of [#FEEDS].
     /// @return The zip's files, the `.meta` before the data as Stroom requires when a feed is named.
@@ -404,8 +410,8 @@ public final class DemoContentPack {
 
     /// Writes one zip per feed, each holding that feed's sample and a `.meta` naming the feed.
     ///
-    /// One per feed rather than one for all four, because a zip carrying several feeds can only be
-    /// *posted*: the upload dialog overrides what the entries say with the feed chosen in it.
+    /// There is one zip per feed rather than one for all four, because a zip containing several feeds can
+    /// only be posted: the upload dialog overrides the feed in each entry with the one chosen in it.
     ///
     /// @param directory Where to write them.
     public static void writeDataZips(final Path directory) {
@@ -421,9 +427,9 @@ public final class DemoContentPack {
             try (final ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
                 for (final Map.Entry<String, byte[]> file : files.entrySet()) {
                     final ZipEntry entry = new ZipEntry(file.getKey());
-                    // These are committed, so writing one again when nothing has changed should leave
-                    // nothing to commit: a timestamp of the moment it was written would be a diff of
-                    // every entry every time.
+                    // These zips are committed, so writing one again when nothing has changed should leave
+                    // nothing to commit. A timestamp of the moment of writing would change every entry
+                    // every time.
                     entry.setTime(WRITTEN);
                     out.putNextEntry(entry);
                     out.write(file.getValue());
@@ -435,8 +441,8 @@ public final class DemoContentPack {
         }
     }
 
-    /// The `.node` file that tells the importer what a document is and where it goes, and the document's
-    /// own assets beside it under the same prefix.
+    /// Adds a document's `.node` file, which tells the importer what the document is and where it goes,
+    /// and the document's own files beside it under the same prefix.
     private static void add(final Map<String, byte[]> files,
                             final DocRef docRef,
                             final Map<String, byte[]> assets) {
@@ -445,8 +451,8 @@ public final class DemoContentPack {
         assets.forEach((extension, bytes) -> files.put(prefix + extension, bytes));
     }
 
-    /// The name Stroom's exporter would give this document's files: its name with anything that is not a
-    /// letter or a digit replaced, then its type and uuid.
+    /// Returns the file name prefix Stroom's exporter would give this document: its name with every
+    /// character that is not a letter or digit replaced, then its type and UUID.
     private static String filePrefix(final DocRef docRef) {
         return (docRef.getName() != null
                 ? safe(docRef.getName()) + "."
@@ -457,8 +463,9 @@ public final class DemoContentPack {
         return name.replaceAll("[^A-Za-z0-9]", "_");
     }
 
-    /// Java properties, in the order the exporter writes them. A document with no name — a processor
-    /// filter — has no `name` line, which the importer allows for exactly that case.
+    /// Returns a `.node` file's content as Java properties, in the order the exporter writes them. A
+    /// document with no name (a processor filter) has no `name` line, which the importer allows for that
+    /// case.
     private static String node(final DocRef docRef) {
         final StringBuilder sb = new StringBuilder();
         if (docRef.getName() != null) {

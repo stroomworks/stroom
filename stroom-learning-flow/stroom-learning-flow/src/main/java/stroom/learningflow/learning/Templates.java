@@ -26,22 +26,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The built-in text of the conversation and how a template is rendered (design 01 §10.2, A33). Each
- * {@link Template} has a built-in text with {@code ${variable}} slots; a document overrides only the
- * templates it names and every other follows the built-in of {@link #VERSION}. A variable renders a
- * <em>block</em> — the whole "what fell short" list, or nothing — so a template needs no conditionals;
- * the blocks are computed by {@link QuestionText}, which is where the words meet the attempt.
- * <p>
- * The built-in text is the conversation as measured (design 02 §6.2, §6.3): the worked Data Splitter
- * example, the schema's failure modes, the degeneracy trap, "a header line is a record too". A finding
- * that changes it raises {@link #VERSION}, and a document saved against an earlier version says so.
- */
+/// The built-in text of the questions put to the model, and the rendering of a template into a prompt.
+///
+/// Each [Template] has a built-in text with `${variable}` slots. A Learning Flow document overrides only the
+/// templates it names, and every other template uses the built-in text of [#VERSION]. A variable renders a
+/// whole *block* (for example, the whole "what fell short" list, or nothing), so a template needs no
+/// conditionals. The blocks are computed by [QuestionText], which fills them in from the attempt.
+///
+/// The built-in text has been refined by testing against real models: the worked Data Splitter examples, the
+/// schema's common mistakes, the warning against degenerate output, "a header line is a record too". A change
+/// to it raises [#VERSION], so that documents and runs recorded against an earlier version can be told
+/// apart.
 public final class Templates {
 
-    /**
-     * Raised when the built-in text changes in a way a stored run should be told apart from.
-     */
+    /// The version of the built-in text. It is raised whenever the built-in text changes in a way that a
+    /// stored run should be told apart from.
     public static final int VERSION = 11;
 
     private static final Map<Template, String> BUILT_IN = new EnumMap<>(Template.class);
@@ -280,9 +279,10 @@ public final class Templates {
         this.overrides = overrides;
     }
 
-    /**
-     * The templates a document's flow reads by: its overrides over the built-ins.
-     */
+    /// Returns the templates a document's flow uses: its overrides, and the built-ins for the rest.
+    ///
+    /// @param flow The document's learning flow.
+    /// @return The templates.
     public static Templates of(final LearningFlow flow) {
         return new Templates(flow.getTemplates());
     }
@@ -291,17 +291,16 @@ public final class Templates {
         return new Templates(Map.of());
     }
 
-    /// The templates a run was asked with, read back from what was recorded against its attempt
-    /// (decision N9). Every template is already resolved there — the Learning Flow's own where it
-    /// overrode one, the built-in otherwise — so the recorded text wins over today's built-in, which is
-    /// the whole point: a parked run resumes in the words it began in, and a rebuilt prompt is the one
-    /// that was sent.
+    /// Returns the templates a run was asked with, read back from what was recorded against its attempt.
+    /// Every template is already resolved there (the Learning Flow's own text where it overrode one, the
+    /// built-in otherwise), so the recorded text takes precedence over today's built-in. That way a parked
+    /// run resumes in the wording it began with, and a rebuilt prompt is the one that was actually sent.
     ///
-    /// A template the recording does not name falls back to the built-in, which is what happens when a
-    /// template is added to the code after a run was opened.
+    /// A template the recording does not name falls back to the built-in. That happens when a template is
+    /// added to the code after a run was opened.
     ///
     /// @param recorded The template set as the run used it.
-    /// @return Templates that render in those words.
+    /// @return Templates that render with that wording.
     public static Templates ofRecorded(final Map<Template, String> recorded) {
         return new Templates(recorded == null
                 ? Map.of()
@@ -316,7 +315,7 @@ public final class Templates {
         return Map.copyOf(BUILT_IN);
     }
 
-    /// Whether this document says what a template should say, rather than following the built-in.
+    /// Whether the document overrides a template rather than using the built-in text.
     ///
     /// @param template The template.
     /// @return Whether it is overridden.
@@ -324,17 +323,21 @@ public final class Templates {
         return overrides.containsKey(template);
     }
 
-    /**
-     * The text this document uses for a template: its own where it overrides, else the built-in.
-     */
+    /// Returns the text the document uses for a template: its own where it overrides it, else the built-in.
+    ///
+    /// @param template The template.
+    /// @return The text.
     public String text(final Template template) {
         return overrides.getOrDefault(template, BUILT_IN.get(template));
     }
 
-    /**
-     * The template with its variables filled, in one pass, so a value that happens to contain a slot is
-     * not read as one. A slot the variables do not name is left as written; validation catches it first.
-     */
+    /// Renders a template by filling in its variables. This is done in one pass, so that a value which
+    /// happens to contain `${...}` is not treated as a slot. A slot the variables do not name is left as
+    /// written; validating the document ([#problems]) catches such slots first.
+    ///
+    /// @param template  The template.
+    /// @param variables The value of each variable, by name.
+    /// @return The rendered text.
     public String render(final Template template, final Map<String, String> variables) {
         final String text = text(template);
         final StringBuilder out = new StringBuilder(text.length());
@@ -351,10 +354,10 @@ public final class Templates {
         return out.toString();
     }
 
-    /**
-     * What is wrong with a definition's templates: a slot naming a variable the template does not have.
-     * Empty where every override renders.
-     */
+    /// Checks a flow's template overrides for slots that name a variable the template does not have.
+    ///
+    /// @param flow The learning flow.
+    /// @return A description of each problem, or an empty list where every override can be rendered.
     public static List<String> problems(final LearningFlow flow) {
         final List<String> problems = new ArrayList<>();
         flow.getTemplates().forEach((template, text) -> {

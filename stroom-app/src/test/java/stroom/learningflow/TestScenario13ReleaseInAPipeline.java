@@ -86,19 +86,19 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// Design 02 §5, scenario 13, in tier 2 against a real database: **promotion wakes what waited, and what
-/// is woken is actually processed**.
+/// Tests, in a running node with a real database, that a promotion wakes the deferred tasks of streams
+/// that were waiting, and that the woken tasks are then processed.
 ///
-/// It is what "nothing is held" (design 01 §5.2) means in practice: a stream that arrives before its
-/// learner has learned is not parked anywhere — its task is deferred — and the promotion that settles the
-/// learner puts the deferred tasks back in the queue, to run through what now serves (A129).
+/// A stream that arrives before its learner has learned anything is not held anywhere apart from the
+/// processor's task queue: its task is deferred. The promotion that gives the learner a binding moves the
+/// deferred tasks back to `CREATED`, so they run again and are served by the new binding.
 class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-RELEASED";
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -145,9 +145,10 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
                 .priority(1)
                 .build());
 
-        // Learning is off, so the first stream cannot bind: it waits (design 04 §3), with a deferral row
-        // naming the task a wake will move, and nothing is sentinelled or written to make it wait.
-        // A node that found a filter empty waits before asking it again; a wake must not wait on that.
+        // Learning is disabled, so nothing can serve the first stream and it is deferred. A deferral row
+        // records the task for a later wake to move, and no output is written to make the stream wait.
+        // A node that finds a filter empty normally waits before fetching from it again. The skip duration
+        // is set to zero so that the test does not have to wait for woken tasks to be fetched.
         processorConfigProvider.get().setSkipEmptyFilterFetchDuration(StroomDuration.ZERO);
         advisor.set(Script.of());
         final Meta early = rawStream();
@@ -156,8 +157,9 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         assertThat(deferred.getWritten()).isZero();
         assertThat(events()).describedAs("nothing was produced from it").isEmpty();
 
-        // Learning on. The next stream of the same learner defers too, with a session opened on it; the
-        // worker learns and promotes, and the promotion wakes every task waiting on the learner.
+        // With learning enabled, the next stream for the same learner is also deferred, and a session is
+        // opened on it. The worker learns and promotes, and the promotion wakes every task waiting on the
+        // learner.
         allowLearning(doc);
         final Script script = script();
         advisor.set(script);
@@ -167,8 +169,8 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         script.verifyExhausted();
         assertThat(learnerBindings.forLearner(learner)).hasSize(1);
 
-        // And the wake is real: both tasks are back in the queue ahead of the retry delay, and run again
-        // through the binding the learner settled on — bound, not learned again.
+        // Both tasks are back in the queue before the retry delay has passed, and run again through the
+        // learner's new binding without learning again.
         final List<ProcessorTask> tasks = processorTaskService.find(new ExpressionCriteria()).getValues();
         assertThat(tasks).describedAs(tasks.toString())
                 .extracting(ProcessorTask::getMetaId, ProcessorTask::getStatus)
@@ -200,10 +202,9 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
     }
 
 
-    /**
-     * The split and target questions are answered from the configurations the script will give, as the
-     * module's scenarios do; the script states only what the scenario is about.
-     */
+    /// Builds the scripted model answers. As in the module's scenarios, the split and target questions are
+    /// answered from the configurations given to [Structure], so the script only lists the chain and
+    /// configuration answers this test is about.
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of()
@@ -217,7 +218,8 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
     }
 
-    /// The document as the operator first has it: nothing may be learned, so nothing can bind.
+    /// Creates the Learning Flow document with learning disabled, so that nothing can be learned or bound
+    /// until [#allowLearning] enables it.
     private DocRef document() {
         final DocRef docRef = learningFlowStore.createDocument("door-access-released");
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
@@ -246,8 +248,8 @@ class TestScenario13ReleaseInAPipeline extends AbstractCoreIntegrationTest {
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .build());
     }

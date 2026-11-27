@@ -45,10 +45,12 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A120, A134–A137: a pipeline's deletion, as its learning hears of it. The learning is marked
-/// deleted and kept to be read; the streams waiting on it are let go, since no task of a deleted pipeline
-/// will run them again; an open session is abandoned rather than carried on at the model's expense; and
-/// the Supervisor's lists leave it out unless asked for it.
+/// Tests what happens to a learner's learning when its pipeline is deleted.
+///
+/// The learning is marked as deleted but kept, so it can still be read. The streams waiting on the learner
+/// are released, because no task of a deleted pipeline will ever process them again. An open session is
+/// abandoned rather than resumed, so no more is spent on the model for a pipeline that is gone. The
+/// Supervisor's lists leave the deleted pipeline's learning out unless they are asked to include it.
 class TestADeletedPipelinesLearning {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -118,7 +120,8 @@ class TestADeletedPipelinesLearning {
 
     @Test
     void aPipelineThatComesBackIsItsOwnAgain() {
-        // An export of the pipeline imported keeps its uuid, and Stroom says it is created.
+        // Importing an export of the pipeline brings it back with the same UUID, and Stroom raises a CREATE
+        // event for it.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));

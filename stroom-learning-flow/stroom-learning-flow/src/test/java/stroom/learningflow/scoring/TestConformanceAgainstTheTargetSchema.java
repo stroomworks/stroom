@@ -28,9 +28,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Task 7: the conformance check validates against the one schema version the document names, not
-/// against every version of a group. The group it was configured with is what a document written before
-/// the setting existed still uses, so that it behaves exactly as it did.
+/// Tests that the conformance check validates against the one schema version the document names as its target,
+/// not against every version in a schema group.
+///
+/// A document saved before the target schema setting existed names no target, so it is still validated against
+/// the schema group its check was configured with, and behaves exactly as it did.
 class TestConformanceAgainstTheTargetSchema {
 
     private static final String EVENTS = """
@@ -62,8 +64,8 @@ class TestConformanceAgainstTheTargetSchema {
 
     @Test
     void aDocumentThatNamesNoTargetIsJudgedAgainstItsGroup() {
-        // The migration path, and the acceptance criterion behind it: a document written before the
-        // setting existed has no target, and the group its check carries is what it is judged against.
+        // A document saved before the setting existed has no target, so it is judged against the schema group
+        // its check carries.
         final Score score = node.schemaConformanceScorer()
                 .score(null, transform(), null)
                 .orElseThrow();
@@ -73,8 +75,8 @@ class TestConformanceAgainstTheTargetSchema {
 
     @Test
     void theTargetIsWhatIsUsedRatherThanTheGroupTheCheckCarries() {
-        // What proves the setting is really in charge: a target naming a version this node does not have
-        // finds no schema to validate against, although the group beside it would have found one.
+        // This shows the target really takes precedence: a target naming a version this node does not have
+        // finds no schema to validate against, even though the group would have found one.
         final TargetSchema missing = new TargetSchema(
                 new DocRef(XmlSchemaDoc.TYPE, "schema-9", "event-logging v9.9.9"),
                 "event-logging v9.9.9",

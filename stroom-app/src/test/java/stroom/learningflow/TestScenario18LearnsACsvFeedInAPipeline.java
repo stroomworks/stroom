@@ -81,13 +81,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenario 18 (Tier 2): scenario 1 with the document, feed and streams as real content and
- * the supervisor element in a real pipeline, processed as a processor task. What Tier 1 cannot claim is
- * claimed here: the learned fragment runs as a pipeline, the element serves and emits, the output is a
- * stream whose attributes carry the bindings (design 01 §7.3 rule 3), and the fragment is a document in
- * the store.
- */
+/// Tests learning a CSV feed in a running node: the same case as the module's
+/// `TestScenario01LearnsACsvFeed`, but with the document, feed and streams as real content and the Learning
+/// Flow element in a real pipeline run by a processor task.
+///
+/// The module's own tests cannot check what this one does: that the learned fragment runs as a pipeline,
+/// that the element serves the stream and passes on its events, that the fragment is a document in the
+/// store, and that the output stream's attributes record which document, binding and fragment produced
+/// it.
 class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -95,7 +96,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
     private static final String EXPECTED_EVENTS = Scenarios.resource("csv-logon.events.xml");
 
-    /// The learner the test's pipeline is: its Learning Flow element (design 06 phase J slice 2b).
+    /// The learner for the test pipeline, identified by the pipeline and its Learning Flow element.
     private Learner learner;
 
     @Inject
@@ -138,8 +139,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
                 .priority(1)
                 .build());
 
-        // The first stream: the model is asked, as in scenario 1, and the stream is processed by what it
-        // taught.
+        // For the first stream the model is asked, and the stream is then processed by what was learned.
         final Script script = script()
                 .expect(QuestionMatcher.chain()
                         .withKey("Feed", FEED)
@@ -149,7 +149,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
         advisor.set(script);
         rawStream();
-        // The task defers and opens the session; the worker learns; the woken task serves (design 04 §3).
+        // The task defers the stream and opens a session, the worker learns, and the woken task serves it.
         final ProcessorResult deferred = processOne();
         assertThat(deferred.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR)).isZero();
         assertThat(deferred.getWritten()).isZero();
@@ -160,8 +160,8 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
 
         assertThat(first.getMarkerCount(Severity.ERROR, Severity.FATAL_ERROR)).isZero();
         assertThat(first.getWritten()).isEqualTo(6);
-        // The bindings are rows, not part of the document (A41): the supervisor wrote one and left the
-        // document alone.
+        // Bindings are stored as database rows, not in the document, which holds only what a person
+        // authors. Learning writes one binding and leaves the document unchanged.
         assertThat(learnerBindings.forLearner(learner)).hasSize(1);
         final Binding binding = learnerBindings.forLearner(learner).get(0);
         assertThat(learningFlowStore.readDocument(doc))
@@ -186,7 +186,7 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
                 .containsEntry(Produced.BINDING_ATTRIBUTE, binding.getUuid())
                 .containsEntry(Produced.FRAGMENT_ATTRIBUTE, binding.getPipeline().getUuid());
 
-        // The second stream of the learner: bound by the binding, the model not consulted.
+        // The learner's second stream is served by the binding without asking the model.
         final Script silent = Script.of();
         advisor.set(silent);
         rawStream();
@@ -200,12 +200,10 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
         assertThat(learnerBindings.forLearner(learner)).hasSize(1);
     }
 
-    /**
-     * The split and target questions are answered from the configurations the script will give, as the
-     * module's scenarios do; the script states only what the scenario is about. The structure's compiler
-     * is built when a question is asked, inside the processing pipeline's scope, so it reaches the node's
-     * parser factory the way the element does.
-     */
+    /// Starts the script of model answers. As in the module's scenarios, the split and target questions are
+    /// answered from the configurations given to [Structure], so the script only needs the chain and
+    /// configuration answers this test is about. The Data Splitter compiler uses the node's parser factory,
+    /// as the element does.
     private Script script() {
         final DataSplitterCompiler compiler = new DataSplitterCompiler(parserFactories, new ErrorReceiverProxy());
         return Script.of().structure(new Structure(
@@ -217,8 +215,8 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
         learningFlowStore.writeDocument(learningFlowStore.readDocument(docRef)
                 .copy()
                 .learningMode(LearningMode.AUTOMATIC)
-                // Review is the default now (SIM-1); this scenario is about the learning machinery, not
-                // about who approves what it learns.
+                // Review is the default promotion mode. This test is about how learning works, not about who
+                // approves what it learns, so it promotes automatically.
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
@@ -239,11 +237,9 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
         return docRef;
     }
 
-    /**
-     * {@code Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter → XMLWriter →
-     * StreamAppender}: the supervised stage where a parser and its translation would be, and the standard
-     * tail of an event pipeline after it.
-     */
+    /// Creates the pipeline `Source → LearningFlow → SchemaFilter → RecordOutputFilter → RecordCountFilter →
+    /// XMLWriter → StreamAppender`. The Learning Flow element takes the place of a parser and its
+    /// translation, followed by the usual elements at the end of an event pipeline.
     private DocRef pipeline(final DocRef feed, final DocRef doc) {
         final PipelineData data = new PipelineDataBuilder()
                 .addElement(new PipelineElement("Source", "Source"))
@@ -300,9 +296,8 @@ class TestScenario18LearnsACsvFeedInAPipeline extends AbstractProcessIntegration
         return new String(streamStore.getFileData().get(meta.getId()).get(meta.getTypeName()), StandardCharsets.UTF_8);
     }
 
-    /**
-     * The two serialisers indent differently and one writes a declaration; the events are the same.
-     */
+    /// Normalises XML for comparison, because the two serialisers indent differently and only one writes an
+    /// XML declaration.
     private static String canonical(final String xml) {
         return xml.replaceAll("<\\?xml[^>]*\\?>", "").replaceAll(">\\s+<", "><").strip();
     }

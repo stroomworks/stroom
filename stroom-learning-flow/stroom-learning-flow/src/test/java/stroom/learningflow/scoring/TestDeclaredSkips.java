@@ -29,9 +29,11 @@ import javax.xml.transform.stream.StreamResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// How a translation says a record is deliberately not an event
-/// (`docs/learning-flow-declared-skips-design.md`): counted beside the events, never confused with
-/// one, and gone before anything downstream could see it.
+/// Tests declared skips: the `Skipped` marker a translation writes in place of an event for a record it
+/// deliberately did not translate.
+///
+/// A marker is counted separately from the events, is never confused with one, and is removed before anything
+/// downstream can see it.
 class TestDeclaredSkips {
 
     private static final String THREE_RECORDS_ONE_SKIPPED = """
@@ -43,15 +45,15 @@ class TestDeclaredSkips {
 
     @Test
     void aSkipIsNotAnEvent() {
-        // The whole point: completeness adds the two together, so they must be counted apart
+        // The completeness check adds events and skips together, so they must be counted separately
         assertThat(Records.parsed(THREE_RECORDS_ONE_SKIPPED)).isEqualTo(2);
         assertThat(Records.skips(THREE_RECORDS_ONE_SKIPPED)).isEqualTo(1);
     }
 
     @Test
     void whyItWasSkippedIsKept() {
-        // Without the reason a reviewer reads a bare number and cannot judge it, which is the whole of
-        // the mitigation for there being no cap on the skip rate
+        // Without the reason a reviewer sees a bare number and cannot judge it. Showing the reasons is the main
+        // safeguard, since there is deliberately no limit on how many records may be skipped
         assertThat(Records.skipReasons(THREE_RECORDS_ONE_SKIPPED)).containsExactly("header line");
     }
 
@@ -87,8 +89,8 @@ class TestDeclaredSkips {
 
     @Test
     void strippingLeavesTheDocumentAsItWouldHaveBeen() throws Exception {
-        // What keeps a skip away from the Schema-valid check: no schema knows the marker, and validating
-        // it would fail every feed whose header lines are not events
+        // Stripping keeps markers away from the Schema-valid check. No schema knows the marker, so validating
+        // it would fail every feed whose header lines are skipped
         assertThat(stripped(THREE_RECORDS_ONE_SKIPPED).replaceAll("\\s+", ""))
                 .endsWith("<Eventsxmlns=\"event-logging:3\"><Event><Id>1</Id></Event>"
                           + "<Event><Id>2</Id></Event></Events>");
@@ -109,8 +111,8 @@ class TestDeclaredSkips {
 
     @Test
     void theMarkersNamespaceIsNeverDeclaredOnWhatIsKept() throws Exception {
-        // Declared on the root, as a stylesheet that uses it is likely to: the output that is written
-        // must not carry the module's own namespace
+        // The namespace is declared on the root, as a stylesheet that uses it is likely to do. The output that
+        // is written must not carry Learning Flow's own namespace
         final String output = """
                 <Events xmlns="event-logging:3" xmlns:ss="learningflow:skips">
                   <ss:Skipped reason="heartbeat"/>
@@ -121,10 +123,10 @@ class TestDeclaredSkips {
         assertThat(stripped(output)).doesNotContain("learningflow:skips");
     }
 
-    /// The document with its markers taken out, as the Schema-valid check and the writer see it.
+    /// Removes the markers from a document, as the Schema-valid check and the writer see it.
     ///
-    /// @param xml The output.
-    /// @return What came through.
+    /// @param xml The translation's output.
+    /// @return The output with every marker and its content removed.
     private static String stripped(final String xml) throws Exception {
         final TransformerHandler handler = XMLUtil.createTransformerHandler(false);
         final StringWriter writer = new StringWriter();

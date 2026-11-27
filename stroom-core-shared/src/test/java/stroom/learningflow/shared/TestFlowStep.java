@@ -26,7 +26,8 @@ class TestFlowStep {
 
     @Test
     void stepsThatOfferOtherElementsAreNotEqual() {
-        // The Setup tab keeps an edit only where the step changed: one to the element types was lost
+        // The Setup tab keeps an edit only where the step changed, so a step's element types must count in
+        // its equality or an edit to them would be lost
         final FlowStep chain = FlowStep.of(QuestionKind.CHAIN);
         final FlowStep fewer = chain.withElements(List.of("DSParser", "XSLTFilter"));
 

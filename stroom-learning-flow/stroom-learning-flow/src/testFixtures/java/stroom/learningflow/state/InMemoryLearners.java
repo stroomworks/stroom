@@ -22,8 +22,8 @@ import stroom.learningflow.stage.Learners;
 
 import jakarta.inject.Inject;
 
-/// A learner's rows in memory, brought to the document it runs under. The states in memory record no
-/// document, since nothing in memory lists them by one, so there is nothing of theirs to bring.
+/// An in-memory [Learners], which updates a learner's bindings, guidance, waiting streams and state to the
+/// document the learner runs under.
 public final class InMemoryLearners implements Learners {
 
     private final InMemoryLearnerBindings learnerBindings;

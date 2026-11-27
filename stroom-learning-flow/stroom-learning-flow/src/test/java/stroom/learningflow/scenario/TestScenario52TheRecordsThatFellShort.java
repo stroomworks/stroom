@@ -28,15 +28,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 52: **the records that fell short.**
+/// Tests the deferral row recorded for a stream of a learner that has learned nothing yet.
 ///
-/// Design 04 §3 moves the bar from the stream to the record (A55). Phase 3 recorded, in shadow, the rows
-/// phase 4 would defer on; phase 4 made them real, and what this scenario held of a served stream's
-/// shortfalls is now held where it happens: the stream that stops at its first short record and waits,
-/// stamped with the snapshot it failed against, in scenario 54; and the session's full pass naming
-/// every record that fell short, with its gate, in scenario 57 (A99 retired the inline walk the shadow
-/// rows were written from). What remains here is the row a stream of a learner that has learned nothing
-/// waits on.
+/// Other tests cover the rows for records that fell short of the bar: a served stream that stops at its first
+/// short record and waits, recording the snapshot it failed against, is tested in
+/// `TestScenario54TheTaskDecision`, and the session's full pass naming every record that fell short, with its
+/// gate, in `TestScenario57TheSessionRunsTheHeldStreamInFull`.
 class TestScenario52TheRecordsThatFellShort {
 
     private static final String DOC = "doc-1";
@@ -45,8 +42,8 @@ class TestScenario52TheRecordsThatFellShort {
 
     private static final String MIXED = Scenarios.resource("csv-mixed.csv");
 
-    /// A stream the document has no binding for, whose attempt is opened and parked for a worker (scenario
-    /// 30), waits: a row with nothing it failed against.
+    /// A stream with no binding to serve it, whose attempt is opened and left for the worker, waits on a
+    /// deferral row that names no snapshot it failed against and no failing records.
     @Test
     void aStreamOfALearnerNothingIsLearnedForIsRecordedToo() {
         final Scenarios scenarios = new Scenarios();

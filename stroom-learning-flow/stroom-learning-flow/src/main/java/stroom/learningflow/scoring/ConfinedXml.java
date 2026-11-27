@@ -36,12 +36,10 @@ import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.sax.TransformerHandler;
 import javax.xml.transform.stream.StreamResult;
 
-/**
- * A parser for XML a model wrote or a model's stylesheet produced (design 01 §11): a DOCTYPE is refused
- * outright, so no entity — external or expanding — can be declared, and nothing in the text can make the
- * harness fetch anything. Saxon's own parse options are not consulted for a {@code StreamSource}, which
- * is why the reader is supplied to it rather than configured on it.
- */
+/// Hardened XML parsing and serialising for XML that a model wrote or a model's stylesheet produced. A
+/// DOCTYPE is refused outright, so no entity (external or expanding) can be declared, and nothing in the
+/// text can make the parser fetch anything. Saxon does not apply its own parse options to a
+/// `StreamSource`, which is why a configured reader is supplied to it in a [SAXSource] instead.
 public final class ConfinedXml {
 
     private ConfinedXml() {
@@ -64,12 +62,12 @@ public final class ConfinedXml {
         return new SAXSource(reader(), new InputSource(new StringReader(xml)));
     }
 
-    /// A namespace-aware DOM of an XSD or other XML held as text, read with secure processing on and a
-    /// DOCTYPE refused, so that nothing in the text can make the parse fetch anything.
+    /// Parses an XSD or other XML held as text into a namespace-aware DOM, with secure processing on and
+    /// any DOCTYPE refused, so that nothing in the text can make the parse fetch anything.
     ///
     /// @param xml The text.
     /// @return The document.
-    /// @throws ParserConfigurationException Where the parser cannot be set up so.
+    /// @throws ParserConfigurationException Where the parser cannot be configured this way.
     /// @throws SAXException                 Where the text does not parse.
     /// @throws IOException                  Where the text cannot be read.
     public static Document document(final String xml)
@@ -81,8 +79,8 @@ public final class ConfinedXml {
         return factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
     }
 
-    /// A Saxon serialiser, locked down as every Saxon site in the module is: the SAX events it is given
-    /// are written to the writer as XML.
+    /// Creates a Saxon serialiser that writes the SAX events it is given to the writer as XML. It is locked
+    /// down in the same way as every other use of Saxon in the module.
     ///
     /// @param writer             Where the XML goes.
     /// @param indent             Whether the XML is indented.

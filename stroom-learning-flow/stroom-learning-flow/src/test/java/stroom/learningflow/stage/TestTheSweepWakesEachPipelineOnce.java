@@ -25,9 +25,11 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 06 A130: the learning job's sweep, per learner. A stream that waited against a transform no
-/// longer in force is not waiting on anything, so its pipeline is woken; what it reads is each learner's
-/// stamps, and what it wakes is each pipeline once, however many streams and learners wait on it.
+/// Tests the learning job's sweep for streams waiting on a transform that has since been replaced.
+///
+/// A stream that failed against a transform no longer in force has nothing left to wait for, so its pipeline's
+/// deferred tasks are woken to be processed again. The sweep compares each learner's waiting streams with the
+/// snapshot that now serves it, and wakes each pipeline once, however many streams and learners wait on it.
 class TestTheSweepWakesEachPipelineOnce {
 
     private static final String DOC = "doc-1";
@@ -36,8 +38,8 @@ class TestTheSweepWakesEachPipelineOnce {
     @Test
     void eachPipelineWithAStreamWaitingOnAReplacedTransformIsWokenOnce() {
         final Scenarios scenarios = new Scenarios();
-        // Two learners on one pipeline, both served by a transform that has moved on from the one their
-        // streams waited against: one pipeline to wake, not one per learner, nor one per stream.
+        // Two learners on one pipeline, both now served by a newer transform than the one their streams failed
+        // against: one pipeline to wake, not one per learner or one per stream.
         final Learner first = new Learner("pipeline-1", "learningFlow");
         final Learner second = new Learner("pipeline-1", "anotherLearningFlow");
         bind(scenarios, first, "rule-1", "v2", false);
@@ -45,15 +47,15 @@ class TestTheSweepWakesEachPipelineOnce {
         waitOn(scenarios, first, 1L, "v1");
         waitOn(scenarios, first, 2L, "v1");
         waitOn(scenarios, second, 3L, "v1");
-        // Waiting against the transform still in force: it is waiting on something, and is left.
+        // Failed against the transform still in force, so it still has something to wait for and is left.
         final Learner current = new Learner("pipeline-2", "learningFlow");
         bind(scenarios, current, "rule-3", "v2", false);
         waitOn(scenarios, current, 4L, "v2");
-        // Behind a draft: it waits for the review, as its streams do.
+        // The newer binding is a draft, so its streams wait for it to be reviewed.
         final Learner reviewed = new Learner("pipeline-3", "learningFlow");
         bind(scenarios, reviewed, "rule-4", "v2", true);
         waitOn(scenarios, reviewed, 5L, "v1");
-        // Nothing serves it: there is no transform to have replaced the one it waited against.
+        // Nothing serves this learner, so no transform has replaced the one its stream failed against.
         waitOn(scenarios, new Learner("pipeline-4", "learningFlow"), 6L, "v1");
 
         final int woken = scenarios.stage(Script.of()).wakeSuperseded();

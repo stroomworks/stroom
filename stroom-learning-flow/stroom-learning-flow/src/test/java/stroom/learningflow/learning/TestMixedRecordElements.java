@@ -27,14 +27,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Track 1 task 4: **XML whose records have different element names**
-/// (`docs/learning-flow-mixed-record-elements.md`).
+/// Tests record boundaries for XML whose records have different element names.
 ///
-/// The `GATEWAY-AUDIT` feed could not be learned at all. Every record is a child of `<batch>`, but the
-/// records come under nine different names, and the split step could only say *every element named X* —
-/// which then had to hold 90% of the document. `transfer` holds 41% and `authentication` 20%, so every
-/// answer naming a real record was rejected and the step ran out of candidates. The model diagnosed it
-/// correctly on its fifth try and had no way to say so.
+/// In the `GATEWAY-AUDIT` feed every record is a child of `<batch>`, but the records come under nine different
+/// element names. A boundary of "every element named X" would have to hold 90% of the document to pass the
+/// wholeness check, yet `transfer` holds only 41% and `authentication` 20%, so every answer naming a real
+/// record would be rejected. A boundary of "the children of element X" lets the split step describe such
+/// records.
 class TestMixedRecordElements {
 
     private static final String GATEWAY = Scenarios.resource("gateway-audit.xml");
@@ -71,9 +70,9 @@ class TestMixedRecordElements {
 
     @Test
     void aContainerThatOccursOnceIsNotRefused() {
-        // Half of why the feed could not be learned: the split is judged on a sample, and the first
-        // </batch> is at byte 11,318 while the default sample is 8,192 — so `batch` "occurs once" there
-        // and the old check read a container that repeats in the stream as a container of records.
+        // The split is judged on a sample, and in this feed the first </batch> is at byte 11,318 while the
+        // default sample is 8,192 bytes. So within a sample `batch` may occur only once, and a container that
+        // repeats in the stream must not be refused for that.
         final String oneBatch = GATEWAY.substring(0, GATEWAY.indexOf("</batch>") + "</batch>".length())
                                 + "</export>";
 
@@ -83,7 +82,7 @@ class TestMixedRecordElements {
 
     @Test
     void theRecordsOfTheFlattenedDriftAreTheRootsOwnChildren() {
-        // Drift 3 drops the <batch> wrapper, so the mixed records sit directly under <export>
+        // The flattened variant drops the <batch> wrapper, so the mixed records sit directly under <export>
         final OutputRecords document = OutputRecords.parse(FLATTENED).orElseThrow();
 
         assertThat(TargetChecks.recordChildren(document, RecordBoundary.ROOT, WHOLENESS)).isEmpty();
@@ -93,8 +92,8 @@ class TestMixedRecordElements {
 
     @Test
     void aPrefixOrANewNamespaceDoesNotChangeWhatARecordIs() {
-        // The boundary is a local name, so drift 1 (a prefix) and drift 2 (a changed namespace) are the
-        // same boundary as the stream it was learned on
+        // The boundary is a local name, so a variant with a namespace prefix and a variant with a changed
+        // namespace still have the same boundary as the stream it was learned on
         for (final String drifted : List.of(PREFIXED, NAMESPACED)) {
             final OutputRecords document = OutputRecords.parse(drifted).orElseThrow();
             assertThat(document.recordsBy(RecordBoundary.ofChildrenOf("batch")))
@@ -105,8 +104,8 @@ class TestMixedRecordElements {
 
     @Test
     void howDeepARecordSitsIsReadFromTheDocument() {
-        // What the fragment's SplitFilter is set to split at (§12 item 25): three for export > batch > *,
-        // two for the flattened drift
+        // This is the depth the fragment's SplitFilter is set to split at: 2 for export > batch > *, and 1 for
+        // the flattened variant
         assertThat(OutputRecords.parse(GATEWAY).orElseThrow()
                 .depthOf(RecordBoundary.ofChildrenOf("batch"))).hasValue(2);
         assertThat(OutputRecords.parse(FLATTENED).orElseThrow()
@@ -115,7 +114,7 @@ class TestMixedRecordElements {
 
     @Test
     void aContainerWithOneChildIsRefusedWithSomethingToTry() {
-        // Not "no", but "look one level deeper or one level up"
+        // The refusal suggests what to try instead, rather than just saying no
         final String wrapped = "<export><batch><only><a>1</a></only></batch></export>";
 
         assertThat(TargetChecks.recordChildren(OutputRecords.parse(wrapped).orElseThrow(), "batch", WHOLENESS))

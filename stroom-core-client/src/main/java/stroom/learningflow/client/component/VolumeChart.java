@@ -23,12 +23,17 @@ import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import java.util.List;
 import java.util.function.LongFunction;
 
-/// The volume a Smart Pipeline translated, day by day, as a small bar chart on its Quality Assurance tab: one bar
-/// per day, oldest on the left, its height the records translated that day, or the streams where no day's records
-/// were counted (streams translated before record counts were kept). One measure, so one colour and no legend;
-/// thin bars with rounded tops on a recessive baseline, a gap between them, and each bar's day and numbers as its
-/// tooltip. The markup is SVG (`role="img"`, named by what it shows), drawn here so that it is tested without a
-/// browser; the numbers are also in words above it and day by day in a table beneath it.
+/// Draws the small bar chart of a Smart Pipeline's daily translated volume on the pipeline's Quality Assurance
+/// tab.
+///
+/// There is one bar per day, oldest on the left. A bar's height is the number of records translated that day,
+/// or, if no day has a record count (e.g. streams translated before record counts were kept), the number of
+/// streams. With only one measure there is one colour and no legend. Each bar's tooltip gives its day and
+/// numbers.
+///
+/// The chart is SVG markup with `role="img"` and an accessible label describing it. It is built as a string
+/// here so that it can be unit tested without a browser. The same numbers are also given in words above the
+/// chart and in a day-by-day table beneath it.
 public final class VolumeChart {
 
     static final int WIDTH = 560;
@@ -44,7 +49,7 @@ public final class VolumeChart {
     }
 
     /// @param days The days, oldest first.
-    /// @return Whether the bars are records; false where no day's records were counted and they are streams.
+    /// @return True if the bars show records, or false if no day has a record count and they show streams.
     public static boolean byRecords(final List<VolumeDay> days) {
         return days.stream().anyMatch(day -> day.getRecords() > 0);
     }
@@ -52,8 +57,8 @@ public final class VolumeChart {
     /// Draws the chart.
     ///
     /// @param days     The days, oldest first.
-    /// @param dayLabel What a day is called, from its start in milliseconds, e.g. "17 Nov".
-    /// @return The SVG markup, escaped.
+    /// @param dayLabel Formats the start of a day in milliseconds as a label, e.g. "17 Nov".
+    /// @return The SVG markup, with all text in it HTML-escaped.
     public static String draw(final List<VolumeDay> days, final LongFunction<String> dayLabel) {
         final boolean records = byRecords(days);
         long most = 0;
@@ -70,7 +75,7 @@ public final class VolumeChart {
                 .append("viewBox=\"0 0 ").append(WIDTH).append(' ').append(HEIGHT).append("\" aria-label=\"")
                 .append(escape(measure + " translated each day, " + days.size() + " days: " + total + " in all"))
                 .append("\">");
-        // The baseline, recessive
+        // The baseline, styled to be unobtrusive
         svg.append("<line class=\"quality-tab__chart-axis\" x1=\"0\" x2=\"").append(WIDTH).append("\" y1=\"")
                 .append(PLOT_BOTTOM).append("\" y2=\"").append(PLOT_BOTTOM).append("\"/>");
         if (days.isEmpty()) {
@@ -87,7 +92,7 @@ public final class VolumeChart {
                     ? " stream"
                     : " streams");
             svg.append("<g class=\"quality-tab__chart-day\"><title>").append(escape(tip)).append("</title>");
-            // A hit target the height of the plot, so that a short bar's tooltip is easy to reach
+            // An invisible target the full height of the plot, so that a short bar's tooltip is easy to reach
             svg.append("<rect class=\"quality-tab__chart-hit\" x=\"").append(format(x)).append("\" y=\"")
                     .append(PLOT_TOP).append("\" width=\"").append(format(barWidth)).append("\" height=\"")
                     .append(PLOT_BOTTOM - PLOT_TOP).append("\"/>");
@@ -98,7 +103,7 @@ public final class VolumeChart {
             }
             svg.append("</g>");
         }
-        // The first and last days named, and today's position read from them
+        // Label the first and last days only
         svg.append(label(0, "start", dayLabel.apply(days.get(0).getDayMs())));
         svg.append(label(WIDTH, "end", dayLabel.apply(days.get(days.size() - 1).getDayMs())));
         svg.append("</svg>");
@@ -111,7 +116,7 @@ public final class VolumeChart {
                 : day.getStreams();
     }
 
-    // A bar anchored to the baseline, its top corners rounded
+    // The SVG path for a bar standing on the baseline, with its top corners rounded
     private static String bar(final double x, final double width, final double height) {
         final double radius = Math.min(RADIUS, Math.min(width / 2, height));
         final double top = PLOT_BOTTOM - height;
@@ -128,7 +133,7 @@ public final class VolumeChart {
                + "\" text-anchor=\"" + anchor + "\">" + escape(text) + "</text>";
     }
 
-    // One decimal place at most, without a locale
+    // Formats a number with at most one decimal place, independent of locale
     private static String format(final double value) {
         final long tenths = Math.round(value * 10);
         return tenths % 10 == 0

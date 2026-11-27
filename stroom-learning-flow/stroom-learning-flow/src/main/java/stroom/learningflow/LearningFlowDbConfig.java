@@ -24,6 +24,7 @@ import stroom.util.shared.BootStrapConfig;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/// Database connection configuration for the Learning Flow runtime state tables.
 @BootStrapConfig
 public class LearningFlowDbConfig extends AbstractDbConfig {
 

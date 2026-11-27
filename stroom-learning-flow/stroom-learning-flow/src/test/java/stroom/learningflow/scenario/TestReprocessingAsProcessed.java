@@ -51,12 +51,13 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 01 §7.3: reprocessing **as processed** runs each stream through the fragment that produced its
-/// output before — what an audit wants, and what a snapshot makes possible however the fragment has been
-/// rewritten since. Reprocessing as things are now is an ordinary processor filter on the pipeline (A129),
-/// and needs nothing of the stage.
+/// Tests reprocessing a stream "as processed", which runs it through the same fragment, under the same record
+/// boundary, that produced its earlier output.
 ///
-/// As processed differs from as now only once a binding has been rebound, which is what these say.
+/// This is what an audit needs, and the snapshot of the fragment makes it possible however much the fragment
+/// has changed since. Reprocessing with the current binding is just an ordinary processor filter on the
+/// pipeline and is not tested here. The two differ only after a binding has been rebound, so these tests
+/// rebind before reprocessing.
 class TestReprocessingAsProcessed {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -80,7 +81,8 @@ class TestReprocessingAsProcessed {
         return new Input(id, FEED, "Raw Events", Map.of("Format", "CSV"), data, "pipeline-1");
     }
 
-    /// A fragment runner that remembers what boundary it was asked to run under, and otherwise runs.
+    /// A fragment runner that records the boundary each run is given, and otherwise delegates to the runner it
+    /// wraps.
     private static final class Watching implements FragmentRunner {
 
         private final List<RecordBoundary> boundaries = new ArrayList<>();
@@ -90,7 +92,7 @@ class TestReprocessingAsProcessed {
             this.runner = runner;
         }
 
-        /// Served as the runner it wraps serves: what is watched here is what a run is given.
+        /// Serves through the wrapped runner without recording anything; only calls to `run` are recorded.
         @Override
         public ServedStream serve(final DocRef fragment,
                                   final InputStream input,
@@ -134,9 +136,9 @@ class TestReprocessingAsProcessed {
                 .isInstanceOf(Promoted.class);
         final DocRef first = learned.produced().fragment();
 
-        // The binding is rebound to another fragment, as an improvement does (§7.3 rule 2). The second
-        // fragment is a real one: an as-current run would succeed with it and produce other events,
-        // which is what makes the two modes tell apart.
+        // The binding is rebound to another fragment, as an improvement does, keeping its UUID. The second
+        // fragment is a real one: a run with the current binding would succeed with it and produce different
+        // events, which is what lets the test tell the two modes apart.
         final Binding binding = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).getFirst();
         final DocRef second = scenarios.stores.writer().write(
                 DocPath.fromParts("Learning Flow", FEED), "improved-v2",
@@ -147,7 +149,7 @@ class TestReprocessingAsProcessed {
                 binding.getRecordBoundary());
         scenarios.learnerBindings.replace(Scenarios.LEARNER, "doc-1", binding.copy().pipeline(second).build());
 
-        // As-processed: the stream goes back through the fragment that made its output.
+        // Reprocessing as processed sends the stream back through the fragment that made its output.
         final StageRun again = stage.reprocess(doc, Scenarios.LEARNER, stream(1, CSV.input()));
 
         assertThat(again.decision()).describedAs(again.decision().toString()).isInstanceOf(Bound.class);
@@ -159,10 +161,10 @@ class TestReprocessingAsProcessed {
 
     @Test
     void asProcessedRunsUnderTheBoundaryThatProducedTheOutputAndNotTodaysBindingBoundary() {
-        // A rebind keeps the binding's uuid and replaces its boundary (§7.3 rule 2), and the boundary is
-        // what says where the chain is cut and therefore what the transform is given. So the fragment
-        // alone is not enough to run a stream as it ran: the row remembers what one record was when the
-        // output was made, and that is what the run is given.
+        // A rebind keeps the binding's UUID but replaces its record boundary, and the boundary decides where
+        // the input is split into records and so what the transform is given. The fragment alone is therefore
+        // not enough to rerun a stream as it ran: the record of the output keeps the boundary it was made
+        // with, and the reprocessing run must be given that one.
         final Scenarios scenarios = new Scenarios();
         final Watching watching = new Watching(new StandInFragmentRunner(scenarios.stores.pipelines,
                 scenarios.stores.stackLoader, scenarios.stores.textConverters, scenarios.stores.xslts,
@@ -174,7 +176,7 @@ class TestReprocessingAsProcessed {
         final Stage stage = scenarios.stage(document -> script, scenarios.learnerBindings, watching);
         final LearningFlowDoc doc = doc().copy()
                 .allowedElements(List.of("JSONParser", "XSLTFilter"))
-                // The split question is what settles the boundary, and target-first asks it of every input.
+                // The split question decides the boundary, and the target-first flow asks it for every input.
                 .flow(FlowExamples.flow(FlowExample.TARGET_FIRST))
                 .build();
         final Input json = new Input(1, "API-GATEWAY", "Raw Events", Map.of("Format", "JSON"),

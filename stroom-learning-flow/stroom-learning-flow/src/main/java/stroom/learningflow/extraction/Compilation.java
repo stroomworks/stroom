@@ -21,30 +21,23 @@ import stroom.util.shared.StoredError;
 
 import java.util.List;
 
-/**
- * The outcome of the compile gate (design §8.1). A Data Splitter configuration either becomes a parser
- * factory that can be run over input, or is rejected with the diagnostics that say why. A rejected
- * configuration scores zero and never runs; its diagnostics are the most valuable feedback the model
- * can receive, because they say exactly what is wrong rather than merely that something is.
- */
+/// The result of compiling a Data Splitter configuration proposed by the model, from [DataSplitterCompiler].
+///
+/// A configuration either compiles into a parser factory that can be run over input, or is rejected with the
+/// diagnostics that say why. A rejected configuration is never run. Its diagnostics are sent back to the model,
+/// because they say exactly what is wrong, which is the most useful feedback it can get.
 public sealed interface Compilation {
 
-    /**
-     * @return Every diagnostic the compile produced, warnings included. Empty for a clean compile.
-     */
+    /// @return Every diagnostic the compile produced, warnings included. Empty for a clean compile.
     List<StoredError> diagnostics();
 
-    /**
-     * A configuration the Data Splitter accepted. It may still have produced warnings.
-     */
+    /// A configuration the Data Splitter accepted. It may still have produced warnings.
     record Compiled(ParserFactory parserFactory, List<StoredError> diagnostics) implements Compilation {
 
     }
 
-    /**
-     * A configuration the Data Splitter refused: it was not well-formed XML, did not validate against the
-     * Data Splitter schema, or did not link into a usable parser.
-     */
+    /// A configuration the Data Splitter refused, because it was not well-formed XML, did not validate against
+    /// the Data Splitter schema, or could not be built into a usable parser.
     record Rejected(List<StoredError> diagnostics) implements Compilation {
 
     }

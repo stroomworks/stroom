@@ -28,13 +28,14 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.HashMap;
 import java.util.Map;
 
-/// The `App/Editors/LearningFlowStopReports` stories: the AI Translation tab of Stroom's real pipeline
-/// editor ([AiPipelines]) with the firewall's learning run stopped in each of the ways a run can stop, a
-/// story each, with its report (error, details, suggestions) as the engine's `StopReports` words it. They
-/// are there to be seen: each says the headline is shown, and that the page has no problems.
+/// The `App/Editors/LearningFlowStopReports` stories show the AI Translation tab of Stroom's real pipeline
+/// editor ([AiPipelines]) with the firewall's learning run stopped, one story for each way a run can stop.
+/// Each shows the run's report (error, details and suggestions) as the server's `StopReports` words it.
+/// The stories are mainly for looking at, so each play only checks that the headline and the suggestions
+/// are shown and that the page has no problems.
 ///
-/// The reports were written by `StopReports` itself, from realistic answers and failures, so that what is
-/// shown is what a person would read; they are kept here as JSON, as the Supervisor serves them.
+/// The reports were produced by `StopReports` itself from realistic answers and failures, so that what is
+/// shown is what a person would read. They are kept here as JSON, as the Supervisor serves them.
 public final class LearningFlowStopReportStories {
 
     private static final Map<String, String> REPORTS = new HashMap<>();
@@ -173,105 +174,106 @@ public final class LearningFlowStopReportStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/LearningFlowStopReports", LearningFlowStopReportStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // A step ran out of tries: how each answer fell short, the closest score, and the AI's refused
-                // reply
+                // A step ran out of tries. The report says how each answer fell short, gives the closest
+                // score, and quotes the AI's last, rejected reply.
                 .story("StepOutOfTries", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "step-spent", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: couldn't find what one record is: all 5 answers fell short."))
-                // Every answer fell short the same way, so more tries are not suggested
+                // Every answer fell short in the same way, so more tries are not suggested.
                 .story("EveryAnswerFellShortTheSameWay", context -> render(context, LearningFlowFixtures.DOC,
                         "Parked", "step-spent-same-way", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: couldn't write the transform: all 3 answers fell short."))
-                // The parser ran out of tries, which stops learning: learn again, not answer
+                // The parser ran out of tries, which stops learning, so the report suggests learning again
+                // rather than answering the step.
                 .story("ParserGivesUp", context -> render(context, LearningFlowFixtures.DOC, "Abandoned",
                         "parser-gives-up", true))
                 .withPlay(play -> expectReport(play,
                         "Stopped learning: couldn't write the parser: all 3 answers fell short."))
-                // A step's own rule paused the run
+                // A step's own rule paused the run.
                 .story("StepRule", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "step-rule", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: stopped at \"Write the transform\", as its rule says to when the answer doesn't "
                         + "compile."))
-                // A step's element failed on its input, with nothing to ask the model
+                // A step's element failed on its input, so there was nothing to ask the model.
                 .story("StepFailed", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "step-failed", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: couldn't find what one record is: JSONParser cannot read the sample as JSON."))
-                // Finish with Unknowns was chosen, but the flow has no fallback
+                // Finish with Unknowns was chosen, but the flow has no fallback.
                 .story("FallbackMissing", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "fallback-missing", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: couldn't finish with Unknowns: \"Write the transform\" has no rule to use the "
                         + "fallback."))
-                // The run took longer than its time for each run
+                // The run took longer than the time allowed for each run.
                 .story("OutOfTime", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "out-of-time", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: ran out of time at \"Write the parser\" (question 4)."))
-                // The run spent more tokens than it may
+                // The run spent more tokens than it is allowed.
                 .story("OutOfTokens", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "out-of-tokens", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: ran out of tokens at \"Write the transform\" (question 9)."))
-                // The model didn't reply in time
+                // The model didn't reply in time.
                 .story("ModelTimeout", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-timeout", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the model \"GPT-4o\" didn't reply in time."))
-                // The model refused the request: it couldn't sign in
+                // The model refused the request because it couldn't sign in.
                 .story("ModelSignIn", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-sign-in", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the model \"GPT-4o\" refused the request: it couldn't sign in."))
-                // The model wasn't found by its server
+                // The model wasn't found by its server.
                 .story("ModelNotFound", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-not-found", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the model \"GPT-4o\" wasn't found by its server."))
-                // The model turned the request away: too many requests
+                // The model rejected the request because of too many requests.
                 .story("ModelRateLimit", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-rate-limit", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the model \"GPT-4o\" turned the request away: too many requests."))
-                // The model couldn't be reached
+                // The model couldn't be reached.
                 .story("ModelUnreachable", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-unreachable", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: couldn't reach the model \"GPT-4o\"."))
-                // The model's server returned an error
+                // The model's server returned an error.
                 .story("ModelHttpError", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "model-http-error", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the model \"GPT-4o\" returned an error (HTTP 502)."))
-                // The document names no model
+                // The document names no model.
                 .story("NoModel", context -> render(context, LearningFlowFixtures.NEW_DOC, "Error",
                         "no-model", false))
                 .withPlay(play -> expectReport(play,
                         "Failed: the Learning Flow names no model to ask."))
-                // None of the allowed element types can be learned with
+                // None of the allowed element types can be learned.
                 .story("NoElementTypes", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "no-elements", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: none of the element types this Learning Flow allows can be learned with."))
-                // The learning steps have a problem, so learning can't start
+                // The learning steps have a problem, so learning can't start.
                 .story("InvalidSteps", context -> render(context, LearningFlowFixtures.DOC, "Abandoned",
                         "invalid-steps", true))
                 .withPlay(play -> expectReport(play,
                         "Stopped learning: the learning steps have a problem, so learning can't start."))
-                // The learning steps went round in a loop
+                // The learning steps went round in a loop.
                 .story("StepsGoRoundALoop", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "loop", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: the learning steps went round in a loop."))
-                // The learning steps ended without writing an element
+                // The learning steps ended without writing an element.
                 .story("ElementNeverWritten", context -> render(context, LearningFlowFixtures.DOC, "Parked",
                         "not-written", false))
                 .withPlay(play -> expectReport(play,
                         "Paused: the learning steps ended without writing XSLTFilter."))
-                // Anything else that failed
+                // Any other failure.
                 .story("OtherFailure", context -> render(context, LearningFlowFixtures.DOC, "Error",
                         "other-failure", false))
                 .withPlay(play -> expectReport(play,
@@ -279,15 +281,16 @@ public final class LearningFlowStopReportStories {
                         + "made."));
     }
 
-    // The feed's headline is the report's error, and the page has no problems
+    // Checks that the report's error is shown as the headline, that the suggestions are listed, and that the
+    // page has no problems.
     private static void expectReport(final Play play, final String headline) {
         play.expect(play.findByText(headline)).toBeInTheDocument();
         play.expect(play.getByRole("list", "Suggestions")).toBeInTheDocument();
         DocEditors.expectNoProblems(play);
     }
 
-    // The firewall's pipeline at its AI Translation tab, its run stopped as the report says, its learner given
-    // up where it is
+    // Renders the firewall pipeline at its AI Translation tab, with its run stopped as the report says, and
+    // its learner given up if `givenUp` is set.
     private static Widget render(final StoryContext context,
                                  final String doc,
                                  final String status,
@@ -304,7 +307,7 @@ public final class LearningFlowStopReportStories {
                 AiPipelines.ELEMENT);
     }
 
-    // A report's error line, read from its JSON, where it comes after the cause and the step
+    // Reads a report's error line from its JSON, unescaping it.
     private static String error(final String report) {
         final String key = "\"error\": \"";
         final int start = report.indexOf(key) + key.length();

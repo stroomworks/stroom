@@ -45,14 +45,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Design 02 §5, scenario 22 (A25; design 04 §3): in review mode a learned binding is a draft that serves
- * nothing; streams of the learner wait behind it, each on a deferral row naming it; Approve is the
- * promotion and wakes them; Reject gives the learner up with the reason, and the streams that waited are
- * woken to error. And the case the catalogue leaves implicit: a
- * relearned candidate under review is a draft behind the incumbent, which keeps serving until a person
- * decides.
- */
+/// Tests review mode, where a person must approve what is learned before it serves.
+///
+/// In review mode a learned binding is a draft that serves nothing. The learner's streams wait behind it,
+/// each with a deferral row naming the draft. Approving the draft promotes it and wakes those streams.
+/// Rejecting it gives the learner up with the reason, and the streams that waited are woken so that they
+/// error. A candidate learned while a binding is already serving is a draft behind that existing binding,
+/// which keeps serving until a person decides.
 class TestScenario22ReviewMode {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -110,9 +109,10 @@ class TestScenario22ReviewMode {
         return output.split("<Event>", -1).length - 1;
     }
 
-    /**
-     * The first two streams of the learner: one learns the draft, the next is refused by it.
-     */
+    /// Processes the learner's first two streams: the first learns a draft, and the second is deferred
+    /// behind it.
+    ///
+    /// @return The run of the second stream, which waits for the draft to be reviewed.
     private static StageRun drafted(final Scenarios scenarios) {
         final Script script = learning(scenarios, FOUR_FIELDS);
         final StageRun first = scenarios.process(script, review(), stream(1, lines(7, 0))).learned();
@@ -148,7 +148,8 @@ class TestScenario22ReviewMode {
 
         scenarios.promotion().approve(waiting.doc(), draft.getUuid(), null);
 
-        // The document is untouched: what approval changed is rows (A41).
+        // Approval changes only the binding's rows, never the document, which holds only what a person
+        // authors.
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
         final Binding live = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         assertThat(live.getUuid()).isEqualTo(draft.getUuid());
@@ -205,9 +206,9 @@ class TestScenario22ReviewMode {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /// A draft is decided from its own document (design 06 phase J slice 2b). Its uuid names it across
-    /// every learner, and the document is what the person deciding was permitted on, so a draft of
-    /// another document is not this one's to approve or reject, whatever uuid is sent.
+    /// A draft can only be approved or rejected through the document it belongs to. Its UUID is unique across
+    /// all learners, but permission to decide is checked against the document, so a draft of another document
+    /// cannot be decided through this one, whatever UUID is sent.
     @Test
     void aDraftOfAnotherDocumentIsNotThisOnesToDecide() {
         final Scenarios scenarios = new Scenarios();
@@ -227,9 +228,9 @@ class TestScenario22ReviewMode {
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).isEmpty();
     }
 
-    /// Taking back the binding a draft would replace leaves the draft awaiting review. It is still the
-    /// learner's candidate, and approving it is how the learner is served again; forgotten, it would be a
-    /// draft nothing awaits — its streams waiting on a review that approve and reject both refuse.
+    /// Retracting the binding a draft would replace leaves the draft awaiting review. It is still the
+    /// learner's candidate, and approving it is how the learner is served again. If it were forgotten, its
+    /// streams would wait for a review that neither approve nor reject would accept.
     @Test
     void retractingTheIncumbentLeavesItsDraftAwaitingReview() {
         final Scenarios scenarios = new Scenarios();
@@ -259,9 +260,9 @@ class TestScenario22ReviewMode {
                 });
     }
 
-    /// A stream the incumbent falls short on while a draft awaits review waits for the review, as the
-    /// learner's marked streams do: it opens no session. One would relearn behind a person's back, and its
-    /// reset would forget the draft awaiting them.
+    /// A stream that the serving binding falls short on while a draft awaits review waits for the review and
+    /// opens no session. A session would relearn without the reviewer knowing, and resetting the learner for
+    /// it would lose the draft awaiting review.
     @Test
     void aStreamThatFallsShortWhileADraftAwaitsReviewWaitsForTheReview() {
         final Scenarios scenarios = new Scenarios();
@@ -276,8 +277,8 @@ class TestScenario22ReviewMode {
                 stream(4, withAlarms)).learned();
         final Binding draft = ((Drafted) relearned.decision()).binding();
         final int attemptsBefore = scenarios.attempts.forDocument(DOC, 100).size();
-        // A stream that fell short of the incumbent before, tried again: its row is stamped against the
-        // transform in force, which is what sends a task to open a session.
+        // A stream that fell short with the serving binding before is tried again. Its deferral row records
+        // the snapshot of the serving binding, which is what would normally make a task open a session.
         scenarios.deferrals.deferred(Scenarios.LEARNER, DOC, 7L, "DOOR-ACCESS", "Raw Events",
                 incumbent.getSnapshot(), "Record 3 fell short of the bar", 1);
         scenarios.inputs.put(stream(7, withAlarms));
@@ -302,15 +303,16 @@ class TestScenario22ReviewMode {
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
 
-        // The score falls and the learner is marked, as in scenario 27.
+        // The serving binding still serves the stream with alarms in it, but its score falls.
         final Script silent = Script.of();
         final StageRun marked = scenarios.process(silent, bound, stream(3, withAlarms)).learned();
         assertThat(marked.decision()).isInstanceOf(Bound.class);
-        // The score fell; the mark is a person's, from the serving list (design 04 §6), as in scenario 27.
+        // Serving does not mark the learner itself: a person marks it for relearning from the serving list.
         scenarios.states.markForRelearning(Scenarios.LEARNER, DOC, "Scored below the threshold: improve it");
         assertThat(scenarios.states.relearnReason(Scenarios.LEARNER)).isPresent();
 
-        // Relearned: the incumbent serves, and the candidate is written as a draft behind it.
+        // While relearning, the serving binding serves the stream, and the candidate is written as a draft
+        // behind it.
         final Script relearn = learning(scenarios, FOUR_FIELDS_AND_ALARMS);
         final StageRun relearned = scenarios.process(relearn, bound, stream(4, withAlarms)).learned();
         relearn.verifyExhausted();
@@ -321,16 +323,17 @@ class TestScenario22ReviewMode {
         assertThat(events(relearned.output())).describedAs("the incumbent served").isEqualTo(14);
         assertThat(relearned.produced().fragment()).isEqualTo(incumbent.getPipeline());
 
-        // While the draft waits the incumbent keeps serving, the model is not asked, no second draft.
+        // While the draft waits, the serving binding keeps serving, the model is not asked and no second
+        // draft is made.
         final StageRun meanwhile = scenarios.process(silent, relearned.doc(), stream(5, withAlarms)).learned();
         assertThat(meanwhile.decision()).isInstanceOf(Bound.class);
         assertThat(((Bound) meanwhile.decision()).binding()).isEqualTo(incumbent);
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(2);
         assertThat(silent.asked()).isEmpty();
 
-        // Approve copies the draft into the fragment that serves (A58): one binding, the incumbent's uuid,
-        // the incumbent's own fragment holding what the draft learned, and a regression set that carries
-        // both histories.
+        // Approving copies the draft into the serving fragment, because a learner has one fragment that is
+        // improved in place. The result is one binding with the serving binding's UUID, its own fragment
+        // holding what the draft learned, and a regression corpus holding the records of both.
         final int incumbentHeld = scenarios.regressionSet.accepted(incumbent.getUuid()).size();
         scenarios.promotion().approve(relearned.doc(), draft.getUuid(), null);
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
@@ -362,7 +365,7 @@ class TestScenario22ReviewMode {
         final Binding incumbent = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
         final String withAlarms = lines(20, 3);
         scenarios.process(Script.of(), bound, stream(3, withAlarms)).learned();
-        // The mark is a person's (design 04 §6).
+        // Serving does not mark the learner itself: a person marks it for relearning.
         scenarios.states.markForRelearning(Scenarios.LEARNER, DOC, "Scored below the threshold: improve it");
         final StageRun relearned = scenarios.process(learning(scenarios, FOUR_FIELDS_AND_ALARMS), bound, stream(4,
                 withAlarms)).learned();
@@ -370,8 +373,9 @@ class TestScenario22ReviewMode {
 
         scenarios.promotion().reject(relearned.doc(), draft.getUuid(), "no", null);
 
-        // The incumbent serves on; the rejection is recorded against the learner, and the same falling
-        // score does not mark it or produce the same draft again until an operator says otherwise.
+        // The serving binding carries on serving. The rejection is recorded against the learner as a give-up,
+        // so the same falling score neither marks it nor produces the same draft again until a person sends
+        // it back.
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).containsExactly(incumbent);
         assertThat(scenarios.states.reasonGivenUp(Scenarios.LEARNER)).contains("Rejected: no");
         final Script silent = Script.of();
@@ -386,8 +390,9 @@ class TestScenario22ReviewMode {
 
     @Test
     void approvingADraftLearnedFromTooFewRecordsStartsItsRegressionSet() {
-        // Too few records for A14; a person approving the draft is design 01 §6's exception, and the binding
-        // goes live with the records it was judged on in its regression set (A18).
+        // The stream has fewer records than the minimum needed to learn, so the candidate could not be
+        // promoted automatically. A person approving the draft is the exception to that minimum, and the
+        // binding goes live with the records it was judged on as its regression corpus.
         final Scenarios scenarios = new Scenarios();
         final Script script = learning(scenarios, FOUR_FIELDS);
         final StageRun first = scenarios.process(script, review().copy().minRecordsToLearn(10).build(),
@@ -407,7 +412,7 @@ class TestScenario22ReviewMode {
 
     @Test
     void approvingOrRejectingADraftEndsItsAttempt() {
-        // A28: an attempt that wrote a draft is awaiting review, and stops being so when a person decides.
+        // An attempt that wrote a draft is awaiting review until a person approves or rejects the draft.
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);
@@ -434,8 +439,8 @@ class TestScenario22ReviewMode {
 
     @Test
     void aDraftCarriesTheEvidenceItWasJudgedOnAndKeepsWhoDecided() {
-        // Track 2 step 4: a person approving a draft is shown how it did on each check, and what they
-        // decided is kept with their name and the time
+        // A person reviewing a draft is shown how it did on each check, and their decision is kept with their
+        // name and the time.
         final Scenarios scenarios = new Scenarios();
         final StageRun waiting = drafted(scenarios);
         final Binding draft = scenarios.learnerBindings.forLearner(Scenarios.LEARNER).get(0);

@@ -28,8 +28,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The volume a Smart Pipeline's Quality Assurance tab shows: streams and records per day, by binding, with a
-/// stream whose records nobody counted counting as a stream alone, and a replay keeping what was counted.
+/// Tests [VolumesDao], which supplies the volume chart on a Smart Pipeline's Quality Assurance tab: streams
+/// and records per day, by binding. A stream whose records were not counted counts as a stream with no
+/// records, and a replay that cannot count keeps the counts already recorded.
 class TestVolumesDao {
 
     private static final long DAY_MS = 24L * 60 * 60 * 1000;

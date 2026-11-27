@@ -19,28 +19,28 @@ package stroom.learningflow.stage;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * The bindings every output carries (design 01 §7.3 rule 3), as far as the stage needs to look back at
- * them: retracting a binding means finding the inputs whose outputs it produced. In-memory in scenarios; in
- * a node the bindings are the output stream's attributes and this is a meta search over them.
- */
+/// Records which binding produced each output, so that the stage can look back at them: retracting a
+/// binding means finding the inputs it produced output for, and an as-processed reprocess needs to know
+/// what produced an input's output. Tests keep this in memory; a node records it in a table and on the
+/// output stream's attributes.
 public interface Outputs {
 
-    /// One output, as it is emitted: which input it was made from, which pipeline was running, and what
-    /// bound it (design 01 §7.3 rule 3).
+    /// Records one output as it is emitted: which input it was made from, which pipeline was running, and
+    /// which binding produced it.
     ///
-    /// @param inputId  The stream's meta id.
-    /// @param pipeline The pipeline that was running.
-    /// @param produced What bound it.
+    /// @param inputId  The input stream's meta id.
+    /// @param pipeline The UUID of the pipeline that was running.
+    /// @param produced The binding, fragment and snapshot that produced it.
     void emitted(long inputId, String pipeline, Produced produced);
 
-    /// The same, with how many records the stream held, for the volume a Smart Pipeline's Quality
-    /// Assurance tab shows. A store that doesn't count records ignores it.
+    /// As [#emitted(long, String, Produced)], also recording how many records the stream held, for the
+    /// volume shown on a Smart Pipeline's Quality Assurance tab. A store that doesn't count records ignores
+    /// it.
     ///
-    /// @param inputId  The stream's meta id.
-    /// @param pipeline The pipeline that was running.
-    /// @param produced What bound it.
-    /// @param records  How many records the stream held, or null where nobody counted them.
+    /// @param inputId  The input stream's meta id.
+    /// @param pipeline The UUID of the pipeline that was running.
+    /// @param produced The binding, fragment and snapshot that produced it.
+    /// @param records  How many records the stream held, or null if they were not counted.
     default void emitted(final long inputId,
                          final String pipeline,
                          final Produced produced,
@@ -48,16 +48,16 @@ public interface Outputs {
         emitted(inputId, pipeline, produced, records, null);
     }
 
-    /// The same, with how many of the stream's records the translation declared it deliberately skipped
-    /// (`DeclaredSkips`, ruling A148). There is no cap on the skip rate by decision, so the count being
-    /// visible beside the volume is the whole of what stops a translation quietly skipping its awkward
-    /// records. A store that doesn't count records ignores it.
+    /// As [#emitted(long, String, Produced, Integer)], also recording how many of the stream's records the
+    /// translation declared it deliberately skipped (`DeclaredSkips`). The skip rate is deliberately not
+    /// capped, so showing the count beside the volume is the only thing that stops a translation quietly
+    /// skipping its awkward records. A store that doesn't count records ignores it.
     ///
-    /// @param inputId  The stream's meta id.
-    /// @param pipeline The pipeline that was running.
-    /// @param produced What bound it.
-    /// @param records  How many records the stream held, or null where nobody counted them.
-    /// @param skipped  How many of them were declared skipped, or null where nobody counted them.
+    /// @param inputId  The input stream's meta id.
+    /// @param pipeline The UUID of the pipeline that was running.
+    /// @param produced The binding, fragment and snapshot that produced it.
+    /// @param records  How many records the stream held, or null if they were not counted.
+    /// @param skipped  How many of them were declared skipped, or null if they were not counted.
     default void emitted(final long inputId,
                          final String pipeline,
                          final Produced produced,
@@ -66,38 +66,36 @@ public interface Outputs {
         emitted(inputId, pipeline, produced);
     }
 
-    /**
-     * What one binding produced: the inputs whose output this binding made *with this fragment*, oldest
-     * first, each with the pipeline that made it — what a retraction counts (§6, A129).
-     * <p>
-     * By fragment as well as binding, because a binding keeps its uuid when it is rebound (§7.3 rule 3): a
-     * retraction is of the binding in front of us, and the streams an earlier generation of the same
-     * binding produced were produced correctly by what was then bound.
-     */
+    /// Finds the inputs this binding produced output for *with this fragment*, oldest first, each with the
+    /// pipeline that processed it. A retraction counts these.
+    ///
+    /// The fragment is matched as well as the binding, because a binding keeps its UUID when it is rebound
+    /// to a new fragment. A retraction is of the binding as it is now, and streams produced by an earlier
+    /// fragment of the same binding were produced correctly by what was bound then.
     List<Replayable> boundBy(String bindingUuid, String fragmentUuid);
 
-    /// What was bound when this input was last processed by this pipeline, for an **as-processed**
-    /// reprocess (design 01 §7.3): the same fragment runs again and the result is the result it had,
-    /// because rule 1 makes a written document immutable — an improvement is a new document, never an
-    /// edit to one that has run.
+    /// Gets what produced this input's output when it was last processed by this pipeline, for an
+    /// **as-processed** reprocess. The recorded fragment and snapshot are run again, so the result is the
+    /// one the input had when it was first processed.
     ///
-    /// This is what an audit needs, and it is the opposite of the release A12 performs, which resolves
-    /// the learner's binding as it is today so that a backlog picks up what was learned since.
+    /// This is what an audit needs. It is the opposite of an ordinary reprocess, which uses the learner's
+    /// binding as it is today, so that waiting streams pick up what has been learned since.
     ///
-    /// @param docUuid Whose stage is asking: without it, a pipeline holding both stages of §3 would
-    ///                answer the extraction stage with the transformation stage's fragment, which would
-    ///                then be run over raw bytes.
-    /// @return Empty where nothing is recorded for that document, input and pipeline: nothing was
-    /// produced, or it was produced before this node began recording, or the row has been pruned. An
-    /// as-processed reprocess of an input nothing remembers cannot be served and must say so rather than
-    /// quietly serving as-current.
+    /// @param docUuid  The UUID of the document of the stage that is asking. Without it, a pipeline holding
+    ///                 two Smart Pipeline elements (e.g. one extracting and one transforming) could answer one
+    ///                 element with the other's fragment, which would then be run over the wrong input.
+    /// @param inputId  The input stream's meta id.
+    /// @param pipeline The UUID of the pipeline.
+    /// @return Empty if nothing is recorded for that document, input and pipeline: nothing was produced, it
+    ///         was produced before recording began, or the row has been pruned. An as-processed reprocess
+    ///         of an input with no record cannot be served, and must say so rather than quietly process it
+    ///         with the current binding.
     Optional<Produced> asProcessed(String docUuid, long inputId, String pipeline);
 
-    /**
-     * Forget what was produced before a given time (design 01 §12 item 8): a row per output stream is a
-     * row per stream, so what a retraction can still reach is what a node is told to keep.
-     *
-     * @return How many were forgotten.
-     */
+    /// Deletes the records of outputs produced before a given time. There is a row per output stream, so
+    /// they must be pruned; a retraction can then only count the outputs still recorded.
+    ///
+    /// @param producedBeforeMs Records of outputs produced before this time are deleted.
+    /// @return How many records were deleted.
     int prune(long producedBeforeMs);
 }

@@ -18,10 +18,10 @@ package stroom.learningflow.shared;
 
 import java.util.List;
 
-/// The words a person reads for a learning flow's steps and rules, e.g. "Write the parser" and "if the
-/// records don't read all the input, go back to step 1 (Choose the elements)". Shared, so that what is
-/// wrong with a flow ([LearningFlow#check()]) and why a learning run stopped are said in the words the
-/// Setup tab uses, never in a step's own field names or its kinds' names.
+/// The wording a person reads for a learning flow's steps and rules (transitions), e.g. "Write the parser" and
+/// "if the records don't read all the input, go back to step 1 (Choose the elements)". It is shared between
+/// client and server so that problems with a flow ([LearningFlow#check()]) and the reasons a learning session
+/// stopped use the same words as the Setup tab, never a step's field names or its kind's enum name.
 public final class FlowWords {
 
     private FlowWords() {
@@ -131,10 +131,10 @@ public final class FlowWords {
     }
 
     /// @param step A step.
-    /// @return What it does when it runs out of tries and no rule says otherwise: a parser stops learning,
-    ///         for spent candidates there are the one failure nothing can serve (A52, A54); any other
-    ///         step pauses for a person (A65). A step that writes every element does either, by which
-    ///         element ran out.
+    /// @return What it does when it runs out of tries and no rule says otherwise. A parser step stops
+    ///         learning, because a stream that cannot be parsed is the one failure nothing can serve; any
+    ///         other step pauses for a person. A step that writes every element does either, depending on
+    ///         which element ran out.
     public static String usualExit(final FlowStep step) {
         if (step.getRole() == ConfigureRole.PARSER) {
             return "stop learning";
@@ -162,8 +162,8 @@ public final class FlowWords {
     }
 
     /// Where a rule on a step goes, e.g. "go back to step 1 (Choose the elements)", "use the fallback",
-    /// "finish" or "pause for a person"; and a step it names that isn't there, so that it is seen to be
-    /// wrong.
+    /// "finish" or "pause for a person". A rule naming a step that doesn't exist is described as such, so
+    /// that the mistake can be seen.
     ///
     /// @param steps      The flow's steps.
     /// @param index      The index of the step the rule is on.

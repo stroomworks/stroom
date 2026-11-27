@@ -32,11 +32,9 @@ import java.util.List;
 import java.util.Optional;
 import javax.xml.parsers.ParserConfigurationException;
 
-/**
- * Counts the children of an XML document's root element — the records of a {@code records:2} document,
- * the events of an {@code event-logging:3} one. Parsed with the hardened reader every other parse in
- * this module uses; a document that does not parse counts as having no records.
- */
+/// Counts the element children of an XML document's root, i.e. the records of a `records:2` document or
+/// the events of an `event-logging:3` one, counting declared skips separately. It parses with Stroom's
+/// secure-processing SAX parser; a document that does not parse counts as having no records.
 public final class Records {
 
     private Records() {
@@ -46,12 +44,12 @@ public final class Records {
         return Math.max(0, parsed(xml));
     }
 
-    /// The records a translation declared it deliberately skipped: the markers among the root's children
-    /// ([DeclaredSkips]). They are not events, so they are not counted as records; they are what makes
-    /// the completeness sum add up for a feed whose header lines are not events.
+    /// Counts the records a translation declared it deliberately skipped: the [DeclaredSkips] markers
+    /// among the root's children. They are not events, so they are not counted as records; they are what
+    /// makes the completeness check add up for a feed whose header lines are not events.
     ///
     /// @param xml The output.
-    /// @return How many skips it declares; none where it is not a document.
+    /// @return How many skips it declares; zero where it does not parse.
     public static int skips(final String xml) {
         final Counter counter = counted(xml);
         return counter == null
@@ -59,7 +57,7 @@ public final class Records {
                 : counter.skips;
     }
 
-    /// Why the translation said it skipped each record it skipped.
+    /// The reasons the translation gave for each record it skipped.
     ///
     /// @param xml The output.
     /// @return The reasons given, in order, leaving out the markers that gave none.
@@ -70,12 +68,12 @@ public final class Records {
                 : List.copyOf(counter.reasons);
     }
 
-    /**
-     * The records a document holds by a boundary (A35) — the elements of the name, or the array's items —
-     * or, with no boundary or one that names nothing here, the root's children.
-     *
-     * @return The count, or -1 where the text is not a document.
-     */
+    /// Counts the records a document holds according to a record boundary (the elements with that name,
+    /// or the array's items), or the root's children where there is no boundary or it matches nothing.
+    ///
+    /// @param xml      The document.
+    /// @param boundary The record boundary, or null.
+    /// @return The count, or -1 where the text does not parse.
     public static int parsed(final String xml, final RecordBoundary boundary) {
         if (boundary == null) {
             return parsed(xml);
@@ -90,9 +88,10 @@ public final class Records {
                 : document.get().records().size();
     }
 
-    /**
-     * @return The records the document holds, or -1 where it is not a document.
-     */
+    /// Counts the root's element children, excluding declared skips.
+    ///
+    /// @param xml The document.
+    /// @return The number of records, or -1 where the text does not parse.
     public static int parsed(final String xml) {
         final Counter counter = counted(xml);
         return counter == null
@@ -101,7 +100,7 @@ public final class Records {
     }
 
     /// @param xml The output.
-    /// @return What the document holds, or null where it is not a document.
+    /// @return The record and skip counts, or null where the text does not parse.
     private static Counter counted(final String xml) {
         final Counter counter = new Counter();
         try {
@@ -128,8 +127,8 @@ public final class Records {
                                  final Attributes attributes) {
             depth++;
             if (depth == 2) {
-                // A declared skip stands in place of an event and is not one: counted apart, so that the
-                // completeness sum can add the two together and the reviewer can see both
+                // A declared skip stands in place of an event but is not one. It is counted separately, so
+                // that the completeness check can add the two together and a reviewer can see both.
                 if (DeclaredSkips.isMarker(uri, localName)) {
                     skips++;
                     final String reason = DeclaredSkips.reason(attributes);

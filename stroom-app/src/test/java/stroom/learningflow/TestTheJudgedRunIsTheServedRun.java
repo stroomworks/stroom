@@ -61,15 +61,11 @@ import javax.xml.transform.stream.StreamResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 01 §12 item 2, and the finding its slice recorded: on a node the stream used to be transformed
- * twice, once by the stage for the score it decides on and once by the supervisor element for the output.
- * It is transformed once now, and this is the property that made the second run unnecessary — the run
- * that is judged keeps the events it emitted, so the element has something to serve.
- * <p>
- * The stand-in has none, and says so rather than making some: it has no pipeline under it, and Tier 1
- * asserts on what each step wrote.
- */
+/// Tests that the run of a fragment that is judged also keeps the events it emitted, so that the Learning
+/// Flow element can serve those events without transforming the stream a second time.
+///
+/// The stand-in fragment runner used by the module's own tests has no pipeline under it, so it keeps no
+/// events and returns none rather than making some up. Those tests check what each step wrote instead.
 class TestTheJudgedRunIsTheServedRun extends AbstractProcessIntegrationTest {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow", "ONE-RUN");
@@ -135,10 +131,10 @@ class TestTheJudgedRunIsTheServedRun extends AbstractProcessIntegrationTest {
                 .isEmpty();
     }
 
-    /// Each event, in order. The two are compared event by event rather than whole because a fragment
-    /// that splits emits one document per record, as any pipeline serving records does, while what is
-    /// judged is those documents joined (see `RecordJoin`). The difference is the repeated root and
-    /// nothing else, and it is the events that are the output.
+    /// Extracts each event, in order. The outputs are compared event by event rather than as a whole
+    /// because a fragment that splits emits one document per record, as any pipeline serving records does,
+    /// whereas what is judged is those documents joined (see `RecordJoin`). The only difference is the
+    /// repeated root element, and the events are what matter.
     private static List<String> events(final String xml) {
         return Pattern.compile("<Event>.*?</Event>", Pattern.DOTALL).matcher(canonical(xml))
                 .results()
@@ -146,7 +142,7 @@ class TestTheJudgedRunIsTheServedRun extends AbstractProcessIntegrationTest {
                 .toList();
     }
 
-    /// The events written back out, so that what was kept can be compared with what was judged.
+    /// Serialises the kept events to XML, so that they can be compared with what was judged.
     private static String written(final EventList events) {
         try {
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -159,9 +155,8 @@ class TestTheJudgedRunIsTheServedRun extends AbstractProcessIntegrationTest {
         }
     }
 
-    /**
-     * The two serialisers indent differently and one writes a declaration; the events are the same.
-     */
+    /// Normalises XML for comparison, because the two serialisers indent differently and only one writes an
+    /// XML declaration.
     private static String canonical(final String xml) {
         return xml.replaceAll("<\\?xml[^>]*\\?>", "").replaceAll(">\\s+<", "><").strip();
     }

@@ -32,11 +32,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Completeness (UM-2): records in = events out + declared skips.
+/// Tests the completeness check, which requires that records in = events out + declared skips.
 ///
-/// The check for the fault in `docs/learning-flow-parser-drift-not-detected.md` — a record that
-/// becomes no event is judged by nothing, so the stream is recorded as clean and the loss is visible
-/// only to someone reading the Error stream.
+/// Without it, a record that becomes no event is judged by nothing, so the stream is recorded as clean and
+/// the loss is visible only to someone reading the Error stream.
 class TestCompletenessScorer {
 
     private static final String THREE_RECORDS = """
@@ -53,8 +52,8 @@ class TestCompletenessScorer {
 
     @Test
     void aRecordThatBecameNothingIsCaught() {
-        // The dev instance's fault: the parser read a line it could not match, no event was made, and
-        // nothing judged the loss
+        // For example, the parser read a line it could not match, no event was made, and nothing else
+        // judged the loss
         final Score score = score(THREE_RECORDS, events(2));
 
         assertThat(score.value()).isEqualTo(0.0);
@@ -65,8 +64,8 @@ class TestCompletenessScorer {
 
     @Test
     void theMessageSaysHowToDeclareASkip() {
-        // A model told only a count guesses between translating the record and making it go away; the
-        // message names both and says which is which
+        // A model told only a count would have to guess whether to translate the record or skip it, so the
+        // message explains how to declare a skip and when that is appropriate
         assertThat(score(THREE_RECORDS, events(2)).diagnostics()).extracting(StoredError::getMessage)
                 .anyMatch(message -> message.contains("learningflow:skips")
                                      && message.contains("header line"));
@@ -74,8 +73,8 @@ class TestCompletenessScorer {
 
     @Test
     void aDeclaredSkipMakesTheSumAddUp() {
-        // A feed with a header line legitimately makes fewer events than records; without this the check
-        // would fail it on every stream, and a check people switch off protects nobody
+        // A feed with a header line legitimately makes fewer events than records. Without declared skips the
+        // check would fail it on every stream, and people would switch the check off
         final String output = """
                 <Events xmlns="event-logging:3">
                   <Skipped xmlns="learningflow:skips" reason="header line"/>
@@ -88,8 +87,8 @@ class TestCompletenessScorer {
 
     @Test
     void howManyWereSkippedIsSaidEvenWhenTheCheckPasses() {
-        // There is no cap on the skip rate by decision, so this notice is the whole of what puts it in
-        // front of a person: a reviewer reads "2 events, 1 of 3 records declared skipped"
+        // There is deliberately no limit on how many records may be skipped, so this notice is the only thing
+        // that shows the skip count to a person: a reviewer reads "2 events, 1 of 3 records declared skipped"
         final String output = """
                 <Events xmlns="event-logging:3">
                   <Skipped xmlns="learningflow:skips" reason="header line"/>
@@ -105,9 +104,9 @@ class TestCompletenessScorer {
 
     @Test
     void aSkipForEveryRecordStillPasses() {
-        // The hole the decision accepts, held to in a test so that it is a choice and not a surprise:
-        // completeness cannot tell a wholly skipped stream from an honest one, and the count is what a
-        // person is given to judge it by
+        // This is a known gap, accepted deliberately and pinned by this test so that it is a choice rather
+        // than a surprise: completeness cannot tell a wholly skipped stream from an honest one, and a person
+        // judges it from the skip count
         final String output = """
                 <Events xmlns="event-logging:3">
                   <Skipped xmlns="learningflow:skips" reason="cannot read"/>
@@ -122,29 +121,29 @@ class TestCompletenessScorer {
 
     @Test
     void moreEventsThanRecordsIsNotItsBusiness() {
-        // One record can legitimately make two events; too many is yield's question, not completeness'
+        // One record can legitimately make two events; too many events is for the yield check, not this one
         assertThat(score(THREE_RECORDS, events(5)).value()).isEqualTo(1.0);
     }
 
     @Test
     void aParserIsJudgedByInputCoverageInstead() {
-        // A parser's records are the input's shape, so there is nothing to count them against
+        // A parser creates the records, so there is nothing to count them against
         assertThat(new CompletenessScorer().score(null, new Attempted("DSParser", true, "a\nb\nc\n",
                 new StepResult(events(2), List.of())), null)).isEmpty();
     }
 
     @Test
     void textInIsNotCounted() {
-        // A transform given raw text has no records to count, and a step is not failed for a question
-        // that cannot be asked
+        // A transform given raw text has no records to count, and a step is not failed by a check that
+        // cannot apply to it
         assertThat(new CompletenessScorer().score(null, new Attempted("XSLTFilter", false, "a\nb\nc\n",
                 new StepResult(events(2), List.of())), null)).isEmpty();
     }
 
     @Test
     void itIsAGateInEveryPreset() {
-        // UM-2: option C — warnings at first — was taken for literals only; completeness gates from the
-        // start, because a record that became nothing is the fault the whole of task 2 is about
+        // Unlike the literals check, which only advises in some presets, completeness is a gate in all of them,
+        // because a record that silently became nothing is exactly the fault it exists to catch
         for (final CheckPreset preset : CheckPreset.values()) {
             assertThat(setting(preset).getState())
                     .describedAs(preset.getDisplayValue())
@@ -157,8 +156,10 @@ class TestCompletenessScorer {
                 .orElseThrow();
     }
 
+    /// Builds an event-logging output with a given number of events.
+    ///
     /// @param count How many events.
-    /// @return An output of that many.
+    /// @return An `Events` document holding that many events.
     private static String events(final int count) {
         final StringBuilder output = new StringBuilder("<Events xmlns=\"event-logging:3\">");
         for (int i = 0; i < count; i++) {

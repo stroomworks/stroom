@@ -65,7 +65,8 @@ class TestLearningFlowSerialiser {
 
     @Test
     void aDocumentSavedWhenTheFlowWasThePlanReadsAsItWasWritten() throws IOException {
-        // A81: "plan" is a name in stored data, read as the flow and never written again.
+        // "plan" is an earlier name for the flow, still found in stored documents. It is read as the flow
+        // and never written again.
         final LearningFlow flow = FlowExamples.flow(FlowExample.ESCALATING);
         final LearningFlowDoc doc = LearningFlowDoc.builder().uuid("d").name("door").flow(flow).build();
         final ImportExportDocument written = serialiser.write(doc);
@@ -82,9 +83,10 @@ class TestLearningFlowSerialiser {
 
     @Test
     void aDocumentSavedWithItsOwnAllowedElementsPutsThemOnItsChainStep() throws IOException {
-        // A95: the field is read onto the Chain step, and the written document carries it there alone.
-        // With a flow of its own, since a document built here has no steps now (Track 2 step 1c) and
-        // the elements go onto its Chain step.
+        // Documents saved by an earlier version held the allowed elements as a document field. That field is
+        // read onto the Chain step, and the document is written with the elements on the step only. The
+        // document is given a flow because a document built here has no steps, and the elements need a Chain
+        // step to go onto.
         final LearningFlowDoc doc = LearningFlowDoc.builder()
                 .uuid("d")
                 .name("door")
@@ -114,7 +116,7 @@ class TestLearningFlowSerialiser {
 
     @Test
     void aDocumentSavedWithAPresetReadsAsThatExamplesSteps() throws IOException {
-        // Before A34 the section carried a preset in place of steps.
+        // Documents saved by an earlier version named a preset example flow in place of holding steps.
         final ImportExportDocument written = serialiser.write(
                 LearningFlowDoc.builder().uuid("d").name("door").build());
         final ObjectNode json = (ObjectNode) JsonUtil.getMapper().readTree(written.getExtAssetData("meta"));
@@ -131,9 +133,9 @@ class TestLearningFlowSerialiser {
         assertThat(read.getTemplates()).containsEntry(Template.CHAIN, "Pick");
     }
 
-    /// A document that learned before its bindings were rows (A41) carried them in its JSON. They chose
-    /// their streams in a way that no longer means anything and named no learner, so they have nowhere to go
-    /// (design 06 phase J slice 2b): the document reads without them, rather than failing to open.
+    /// Documents saved by an earlier version carried their bindings in the document JSON, as a routing table.
+    /// Those bindings chose streams by routing rules that no longer exist and named no learner, so they cannot
+    /// be migrated. The document is read without them rather than failing to open.
     @Test
     void aDocumentThatCarriedItsBindingsReadsWithoutThem() throws IOException {
         final ImportExportDocument written = serialiser.write(
@@ -157,8 +159,8 @@ class TestLearningFlowSerialiser {
 
     @Test
     void aPresetThisBuildDoesNotKnowLeavesTheDocumentOpenable() throws IOException {
-        // A renamed example or a hand-edited document must not make a document unopenable, and so
-        // unrepairable; its steps are the default flow's until it is saved again.
+        // A renamed example or a hand-edited document must not make a document impossible to open, and so
+        // impossible to repair. It is given the default (Direct) example's steps instead.
         final ImportExportDocument written = serialiser.write(
                 LearningFlowDoc.builder().uuid("d").name("door").build());
         final ObjectNode json = (ObjectNode) JsonUtil.getMapper().readTree(written.getExtAssetData("meta"));

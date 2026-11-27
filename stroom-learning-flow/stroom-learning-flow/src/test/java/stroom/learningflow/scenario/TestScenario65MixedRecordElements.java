@@ -35,17 +35,13 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 65: **XML whose records have different element names**
-/// (`docs/learning-flow-mixed-record-elements.md`).
+/// Tests learning XML whose records have different element names under one container.
 ///
-/// `GATEWAY-AUDIT` could not be learned at all. Every record is a child of `<batch>`, but they come
-/// under nine different names, and the split step could only say *every element named X* — which then
-/// had to hold 90% of the document. `transfer` holds 41% and `authentication` 20%, so every answer that
-/// named a real record was rejected and the step ran out of candidates. The model diagnosed it correctly
-/// on its fifth try and had no way to say so.
-///
-/// The split can now be answered `batch/*`: every child of the container is one record, whatever it is
-/// called.
+/// In the `GATEWAY-AUDIT` fixture every record is a child of `<batch>`, but under nine different names. A
+/// split answer of the form "every element named X" would have to hold 90% of the document to pass, and no
+/// single name does (`transfer` holds 41% and `authentication` 20%), so every such answer would be rejected.
+/// The split can instead be answered `batch/*`, meaning every child of the container is one record,
+/// whatever it is called.
 class TestScenario65MixedRecordElements {
 
     private static final String GATEWAY = Scenarios.resource("gateway-audit.xml");
@@ -56,7 +52,7 @@ class TestScenario65MixedRecordElements {
     void theMixedChildrenOfAContainerAreLearnedAsRecords() {
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.xmlScript("batch/*", XSLT)
-                // With one allowed element the chain question is not asked
+                // With only one allowed element, the chain question is not asked.
                 .expect(QuestionMatcher.split().withoutFeedback()).reply("batch/*")
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
 
@@ -75,7 +71,7 @@ class TestScenario65MixedRecordElements {
 
     @Test
     void theFlattenedDriftIsTheRootsOwnChildren() {
-        // Drift 3 drops the <batch> wrapper, so the mixed records sit directly under <export>
+        // This variant of the feed drops the <batch> wrapper, so the mixed records sit directly under <export>.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.xmlScript("*", XSLT)
                 .expect(QuestionMatcher.split().withoutFeedback()).reply("*")
@@ -92,14 +88,14 @@ class TestScenario65MixedRecordElements {
 
     @Test
     void aSingleNameStillSettlesTheBoundaryWhereOneFits() {
-        // The regression that matters: the old vocabulary is unchanged for every feed it already worked
-        // for
+        // Guards against breaking feeds that use a single record element name: that kind of boundary is
+        // still distinct from a boundary of all the children of an element.
         assertThat(RecordBoundary.ofElement("batch"))
                 .describedAs("and an element is never the same boundary as its children")
                 .isNotEqualTo(RecordBoundary.ofChildrenOf("batch"));
     }
 
-    /// The same stylesheet, over records that sit directly under the root.
+    /// Adapts the stylesheet to records that sit directly under the root.
     private static String flattenedXslt() {
         return XSLT.replace("select=\"batch/*\"", "select=\"*\"")
                 .replace("match=\"batch/*\"", "match=\"export/*\"")

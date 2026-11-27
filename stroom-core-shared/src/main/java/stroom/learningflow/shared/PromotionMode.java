@@ -18,10 +18,8 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * Whether a promotion goes live on its own or waits for a person (design §11.3, ruling A25).
- * Automatic is A9; review makes every learned binding a draft that serves nothing until Approve.
- */
+/// Whether a translation that passes its checks goes live on its own or waits for a person to approve it.
+/// Under review, every learned binding becomes a draft that serves nothing until it is approved.
 public enum PromotionMode implements HasDisplayValue {
     AUTOMATIC("Automatic"),
     REVIEW("Review");

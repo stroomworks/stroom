@@ -29,14 +29,12 @@ import stroom.util.shared.StoredError;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Yield (design §8.4): output records per unit of input, scored as how close the ratio comes to the
- * expected one — {@code min(actual, expected) / max(actual, expected)}, so too many records lose marks
- * as too few do. A record is a child element of the output's root, which is what both {@code records:2}
- * and {@code event-logging:3} documents make of one. Applies to a step that produced XML; when the basis
- * is input records and the input is not XML, there is nothing to count against, and the scorer does
- * not apply.
- */
+/// The yield scorer: output records per unit of input, scored by how close the ratio comes to the
+/// expected one, as `min(actual, expected) / max(actual, expected)`, so too many records lose marks just as
+/// too few do. A record is a child element of the output's root (or as the record boundary says), which
+/// is what a record is in both `records:2` and `event-logging:3` documents. It applies to a step that
+/// produced XML; when the basis is input records and the input is not XML, there is nothing to count
+/// against, so the scorer does not apply.
 public final class YieldScorer implements Scorer {
 
     private static final ElementId YIELD = new ElementId("Yield");
@@ -55,12 +53,13 @@ public final class YieldScorer implements Scorer {
         if (output == null || !isXml(output)) {
             return Optional.empty();
         }
-        // Counted by the boundary at both ends, or the two disagree: a parser's output of one map holding
-        // twelve items is twelve records to the stage and would be one here.
+        // Count by the record boundary at both ends, otherwise the two disagree: a parser's output of one
+        // map holding twelve items is twelve records to the stage, but would be one here.
         final int records = Math.max(0, Records.parsed(output, step.boundary()));
-        // The basis describes raw input. A step whose input is already records — a transform after the
-        // parser — is judged record for record, one out per one in, whatever the document's basis; only a
-        // basis of records applies the document's ratio there (a transform that filters, scenario 7).
+        // The basis describes raw input. A step whose input is already records (a transform after the
+        // parser) is judged as one record out per record in, whatever the document's basis; only a basis
+        // of records applies the document's expected ratio there (e.g. for a transform that filters out
+        // some records).
         final int parsed = isXml(step.input())
                 ? Records.parsed(step.input(), step.boundary())
                 : -1;
@@ -98,12 +97,10 @@ public final class YieldScorer implements Scorer {
         return Optional.of(new Score(type(), value, diagnostics));
     }
 
-    /**
-     * Whether text looks like markup. A leading {@code <} is not enough: syslog's priority prefix, {@code <38>},
-     * begins a text line, and reading it as XML counted a syslog stream as no records. Text that looks like
-     * markup but holds no document — fragments, or a line beginning with a bracketed word — is text too, which
-     * the caller settles by counting.
-     */
+    /// Whether text looks like XML. A leading `<` is not enough: syslog's priority prefix, e.g. `<38>`,
+    /// begins a text line, and reading it as XML would count a syslog stream as having no records. Text
+    /// that looks like XML but holds no document (fragments, or a line beginning with a bracketed word)
+    /// is treated as text too, which the caller discovers when counting.
     private static boolean isXml(final String text) {
         return text != null && RecordSkeleton.isMarkup(text);
     }

@@ -38,23 +38,25 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.List;
 import java.util.Map;
 
-/// A Learning Flow document's Setup tab ([SetupTab]): reads the document into its parts and writes it
-/// back. The model is chosen from the `stroom-ai` model documents the user may use, and the target schema from
-/// the `XMLSchema` documents the user may use; the checks are
-/// [CheckListController]'s, and the approach, with the step chosen, [ApproachSectionController]'s. Choosing
-/// a starting set of checks replaces the checks, and asks first where that would lose checks of the
-/// document's own. The fallback, chosen under Approving new translations, is a step of the approach's flow,
-/// so it is switched there.
+/// Controls a Learning Flow document's Setup tab ([SetupTab]), reading the document into the tab and writing
+/// the user's changes back.
 ///
-/// The route map is drawn again from the document as the tab has it after every change ([SetupSummary]),
-/// and the part shown is the stop chosen on it ([SetupStop]): a section, or a step, which the approach is
-/// told to show. The editor reaches it to put a readiness check right: [#switchLearningOn()],
-/// [#focusModel()], [#usePreset] and [#showSection].
+/// The model is chosen from the AI model documents the user may use, and the target schema from the
+/// `XMLSchema` documents the user may use. The checks are managed by [CheckListController], and the learning
+/// flow (approach), including the chosen step, by [ApproachSectionController]. Choosing a preset of checks
+/// replaces the checks, asking for confirmation first if the current checks match no preset and would be lost.
+/// The fallback, chosen under Approving new translations, is a step of the flow, so it is switched on or off
+/// through the approach's controller.
 ///
-/// What an Admin rarely changes is out of sight until it is needed. A section's Advanced options open of their
-/// own accord where they hold something not as a new document has it ([AdvancedSettings]). The steps are on the
-/// map once the user asks for them, and always where they are the document's own or something is wrong with them,
-/// which is where a readiness check sends a person to put them right.
+/// After every change, the route map is redrawn from the document as edited ([SetupSummary]). The part shown
+/// is the stop chosen on the map ([SetupStop]), either a section or a step; for a step, the approach's
+/// controller is told which step to show. The document editor calls [#switchLearningOn()], [#focusModel()],
+/// [#usePreset] and [#showSection] to apply the fixes offered by the readiness checks.
+///
+/// Settings an administrator rarely changes are kept out of sight until needed. A section's Advanced options
+/// expand automatically if they hold settings that differ from a new document's ([AdvancedSettings]). The
+/// steps are shown on the map once the user asks for them, and always when they match no built-in flow or
+/// something is wrong with them, so that a readiness check can send a person to fix them.
 public class SetupTabController extends Controller {
 
     private static final LearningFlowResource RESOURCE = GWT.create(LearningFlowResource.class);
@@ -65,24 +67,25 @@ public class SetupTabController extends Controller {
     private final DocSelectionController targetSchemaSelection;
     private final CheckListController checkList;
     private final ApproachSectionController approach;
-    /// The document as last read, which what the tab shows is written over to sum it up.
+    /// The document as last read. The tab's current settings are written over a copy of it to build the
+    /// summaries for the route map.
     private LearningFlowDoc doc;
     /// The stop chosen on the route map, whose part is shown.
     private SetupStop stop = SetupStop.of(SetupSection.LEARNING);
     private boolean readOnly = true;
-    /// Whether the user asked for the learning flow's steps on the route map.
+    /// Whether the user has asked for the learning flow's steps to be shown on the route map.
     private boolean stepsAsked;
-    /// Whether the steps were on the map as last drawn.
+    /// Whether the steps were on the map when it was last drawn.
     private boolean stepsWereShown;
 
-    /// Made by GIN, with its tab.
+    /// Made by GIN.
     ///
     /// @param eventBus             The application's event bus.
     /// @param view                 The tab.
-    /// @param docSelectionProvider Makes the model's and the target schema's pickers.
-    /// @param checkList           The checks' list's controller.
-    /// @param approach             The approach's controller.
-    /// @param restFactory          Fetches what the server says of the target schema.
+    /// @param docSelectionProvider Makes the controllers for the model and target schema pickers.
+    /// @param checkList            The controller for the list of checks.
+    /// @param approach             The controller for the learning flow's steps.
+    /// @param restFactory          Fetches the server's description of the target schema.
     @Inject
     public SetupTabController(final EventBus eventBus,
                               final SetupTab view,
@@ -131,13 +134,14 @@ public class SetupTabController extends Controller {
         view.setOnStop(this::go);
         checkList.setOnChange(() -> {
             showPreset();
-            // A step's card warns where a rule fires on a check that is off, so the approach is told
+            // A step's card warns when a rule is triggered by a check that is off, so pass on the new checks
             approach.setChecks(checkList.write());
             changed();
         });
-        // The approach marks the document changed itself; a change may choose another step
+        // The approach's controller marks the document as changed itself. A change may select another step.
         approach.setOnChange(() -> {
-            // Steps changed in sight stay in sight, e.g. once a default setup is loaded over the document's own
+            // Keep the steps shown if they were shown when changed, e.g. after a built-in flow is loaded over
+            // custom steps, even though they would now be hidden by default
             stepsAsked = stepsAsked || stepsWereShown;
             view.setFallback(approach.hasFallback());
             followApproach();
@@ -148,15 +152,15 @@ public class SetupTabController extends Controller {
             view.setReadOnly(readOnly);
             modelSelection.setReadOnly(readOnly);
             targetSchemaSelection.setReadOnly(readOnly);
-            // The map offers Add step only where the document can be changed
+            // Redraw the map, since it offers Add step only when the document can be changed
             showSummary();
         });
     }
 
     /// Shows a document's setup.
     ///
-    /// @param docRef The document.
-    /// @param doc    Its content.
+    /// @param docRef The document's reference.
+    /// @param doc    The document's content.
     public void read(final DocRef docRef, final LearningFlowDoc doc) {
         this.doc = doc;
         stepsAsked = false;
@@ -174,7 +178,7 @@ public class SetupTabController extends Controller {
         view.setSampleSizeLimit(doc.getSampleSizeLimit());
         approach.read(docRef, doc);
 
-        // approach.read(...) above takes the document's checks with it, so it isn't told them again here
+        // approach.read(...) above has already given the approach the document's checks
         checkList.read(doc.getChecks());
         showPreset();
         view.setHeldOutFraction(doc.getHeldOutFraction());
@@ -192,7 +196,7 @@ public class SetupTabController extends Controller {
     }
 
     /// @param doc The document.
-    /// @return A copy of it with the setup shown.
+    /// @return A copy of the document with the settings shown on the tab.
     public LearningFlowDoc write(final LearningFlowDoc doc) {
         return approach.write(doc.copy()
                 .learningMode(view.getLearningMode())
@@ -213,8 +217,8 @@ public class SetupTabController extends Controller {
                 .build());
     }
 
-    /// Shows a section and puts the focus on it, e.g. where a readiness check's fix is made. Its owner shows
-    /// the tab first.
+    /// Shows a section and puts the keyboard focus on it, e.g. where a readiness check's fix is made. The
+    /// owner must show the tab first.
     ///
     /// @param section The section.
     public void showSection(final SetupSection section) {
@@ -222,16 +226,16 @@ public class SetupTabController extends Controller {
         view.focus(stop);
     }
 
-    /// Shows the limits on a learning run, under Learning steps, where a stopped run's suggestion sends a
-    /// person. Its owner shows the tab first.
+    /// Shows the limits on a learning run, under Learning steps, e.g. when a person follows the suggestion
+    /// given for a run that stopped at a limit. The owner must show the tab first.
     public void showLimits() {
         go(SetupStop.of(SetupSection.APPROACH));
         view.focusLimits();
     }
 
-    /// Switches learning on, as the Feeds tab's readiness check offers; the document is then changed, to
-    /// be saved. Its owner shows the tab first, which reads the document into it, and asks only where the
-    /// document can be changed.
+    /// Switches learning on, as offered by a readiness check on the Pipelines tab (`FeedsTab`). This marks the
+    /// document as changed, so it still needs to be saved. The owner must show the tab first, so that the
+    /// document has been read into it, and must only call this when the document can be changed.
     public void switchLearningOn() {
         if (view.getLearningMode() != LearningMode.AUTOMATIC) {
             view.setLearningMode(LearningMode.AUTOMATIC);
@@ -239,16 +243,18 @@ public class SetupTabController extends Controller {
         }
     }
 
-    /// Puts the focus on the model picker, where the Feeds tab sends a person to choose a model.
+    /// Puts the keyboard focus on the model picker, when a readiness check on the Pipelines tab sends a person
+    /// to choose a model.
     public void focusModel() {
         view.focusModel();
     }
 
-    /// Puts a ready-made set of checks in place, as the readiness check offers for a Learning Flow whose
-    /// checks are all off; the document is then changed, to be saved. Its owner shows the tab first, which
-    /// reads the document into it, and asks only where the document can be changed.
+    /// Replaces the checks with a preset, as offered by the readiness check for a Learning Flow with no quality
+    /// gate. This marks the document as changed, so it still needs to be saved. The owner must show the tab
+    /// first, so that the document has been read into it, and must only call this when the document can be
+    /// changed.
     ///
-    /// @param preset The set.
+    /// @param preset The preset.
     public void usePreset(final CheckPreset preset) {
         checkList.read(preset.settings());
         approach.setChecks(preset.settings());
@@ -256,8 +262,8 @@ public class SetupTabController extends Controller {
         changed();
     }
 
-    // A set chosen: put in place at once where the checks are a set already; asked first where it would
-    // replace checks of the Learning Flow's own
+    // Applies a preset the user chose. If the current checks match a preset, it is applied at once; otherwise
+    // the user is asked first, since custom checks would be lost.
     private void choosePreset(final CheckPreset preset) {
         if (readOnly || preset == null) {
             return;
@@ -281,10 +287,10 @@ public class SetupTabController extends Controller {
                 });
     }
 
-    // What the server reads from the target schema's XSD (task 7): the fallback writes event-logging's
-    // marked Unknowns, so it doesn't apply to another schema (W1-3), and every child of the root is read as
-    // a record, so a root that may hold several kinds of element is warned of (W1-5). A schema that can't
-    // be read says nothing: the server refuses what doesn't apply whatever the tab says
+    // Asks the server to read the target schema's XSD, and shows two notes from it. The fallback writes
+    // event-logging's marked Unknown events, so it does not apply to any other schema. Every child of the
+    // output's root is treated as a record, so a root that may hold several kinds of element gets a warning.
+    // If the schema can't be read, no notes are shown; the server enforces these limits regardless.
     private void describeTargetSchema(final DocRef target) {
         view.setFallbackNotApplying(null);
         view.setRootHoldsSeveralKinds(null, List.of());
@@ -321,8 +327,8 @@ public class SetupTabController extends Controller {
         showSummary();
     }
 
-    // The steps shown on the map, or hidden where they may be; the step shown, if one is, gives way to Learning
-    // steps
+    // Shows or hides the steps on the map. If they are hidden while a step is shown, Learning steps is shown
+    // instead.
     private void toggleSteps() {
         stepsAsked = !stepsShown();
         if (!stepsShown() && stop.isStep()) {
@@ -332,7 +338,7 @@ public class SetupTabController extends Controller {
         }
     }
 
-    // Whether the steps must be in sight: they are the document's own, or something is wrong with them
+    // Whether the steps must be shown: they match no built-in flow, or something is wrong with them
     private boolean stepsNeeded() {
         return approach.example() == null || approach.flowProblem() != null || !approach.stepProblems().isEmpty();
     }
@@ -341,7 +347,7 @@ public class SetupTabController extends Controller {
         return stepsAsked || stepsNeeded();
     }
 
-    // A stop chosen on the route map: its part shown, and the map drawn with it chosen
+    // Goes to a stop: shows its part and redraws the map with it chosen
     private void go(final SetupStop chosen) {
         if (chosen.isStep()) {
             approach.select(chosen.getStep());
@@ -353,7 +359,7 @@ public class SetupTabController extends Controller {
         showSummary();
     }
 
-    // Where a step is shown, the step the approach has chosen, which a change to the steps may move
+    // If a step is shown, follows the approach's selected step, which a change to the steps may move
     private void followApproach() {
         if (stop.isStep()) {
             stop = SetupStop.step(approach.getSelected());

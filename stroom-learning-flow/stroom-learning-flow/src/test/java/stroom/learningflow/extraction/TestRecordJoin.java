@@ -25,7 +25,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What a transform wrote for each record, back as one document (§12 item 25).
+/// Tests `RecordJoin`, which joins what a transform wrote for each record, when run one record at a time, back
+/// into one document for scoring.
 class TestRecordJoin {
 
     @Test
@@ -41,10 +42,10 @@ class TestRecordJoin {
 
     @Test
     void aRecordThatDeclaresANamespaceOfItsOwnKeepsIt() {
-        // Only the first document's namespaces used to be passed on, so an element a later record
-        // declared its own namespace for — a declared skip is the case that found this — was written
-        // with no binding at all and read back in whatever namespace was in force around it. The marker
-        // then counted as an event, failed the Schema-valid gate, and reached the writer.
+        // An element in a later record that declares its own namespace, such as a declared-skip marker, must
+        // keep that namespace in the joined document. If only the first document's namespaces were passed on,
+        // the marker would be read back in the surrounding namespace, counted as an event, fail the
+        // Schema-valid gate and reach the writer.
         final String joined = RecordJoin.join(List.of(
                 "<Events xmlns=\"event-logging:3\"><Event><Id>1</Id></Event></Events>",
                 "<Events xmlns=\"event-logging:3\">"
@@ -58,8 +59,8 @@ class TestRecordJoin {
 
     @Test
     void theRecordsAfterOneThatDeclaredItsOwnAreStillInTheirOwnNamespace() {
-        // The other half of the same fault: a declaration passed on without its end left the joined
-        // document's namespace stack one deep in the wrong place
+        // A namespace declaration passed on without its matching end would leave the joined document's
+        // namespace stack one level too deep, putting the following records in the wrong namespace
         final String joined = RecordJoin.join(List.of(
                 "<Events xmlns=\"event-logging:3\">"
                 + "<Skipped xmlns=\"learningflow:skips\" reason=\"header line\"/></Events>",

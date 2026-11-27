@@ -21,25 +21,25 @@ import stroom.util.shared.StoredError;
 import java.util.List;
 import java.util.Optional;
 
-/// What a serving run came to (design 04 §3): how many records it judged, how they scored, what the
-/// fragment's elements said, and — where a record fell short — which, with its verdict. A run that fell
-/// short has handed the downstream every record before that one and nothing after it; what the
-/// downstream wrote of them is the task's to discard.
+/// The result of a serving run ([FragmentRunner#serve]): how many records it judged, how they scored,
+/// what the fragment's elements logged, and, where a record fell short of the bar, which one and its
+/// verdict. A run that fell short has passed every record before that one downstream and nothing after
+/// it; the processing task is responsible for discarding what the downstream wrote.
 ///
-/// @param records     How many records were judged, the short one included.
-/// @param meanTotal   The mean of the records' weighted totals, over the gates that judge a record: what
-///                    the learner's rolling score is fed.
-/// @param diagnostics What the fragment's elements said over the run, once each.
+/// @param records     How many records were judged, including the one that fell short.
+/// @param meanTotal   The mean of the records' weighted totals over the per-record gates, which is what
+///                    feeds the learner's rolling score.
+/// @param diagnostics What the fragment's elements logged over the run, with duplicates removed.
 /// @param shortfall   The record that fell short, where one did.
 /// @param skipped     How many records the translation declared it deliberately skipped
 ///                    (`DeclaredSkips`). They are not events and are not judged, but they are part of
 ///                    what completeness counts, and they are shown beside the event count so that a
 ///                    person can see how much of a stream was skipped rather than translated.
-/// @param skipReasons Why it said it skipped them, leaving out the ones that gave no reason.
-/// @param input       What the parser made of the input: the records it cut, the errors it logged and
-///                    the bytes it read. Without this a run could only say what came out, and a stream
-///                    the translation had stopped reading looked exactly like a stream with nothing in
-///                    it (Track 1 task 2, fix 1).
+/// @param skipReasons The reasons the translation gave for the skips, leaving out skips with no reason.
+/// @param input       What the parser made of the input: the records it produced, the errors it logged
+///                    and the bytes it read. Without this a run could only report what came out, and a
+///                    stream the translation had stopped being able to read would look exactly like a
+///                    stream with nothing in it.
 public record ServedStream(int records,
                            double meanTotal,
                            List<StoredError> diagnostics,
@@ -61,8 +61,8 @@ public record ServedStream(int records,
         return shortfall.isEmpty();
     }
 
-    /// How many records the parser cut that became neither an event nor a declared skip: the records
-    /// this stream lost.
+    /// How many records the parser produced that became neither an event nor a declared skip, i.e. the
+    /// records this stream lost.
     ///
     /// @return How many, or zero where nothing was lost or nothing counted the input.
     public int lost() {
@@ -71,17 +71,16 @@ public record ServedStream(int records,
                 : 0;
     }
 
-    /// How much of this stream the parser read, as a share of the records it should have cut: the
-    /// records it cut against those plus the ones it reported it could not.
+    /// How much of this stream the parser read, as the records it produced divided by those records plus
+    /// the errors it logged for input it could not read.
     ///
-    /// **Records, not characters** (decision of 20 November 2026, audit finding W4-3). Learning measures
-    /// coverage as a share of characters (A36), which cannot be counted over a streamed input without
-    /// estimating it. The two are not the same number, but they measure the same thing and in practice
-    /// come out close: on the scenario whose feed carries six unmatched alarm lines, characters give
-    /// 0.695 and records 0.700.
+    /// This counts **records, not characters**. Learning measures input coverage as a share of
+    /// characters, which cannot be counted over a streamed input without estimating it. The two are not
+    /// the same number, but they measure the same thing and in practice come out close: on a test feed
+    /// with six unmatched alarm lines, characters give 0.695 and records 0.700.
     ///
-    /// @return The share, in [0, 1]; -1 where nothing counted the input, and 0 for a stream with content
-    ///         the parser cut nothing from at all.
+    /// @return The share, in [0, 1]; -1 where the input could not be counted or the stream was empty; 0
+    ///         for a stream with content from which the parser produced no records.
     public double coverage() {
         if (!input.counted() || input.empty()) {
             return -1.0;

@@ -35,17 +35,19 @@ import jakarta.inject.Singleton;
 
 import java.time.Clock;
 
-/// The worker as a node runs it (A5, A28): the job behind *Learning Flow Deferred Learning*. A
-/// processing task asks the model nothing — the attempt is opened and parked at its first question
-/// (A48, A60) — and this is what carries those attempts on, at whatever pace the model answers and
-/// without a task slot held while it does.
+/// The scheduled job *Learning Flow Deferred Learning*, which runs the background worker on this node.
 ///
-/// As the processing user, since it reads streams and documents on nobody's behalf, and writes
-/// fragments and bindings as an automatic promotion does.
+/// A processing task never calls the model. When a stream cannot be translated, the task opens an
+/// attempt that waits at its first question, and defers the stream. This job is what advances those
+/// attempts, at whatever pace the model answers, without holding a processing task slot while it does.
 ///
-/// A pass takes a bounded batch rather than everything waiting: a job that tried to empty the queue
-/// would hold one thread for as long as the model took times the length of the queue, and the next pass
-/// takes what is left. The claim of A45 is what keeps two nodes' passes off one attempt.
+/// It runs as the processing user, because it reads streams and documents on nobody's behalf, and writes
+/// fragments and bindings just as an automatic promotion does.
+///
+/// Each run takes a bounded batch rather than everything waiting. A job that tried to empty the queue
+/// would hold one thread for as long as the model takes multiplied by the length of the queue; the next
+/// run takes what is left. Each attempt's claim on its learner stops two nodes working on the same
+/// attempt at once.
 @Singleton
 public class DeferredLearning {
 
@@ -87,9 +89,10 @@ public class DeferredLearning {
 
     public void exec() {
         securityContext.asProcessingUser(() -> pipelineScope.scopeRunnable(() -> {
-            // In a pipeline scope, though there is no pipeline: what a stage runs on — the Data Splitter
-            // compiler, the schema scorer — reports through the scoped error receiver, and a candidate
-            // configuration is compiled and run here exactly as it is in a task.
+            // Run in a pipeline scope even though there is no pipeline, because the components a stage uses
+            // (e.g. the Data Splitter compiler and the schema scorer) report through the pipeline-scoped
+            // error receiver. This way a candidate configuration is compiled and run here exactly as it is
+            // in a processing task.
             final DeferredWorker worker = new DeferredWorker(stageFactory.get().create(), attempts, documents,
                     inputs, streamHeld.get(), deletedPipelines, advisors, Clock.systemUTC());
             final int carried = worker.advance(configProvider.get().getDeferredLearningBatchSize());

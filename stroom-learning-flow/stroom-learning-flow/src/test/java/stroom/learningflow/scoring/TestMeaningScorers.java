@@ -34,10 +34,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * The edges of the scorers that judge meaning: what they refuse to judge, what they refuse to be
- * configured with, and what they refuse to read.
- */
+/// Tests the edge cases of the scorers that judge meaning (extraction quality and business rules): what they
+/// decline to judge, what configuration they refuse, and what output they refuse to read.
 class TestMeaningScorers {
 
     private static final String EVENTS = """
@@ -48,8 +46,8 @@ class TestMeaningScorers {
 
     @Test
     void aParsersRecordsAreNotJudgedForMeaning() {
-        // A parser over line-delimited XML fragments: its input is markup and its output is records of the
-        // input's shape. Neither scorer of meaning applies; the stream-level scorers judge the parser.
+        // A parser over line-delimited XML fragments: its input is markup and its output is records shaped like
+        // the input. Neither scorer of meaning applies to it; the stream-level scorers judge a parser instead.
         final Attempted parser = new Attempted("DSParser", true, "<a/>\n<a/>\n",
                 new StepResult(EVENTS, List.of()));
         final Attempted transform = new Attempted("XSLTFilter", false, "<a/>",
@@ -77,7 +75,7 @@ class TestMeaningScorers {
                 .hasMessageContaining("EventSource/User/Id]");
     }
 
-    // A schema that is not event-logging, with an element of its own called Data, which means something there
+    // A schema that is not event-logging, with its own element called Data, which is meaningful there
     private static final TargetSchema SIGHTINGS = new TargetSchema(
             new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
             "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
@@ -96,9 +94,9 @@ class TestMeaningScorers {
 
     @Test
     void untypedDataAndUnknownAreEventLoggingsAndAreNotMeasuredForAnotherSchema() {
-        // Task 7, W1-4: Data is event-logging's untyped element, and Unknown its branch for "no decision". A
-        // schema with an element of its own called Data is not marked down for using it, and, with no fields
-        // required, extraction quality has nothing to measure there, so it doesn't run
+        // Data is event-logging's untyped element, and Unknown its branch for "no decision". A schema with its
+        // own element called Data is not marked down for using it, and, with no fields required, extraction
+        // quality has nothing to measure there, so it does not run
         final Attempted transform = new Attempted("XSLTFilter", false, "<a/>",
                 new StepResult(SIGHTINGS_OUTPUT, List.of()));
         final ExtractionQualityParameters nothingRequired = new ExtractionQualityParameters(false, List.of());
@@ -115,7 +113,7 @@ class TestMeaningScorers {
 
         final Score score = new ExtractionQualityScorer().score(species, transform, SIGHTINGS).orElseThrow();
 
-        // Only the field: one record of two has it, and nothing is said about Data
+        // Only the required field is measured: one record of two has it, and nothing is said about Data
         assertThat(score.value()).isEqualTo(0.5);
         assertThat(score.failingRecords()).containsExactly(1);
         assertThat(score.diagnostics()).noneMatch(error -> error.getMessage().contains("Data"));
@@ -139,7 +137,8 @@ class TestMeaningScorers {
 
     @Test
     void outputWithADoctypeIsNotRead() {
-        // A model's stylesheet can write a DOCTYPE into its output; the harness never fetches what it names.
+        // A model's stylesheet can write a DOCTYPE into its output, so output with one is not read at all, and
+        // what the DOCTYPE names is never fetched.
         final String withDoctype = "<!DOCTYPE Events SYSTEM \"http://127.0.0.1:1/never.dtd\">\n" + EVENTS;
         assertThat(OutputRecords.parse(withDoctype)).isEmpty();
         assertThat(OutputRecords.parse(EVENTS)).isPresent();

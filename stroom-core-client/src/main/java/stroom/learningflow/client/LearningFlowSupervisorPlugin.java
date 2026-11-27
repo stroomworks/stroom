@@ -35,19 +35,22 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import javax.inject.Singleton;
 
-/// The Smart Pipelines screen (the Supervisor of ruling A28) in the Monitoring menu: a screen of its own beside
-/// Jobs and the other monitoring screens, not a tab on one Learning Flow, because what an Admin wants to see is
-/// every Smart Pipeline of every Learning Flow, and where each stands ([SupervisorController]).
+/// Adds the Smart Pipelines screen ([SupervisorController]) to the Monitoring menu.
+///
+/// It is a screen of its own, beside Jobs and the other monitoring screens, rather than a tab on one Learning
+/// Flow document, because an administrator wants to see every Smart Pipeline of every Learning Flow, and the
+/// status of each, in one place.
 @Singleton
 public class LearningFlowSupervisorPlugin extends MonitoringPlugin<SupervisorController> {
 
     /// Made by GIN, once.
     ///
     /// @param eventBus               The application's event bus.
-    /// @param contentManager         Opens the tab.
+    /// @param contentManager         Opens the screen as a tab.
     /// @param controllerProvider     Makes the Smart Pipelines screen.
-    /// @param securityContext        Says whether the user may see it.
-    /// @param documentPluginRegistry Where the tab's type is registered, to open it again.
+    /// @param securityContext        Used to check whether the user may see the screen.
+    /// @param documentPluginRegistry The registry the tab's type is registered with, so that a saved tab can
+    ///                               be opened again.
     @Inject
     public LearningFlowSupervisorPlugin(final EventBus eventBus,
                                           final ContentManager contentManager,

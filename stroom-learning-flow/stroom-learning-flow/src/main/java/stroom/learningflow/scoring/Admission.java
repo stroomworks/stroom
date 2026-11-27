@@ -20,27 +20,29 @@ import stroom.learningflow.shared.LearnedUnknown;
 
 import net.sf.saxon.s9api.XdmNode;
 
-/// The admitted form as the scorers see it (A53, A62): an `EventDetail/Unknown` carrying the marker of
-/// [LearnedUnknown] is a learned admission and clears the bar; one without it is a bare Unknown and does
-/// not. The marker item itself is left out of any count of untyped elements.
+/// XPath expressions and helpers that let the scorers recognise a learned Unknown event. When the model
+/// cannot translate a kind of record, the exhaustion step has it write an `EventDetail/Unknown` carrying
+/// the [LearnedUnknown] marker. Such a record is a learned admission and clears the bar; an Unknown
+/// without the marker is a bare Unknown and does not. The marker item itself is left out of any count of
+/// untyped `Data` elements.
 public final class Admission {
 
-    /// The marker `Data` item, wherever it is.
+    /// Matches the marker `Data` item.
     private static final String MARKER_ITEM = "*[local-name() = 'Data'][@Name = '" + LearnedUnknown.MARKER + "']";
-    /// A record's `EventDetail/Unknown` that carries the marker.
+    /// Matches a record's `EventDetail/Unknown` that carries the marker.
     public static final String MARKED_UNKNOWN = "*[local-name() = 'EventDetail']/*[local-name() = 'Unknown']["
                                                 + MARKER_ITEM + "]";
-    /// A record's `EventDetail/Unknown` without the marker: refused as it always was.
+    /// Matches a record's `EventDetail/Unknown` without the marker, which is refused.
     public static final String BARE_UNKNOWN = "*[local-name() = 'EventDetail']/*[local-name() = 'Unknown'][not("
                                               + MARKER_ITEM + ")]";
-    /// Every `Data` element but the marker.
+    /// Matches every `Data` element except the marker.
     public static final String DATA_BUT_MARKER = "descendant-or-self::*[local-name() = 'Data'][not(@Name = '"
                                                  + LearnedUnknown.MARKER + "')]";
 
     private Admission() {
     }
 
-    /// Whether a record of the output is a learned admission.
+    /// Whether a record of the output is a learned admission, i.e. a marked Unknown.
     public static boolean admits(final OutputRecords output, final XdmNode record) {
         return output.holds(record, MARKED_UNKNOWN);
     }

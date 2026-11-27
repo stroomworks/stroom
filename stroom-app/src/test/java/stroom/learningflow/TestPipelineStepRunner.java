@@ -41,12 +41,14 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// On a node, a learned stylesheet is judged and served by the real pipeline: the real XSLTFilter and
-/// the real XSLT pool, confined by `XsltConfig.secureMode` rather than by the module's own runner. These
-/// tests hold that path to what the security review requires of it (Track 3 tasks 1 and 2).
+/// Security tests for the step runner a node uses to judge and serve a learned stylesheet.
 ///
-/// They run with the default configuration, in which `secureMode` is on. What should happen when it is
-/// off is decision S-D8.
+/// On a node, a learned stylesheet runs in the real pipeline, with the real `XSLTFilter` and XSLT pool, so
+/// it is confined by `XsltConfig.secureMode` rather than by the module's own runner. These tests check that
+/// a stylesheet written by the model cannot read local files or call refused `stroom:` functions.
+///
+/// They run with the default configuration, in which `secureMode` is on. What should happen to learned
+/// stylesheets when it is off has not yet been decided.
 class TestPipelineStepRunner extends AbstractProcessIntegrationTest {
 
     private static final String INPUT = "<in>x</in>";
@@ -68,15 +70,15 @@ class TestPipelineStepRunner extends AbstractProcessIntegrationTest {
 
     @Test
     void aPlainStylesheetRunsOnTheNodePath() {
-        // The control for the tests below: without it, a node path that failed for some other reason
-        // would make every refusal look like a pass.
+        // A control for the tests below. Without it, a runner that failed for some unrelated reason would
+        // make every refusal test pass.
         final StepResult result = run(stylesheet("<out><xsl:value-of select=\"concat('read ', in)\"/></out>"));
 
         assertThat(result.output()).contains("<out>read x</out>");
     }
 
-    // Security review finding 2 (23 November 2026): parse-xml() expanded an external entity, reading a
-    // local file, on the node path as well as in the module's runner.
+    // parse-xml() must not expand an external entity or DTD that reads a local file. The security review
+    // found that it did, both on a node and in the module's own runner.
     @ParameterizedTest
     @ValueSource(strings = {
             "<!DOCTYPE d [<!ENTITY x SYSTEM 'FILE'>]><d>&x;</d>",
@@ -98,8 +100,8 @@ class TestPipelineStepRunner extends AbstractProcessIntegrationTest {
         }
     }
 
-    // Security review finding 1 (23 November 2026): a stylesheet that got past the static check could
-    // read any file the Stroom process can. In secure mode the pool refuses every such read.
+    // A stylesheet that got past the static check of permitted functions could otherwise read any file the
+    // Stroom process can. In secure mode the XSLT pool refuses every such read.
     @ParameterizedTest
     @ValueSource(strings = {
             "unparsed-text('FILE')",
@@ -121,11 +123,12 @@ class TestPipelineStepRunner extends AbstractProcessIntegrationTest {
         }
     }
 
-    // Security review finding 1 and N1 (24 November 2026): in the pool, every Java-registered stroom:
-    // function is callable, including those the Smart Pipelines list refuses (http-call, send-email,
-    // lookup ...). The static check is the only thing between a learned stylesheet and them, and it can
-    // be bypassed. host-address() stands in for them here because it is refused by the list, harmless and
-    // observable: given localhost, it answers with the loopback address.
+    // In the XSLT pool, every Java-registered stroom: function can be called, including those the Smart
+    // Pipelines list refuses (http-call, send-email, lookup and others). The static check is the only
+    // thing that stops a learned stylesheet calling them, and it can be bypassed. This test uses
+    // host-address() to represent them because the list refuses it, it is harmless, and its effect can be
+    // seen: given localhost, it returns the loopback address. It is disabled until learned stylesheets are
+    // compiled with only the permitted stroom: functions.
     @Test
     @Disabled("Security review N1: fails until Track 3 task 1 compiles learned stylesheets with only the "
               + "allowed stroom: functions")
@@ -159,7 +162,7 @@ class TestPipelineStepRunner extends AbstractProcessIntegrationTest {
                + "<xsl:template match='/'>" + body + "</xsl:template></xsl:stylesheet>";
     }
 
-    // A document written as an XPath string literal in a double-quoted attribute.
+    // Escapes a document so it can be written as an XPath string literal inside a double-quoted attribute.
     private static String escapedForAnAttribute(final String document) {
         return document.replace("&", "&amp;")
                 .replace("<", "&lt;")

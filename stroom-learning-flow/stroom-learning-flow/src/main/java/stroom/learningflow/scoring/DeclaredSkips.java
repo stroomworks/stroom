@@ -24,12 +24,13 @@ import org.xml.sax.SAXException;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
-/// How a translation says that a record is deliberately not an event
-/// (`docs/learning-flow-declared-skips-design.md`, decided 20 November 2026; UM-2).
+/// Defines how a translation declares that a record is deliberately not an event, and provides helpers to
+/// recognise and remove those declarations.
 ///
-/// Plenty of feeds legitimately make fewer events than records — a header line, a column banner, a
-/// heartbeat, a comment — and the completeness check (`records in = events out + declared skips`) would
-/// fail every one of them without a way to say so. A check people switch off protects nobody.
+/// Plenty of feeds legitimately produce fewer events than records (e.g. a header line, a column banner, a
+/// heartbeat or a comment), and without a way to declare this, the completeness check
+/// (`records in = events out + declared skips`) would fail every one of them and people would switch it
+/// off.
 ///
 /// In place of an event, the translation writes a marker:
 ///
@@ -37,33 +38,37 @@ import java.util.Deque;
 /// <Skipped xmlns="learningflow:skips" reason="header line"/>
 /// ```
 ///
-/// It is **data, not a side effect**, which is why it was chosen over `xsl:message`: a message that gets
-/// its severity wrapper wrong is logged as an `ERROR`, and an `ERROR` drops records from the output — the
-/// very fault completeness exists to catch. A marker written wrongly is a marker that does not count.
+/// It is **data, not a side effect**, which is why it is used rather than `xsl:message`. In Stroom, a
+/// message whose text is not wrapped in a severity element is logged as an `ERROR`, and an `ERROR` drops
+/// records from the output, which is the very fault the completeness check exists to catch. A marker
+/// written wrongly simply does not count, and nothing is lost.
 ///
 /// The marker never leaves the module: it is counted beside the events, ignored by the Schema-valid
 /// check, and dropped before the writer, so nothing downstream sees it.
 ///
-/// **It is a hole in the completeness check that the model controls**, and by decision there is no cap on
-/// how much of a stream may be skipped. The count is shown instead — in the conversation, on the Learning
-/// Status tab and beside the event count on the stream's output row — so that a person approving a draft
-/// reads "312 events, 4 skipped" and judges for themselves.
+/// **It is a gap in the completeness check that the model controls**, and there is deliberately no limit
+/// on how much of a stream may be skipped. The count is shown instead (in the conversation, on the
+/// Learning Status tab and beside the event count on the stream's output row), so that a person approving
+/// a draft reads "312 events, 4 skipped" and judges for themselves.
 public final class DeclaredSkips {
 
-    /// The marker's namespace. Its own, so that it cannot collide with a target schema's elements and so
-    /// that the Schema-valid check can tell it apart from an event without knowing the schema.
+    /// The marker's namespace. It has its own namespace so that it cannot collide with a target schema's
+    /// elements, and so that the Schema-valid check can tell it apart from an event without knowing the
+    /// schema.
     public static final String NAMESPACE = "learningflow:skips";
     /// The marker element's local name.
     public static final String ELEMENT = "Skipped";
-    /// The attribute holding why the record was skipped. Free text for now; see the design document.
+    /// The attribute holding why the record was skipped, as free text.
     public static final String REASON = "reason";
 
-    /// The marker as the prompt teaches it and a message quotes it.
+    /// The marker as the prompt describes it and messages quote it.
     public static final String MARKUP = "<" + ELEMENT + " xmlns=\"" + NAMESPACE + "\" reason=\"...\"/>";
 
     private DeclaredSkips() {
     }
 
+    /// Whether an element is a declared skip marker.
+    ///
     /// @param uri       An element's namespace, which may be null or empty.
     /// @param localName Its local name.
     /// @return Whether it is a declared skip.
@@ -71,7 +76,7 @@ public final class DeclaredSkips {
         return NAMESPACE.equals(uri) && ELEMENT.equals(localName);
     }
 
-    /// Why a marker says the record was skipped.
+    /// Gets the reason a marker gives for skipping the record.
     ///
     /// @param attributes The marker's attributes.
     /// @return The reason given, or null where none was.
@@ -82,8 +87,8 @@ public final class DeclaredSkips {
                 : reason.strip();
     }
 
-    /// A handler that passes everything on but the markers, which it drops whole. What keeps a skip away
-    /// from the Schema-valid check and from the writer.
+    /// Creates a handler that passes everything on except the markers, which it drops along with anything
+    /// inside them. This keeps declared skips away from the Schema-valid check and from the writer.
     ///
     /// @param downstream Where everything else goes.
     /// @return The handler to feed.
@@ -95,15 +100,14 @@ public final class DeclaredSkips {
     // --------------------------------------------------------------------------------
 
 
-    /// Forwards a document with the skip markers taken out of it. A marker is an empty element, but a
-    /// depth is kept rather than assumed, so that anything written inside one goes with it.
+    /// Forwards a document with the skip markers removed. A marker should be an empty element, but the
+    /// depth is tracked rather than assumed, so that anything written inside one is removed with it.
     private static final class Stripper implements ContentHandler {
 
         private final ContentHandler downstream;
-        /// The prefixes whose declarations were dropped, so that the matching end is dropped too. A
-        /// start that is passed on and an end that is not — or the other way about — leaves the
-        /// downstream's namespace stack one deep in the wrong place, and the elements after the first
-        /// marker lose the namespace they were written in.
+        /// The prefixes whose mappings were dropped, so that the matching end is dropped too. Passing on
+        /// a start without its end, or the other way round, would leave the downstream's namespace stack
+        /// out of step, and the elements after the first marker would lose their namespace.
         private final Deque<String> dropped = new ArrayDeque<>();
         private int skipping;
 

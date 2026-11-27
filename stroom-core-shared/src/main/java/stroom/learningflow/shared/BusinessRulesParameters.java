@@ -26,20 +26,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Business rules (§8.4): the assertions every record must satisfy, and whether the messages a transform
- * raises itself with {@code xsl:message} count against it too.
- */
+/// Parameters for the business rules check: the XPath assertions every record must satisfy, and whether
+/// messages the transform itself raises with `xsl:message` count against the record too.
 @JsonPropertyOrder({"assertions", "includeTransformMessages"})
 @JsonInclude(Include.NON_NULL)
 public final class BusinessRulesParameters extends ScorerParameters {
 
     @JsonProperty
     private final List<XPathAssertion> assertions;
-    /**
-     * A transform that raises {@code xsl:message} at warning or above about a record is reporting a
-     * rule of its own; by default that counts as a failed assertion for the record.
-     */
+    /// A transform that raises an `xsl:message` at warning or above about a record is reporting a broken rule
+    /// of its own, so by default that counts as a failed assertion for the record.
     @JsonProperty
     private final boolean includeTransformMessages;
 

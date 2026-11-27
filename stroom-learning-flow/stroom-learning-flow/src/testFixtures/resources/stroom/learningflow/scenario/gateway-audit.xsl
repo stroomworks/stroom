@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!--
-  One event per record, whatever the record is called: the mixed children of <batch> are the records, so
-  the stylesheet is written over a record rather than over a name. The context each record needs — the
-  node, the site and the time zone — is on the enclosing <batch>, which the split leaves around it.
+  One event per record, whatever the record's element name: the children of <batch>, which have different
+  names, are the records, so the templates match any child rather than a particular name. The context each
+  record needs (the node, the site, and the generation time for a record with no time of its own) is on
+  the enclosing <batch>, which the split keeps around each record.
 -->
 <xsl:stylesheet
     xmlns="event-logging:3"

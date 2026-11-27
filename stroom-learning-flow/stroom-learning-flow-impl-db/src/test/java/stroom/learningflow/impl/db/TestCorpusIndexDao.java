@@ -29,8 +29,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// The corpus index of design 04 §4.1: rows in the order accepted, the cap dropping the oldest, and the
-/// streams nothing names any more handed back for deletion.
+/// Tests [CorpusIndexDao]: rows come back in the order they were accepted, trimming to the cap drops the
+/// oldest, and streams that no row refers to any more are returned for deletion.
 class TestCorpusIndexDao {
 
     private static final String DOC = "doc-" + System.nanoTime();

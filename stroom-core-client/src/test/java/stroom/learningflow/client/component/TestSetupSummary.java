@@ -52,7 +52,7 @@ class TestSetupSummary {
                 .build(), FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("On · GPT-4o");
-        // The fallback is a step of the flow, but not a card
+        // The fallback is a step of the flow, but is not counted as a step card
         assertThat(summary.summary(SetupSection.APPROACH)).isEqualTo("Straight to it · 3 steps");
         assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 9 gates, 2 advice checks");
         assertThat(summary.summary(SetupSection.GOING_LIVE)).isEqualTo("Approved first");
@@ -64,19 +64,19 @@ class TestSetupSummary {
 
     @Test
     void aNewDocumentsProblemsAreShownAgainstTheSectionsTheyAreFixedIn() {
-        // Learning off, no model, no checks, the direct flow
+        // A new document: learning off, no model, the Standard checks and the Direct flow
         final SetupSummary summary = SetupSummary.of(
                 LearningFlowDoc.builder().uuid("new").name("New")
-                        // The steps the store gives a new document (Track 2 step 1c).
+                        // The steps the store gives a new document
                         .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
                         .build(),
                 FlowExampleFixtures.all());
 
         assertThat(summary.summary(SetupSection.LEARNING)).isEqualTo("Off · no model");
-        // Learning off and no model are both fixed under Learning: the first is shown
+        // Learning off and no model are both fixed in the Learning section, which shows only the first
         assertThat(summary.problem(SetupSection.LEARNING))
                 .isEqualTo("Learning is switched off, so streams of new feeds wait.");
-        // A new Learning Flow has the Standard checks, so nothing is wrong with them
+        // A new Learning Flow has the Standard checks, so there is no problem with them
         assertThat(summary.summary(SetupSection.QUALITY)).isEqualTo("Standard · 9 gates, 2 advice checks");
         assertThat(summary.problem(SetupSection.QUALITY)).isNull();
         assertThat(summary.problem(SetupSection.APPROACH)).isNull();

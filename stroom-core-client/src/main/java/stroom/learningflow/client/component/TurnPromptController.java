@@ -28,11 +28,13 @@ import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
-/// The dialog that shows what a learning run's question was put to the model with ([TurnPrompt]; decision
-/// N9, Track 2 step 4). The prompt is rebuilt on the server when asked for rather than stored, so the
-/// dialog opens saying so and fills when the server answers: with the prompt, or with why it can't be
-/// shown, which the server says in words (no permission to view data, the stream deleted, a run asked
-/// before its words were kept).
+/// Shows the dialog ([TurnPrompt]) with the prompt that was sent to the model for one question of a learning
+/// run. It is opened from a Smart Pipeline's Learning Status tab.
+///
+/// Prompts are not stored; the server rebuilds one on request. The dialog therefore opens saying that the
+/// prompt is being rebuilt, and is filled in when the server replies. The reply is either the prompt or the
+/// reason it cannot be shown, in words for the user (e.g. no permission to view the data, the stream has been
+/// deleted, or the run predates the recording of the texts needed to rebuild it).
 public class TurnPromptController extends Controller {
 
     private static final SupervisorResource RESOURCE = GWT.create(SupervisorResource.class);
@@ -40,11 +42,11 @@ public class TurnPromptController extends Controller {
     private final TurnPrompt view;
     private final RestFactory restFactory;
 
-    /// Made by GIN, with its content.
+    /// Made by GIN.
     ///
     /// @param eventBus    The application's event bus.
     /// @param view        The dialog's content.
-    /// @param restFactory Asks the server to rebuild the prompt.
+    /// @param restFactory Used to ask the server to rebuild the prompt.
     @Inject
     public TurnPromptController(final EventBus eventBus, final TurnPrompt view, final RestFactory restFactory) {
         super(eventBus);
@@ -53,11 +55,11 @@ public class TurnPromptController extends Controller {
         initWidget(view);
     }
 
-    /// Shows the dialog, owned by `opener` until it is closed, and asks for the prompt.
+    /// Shows the dialog, owned by `opener` until it is closed, and asks the server to rebuild the prompt.
     ///
-    /// @param opener    What shows it.
-    /// @param attemptId The learning run.
-    /// @param number    The question's number in it.
+    /// @param opener    The controller that opens the dialog and owns it while it is shown.
+    /// @param attemptId The id of the learning run (attempt).
+    /// @param number    The question's number within the run.
     public void show(final HasControllerNode opener, final long attemptId, final int number) {
         view.showRebuilding();
         ControllerDialog.showOnce(opener, this)

@@ -42,12 +42,12 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenario 30 (A5, A28): deferred learning. A stream for a learner that knows nothing in a deferred
- * document costs its task a sentinel and no model call — the attempt is opened and parked at its first
- * question — and the worker carries it on outside the task. What it promotes wakes its pipeline as any
- * other promotion does, so the streams that waited are tried again.
- */
+/// Tests that learning happens in the background worker, never in the processing task.
+///
+/// When a stream arrives for a learner that has learned nothing, its task defers the stream without calling
+/// the model: an attempt is opened and left awaiting the model at its first question, and the background
+/// worker resumes it later, outside the task. A promotion by the worker wakes the pipeline like any other
+/// promotion, so the streams that waited are processed again.
 class TestScenario30DeferredWorker {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -109,14 +109,14 @@ class TestScenario30DeferredWorker {
         assertThat(parked.turns().get(0).answeredBy()).isNull();
         assertThat(scenarios.deferrals.forDocument(DOC)).describedAs("the stream waits, on a row").hasSize(1);
 
-        // A second stream of the learner while it waits: held behind the same attempt, not a second.
+        // A second stream for the learner while it waits is held behind the same attempt, not given a new one.
         final Input second = scenarios.inputs.put(stream(2L));
         assertThat(scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER,
                 second).decision()).isInstanceOf(Deferred.class);
         assertThat(scenarios.attempts.forDocument(DOC, 10)).describedAs("one attempt for one learner").hasSize(1);
         assertThat(scenarios.deferrals.forDocument(DOC)).hasSize(2);
 
-        // The worker carries it on, against the script the task never asked.
+        // The worker resumes the attempt and asks the model the questions the task never asked.
         final Script script = learning(scenarios);
         final int advanced = scenarios.worker(script).advance(10);
 
@@ -129,10 +129,10 @@ class TestScenario30DeferredWorker {
                 assertThat(turn.answer()).describedAs("and every one answered now").isNotNull());
         assertThat(scenarios.learnerBindings.forLearner(Scenarios.LEARNER)).hasSize(1);
 
-        // And the promotion wakes what waited on the learner. Twice over, because the same pass then
-        // sweeps for streams a wake could not reach (A130, W7-4) and these rows are still here — a
-        // deferral goes when its stream is served, not when it is woken. Waking a task that is already
-        // `CREATED` costs an update of no rows.
+        // The promotion wakes the streams that waited on the learner. Each is woken twice, because the same
+        // pass then sweeps for streams that a wake could not reach, and these deferral rows are still present:
+        // a deferral is removed when its stream is served, not when it is woken. Waking a task that is already
+        // `CREATED` updates no rows, so this costs nothing.
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId)
                 .containsExactly(1L, 2L, 1L, 2L);
 
@@ -159,9 +159,9 @@ class TestScenario30DeferredWorker {
 
     @Test
     void aBoundLearnerMarkedByHandIsStillServedByTheTaskWhileItsSessionOpens() {
-        // A29, A60 and A100 together: a learner a person marked for relearning is served by its incumbent as
-        // every stream of it is, and the task asks nothing; its next stream that brings enough records
-        // opens the relearning session, parked for the worker.
+        // A learner that a person has marked for relearning is still served by its current binding, and the
+        // task asks the model nothing. The learner's next stream with enough records opens the relearning
+        // session, which is left awaiting the model for the worker to resume.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));
@@ -186,9 +186,10 @@ class TestScenario30DeferredWorker {
 
     @Test
     void anAttemptWhoseStreamOrDocumentIsGoneIsAbandonedRatherThanWaitingForEver() {
-        // The worker re-walks the conversation over the sample, and the sample is the stream (A45): a stream
-        // aged off leaves nothing to carry on from, and a learner whose attempt waits for ever is a learner
-        // nothing else may learn.
+        // The worker resumes a session by replaying its conversation over the sample, and the sample comes
+        // from the held stream. A stream that has been deleted leaves nothing to resume from, and an attempt
+        // left waiting for ever would block the learner from ever learning, since a learner has only one open
+        // attempt at a time.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));
@@ -204,12 +205,12 @@ class TestScenario30DeferredWorker {
         assertThat(abandoned.status()).isEqualTo(AttemptStatus.ABANDONED);
         assertThat(abandoned.decision()).contains("no longer held");
 
-        // The learner is free again: the next stream of it opens an attempt of its own.
+        // The learner is free again, so its next stream opens a new attempt.
         scenarios.inputs.put(stream(4L));
         scenarios.stage(Script.of()).decide(doc, Scenarios.LEARNER, stream(4L));
         assertThat(scenarios.attempts.forDocument(DOC, 10)).hasSize(2);
 
-        // And a document deleted while its attempt waited is the same story.
+        // An attempt whose document was deleted while it waited is abandoned in the same way.
         scenarios.documents.remove(DOC);
         assertThat(scenarios.worker(Script.of()).advance(10)).isZero();
         assertThat(scenarios.attempts.forDocument(DOC, 10).get(0).decision()).contains("has been deleted");
@@ -217,10 +218,9 @@ class TestScenario30DeferredWorker {
 
     @Test
     void aLearnerNobodyWantsLearningAnyMoreIsNotCarriedOnByTheWorker() {
-        // An attempt may wait a long while, and the learner is not as it left it: an operator may have
-        // turned learning off, or it may have been given up. Whatever the attempt
-        // was learning towards is not wanted now, so it is closed rather than carried on into a binding
-        // nobody asked for.
+        // An attempt may wait a long time, and meanwhile the learner may have changed: an operator may have
+        // turned learning off, or the learner may have been given up. What the attempt was learning is then
+        // not wanted, so it is closed rather than resumed into a binding nobody asked for.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));
@@ -242,9 +242,10 @@ class TestScenario30DeferredWorker {
 
     @Test
     void anAttemptWhoseClaimLapsedWhileNobodyCarriedItIsStillCarriedOn() {
-        // The claim's expiry says who may carry an attempt, not whether it is still wanted: nobody is
-        // behind a parked attempt, so there is nothing to take it from. A worker that was down while the
-        // claim lapsed must still pick it up, or the learner waits for a stream that may never come.
+        // The claim's expiry decides who may resume an attempt, not whether it is still wanted. No node is
+        // working on an attempt that is waiting, so there is nobody to take it from. A worker that was down
+        // while the claim expired must still pick it up, or the learner would wait for a stream that may
+        // never come.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));
@@ -261,8 +262,8 @@ class TestScenario30DeferredWorker {
 
     @Test
     void oneBadAttemptDoesNotStopThePass() {
-        // A job that stopped at the first attempt it could not carry on would never reach the ones behind
-        // it, and a learner that cannot learn would hold up every other.
+        // A job that stopped at the first attempt it could not resume would never reach the ones after it,
+        // so one learner that cannot learn would hold up every other.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = scenarios.documents.put(deferred());
         scenarios.inputs.put(stream(1L));
@@ -270,8 +271,8 @@ class TestScenario30DeferredWorker {
         final Recorded first = scenarios.attempts.forDocument(DOC, 10).get(0);
         scenarios.inputs.remove(1L);
 
-        // A second document, a second pipeline and so a second learner (A127), and an attempt that can be
-        // carried on.
+        // A second document and a second pipeline, and so a second learner, with an attempt that can be
+        // resumed.
         final Learner second = new Learner("pipeline-2", Scenarios.LEARNER.elementId());
         final LearningFlowDoc other = scenarios.documents.put(deferred().copy().uuid("doc-2").build());
         final Input fine = scenarios.inputs.put(new Input(2L, "OTHER-FEED", "Raw Events",
@@ -284,7 +285,8 @@ class TestScenario30DeferredWorker {
         assertThat(scenarios.attempts.byId(first.id()).orElseThrow().status())
                 .isEqualTo(AttemptStatus.ABANDONED);
         assertThat(scenarios.learnerBindings.forLearner(second)).hasSize(1);
-        // Twice: the promotion's wake, and the same pass's sweep for streams it could not reach (W7-4)
+        // Woken twice: once by the promotion, and once by the same pass's sweep for streams a wake could not
+        // reach.
         assertThat(scenarios.wake.woken()).extracting(Deferral::inputId).containsExactly(2L, 2L);
     }
 }

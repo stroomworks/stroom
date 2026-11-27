@@ -27,10 +27,11 @@ import stroom.pipeline.shared.data.PipelineElementType;
 
 import java.util.Optional;
 
-/**
- * The {@code DSParser} element as a step of the A21 conversation: compile the candidate through the gate of
- * §8.1, then run it over the input. The output is the {@code records:2} document the next element sees.
- */
+/// Runs a Data Splitter configuration proposed by the model, as one step of a learning session.
+///
+/// The configuration is compiled first, so that one which fails to compile goes back to the model as
+/// diagnostics rather than being run. One that compiles is run over the input, and its `records:2` XML output
+/// becomes the input to the next element in the chain.
 public final class DataSplitterStep implements StepRunner {
 
     public static final String ELEMENT_TYPE = PipelineElementType.TYPE_DS_PARSER;
@@ -63,7 +64,8 @@ public final class DataSplitterStep implements StepRunner {
         return true;
     }
 
-    /// Raw text, so the split question is the configuration that cuts it.
+    /// The Data Splitter reads raw text, so the split question asks the model for a Data Splitter
+    /// configuration that cuts the text into records.
     @Override
     public InputKind consumes() {
         return InputKind.TEXT;
@@ -72,8 +74,8 @@ public final class DataSplitterStep implements StepRunner {
     @Override
     public StepResult run(final String configuration, final String input) {
         return switch (compiler.compile(configuration)) {
-            case Rejected rejected -> new StepResult(null, rejected.diagnostics());
-            case Compiled compiled -> {
+            case final Rejected rejected -> new StepResult(null, rejected.diagnostics());
+            case final Compiled compiled -> {
                 final ExtractionResult result = DataSplitterRunner.run(compiled, input);
                 yield new StepResult(result.records(), result.diagnostics(), result.recordRanges());
             }

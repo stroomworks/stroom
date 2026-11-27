@@ -19,6 +19,7 @@ package stroom.learningflow.doc;
 import stroom.docstore.api.DocumentStore;
 import stroom.learningflow.shared.LearningFlowDoc;
 
+/// The document store for Learning Flow documents.
 public interface LearningFlowStore extends DocumentStore<LearningFlowDoc> {
 
 }

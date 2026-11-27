@@ -30,22 +30,25 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/// What a pipeline's tabs share about its Smart Pipeline elements' learners: finding an element's learner
-/// among the pipeline's, and the settings of each Learning Flow a learner learns under, read once while the
-/// tab is open.
+/// A helper shared by a pipeline's Learning Status and Quality Assurance tabs for working with the learners
+/// of the pipeline's Smart Pipeline elements.
+///
+/// It finds an element's learner among the pipeline's learners, and reads the settings of the Learning Flow a
+/// learner learns under, caching them so each is read only once while the tab is open.
 final class PipelineLearners {
 
     private final SupervisorResource supervisorResource;
     private final RestFactory restFactory;
     private final HasControllerNode owner;
     private final Supplier<TaskMonitorFactory> taskMonitor;
-    /// The settings of each Learning Flow a learner learns under, by its uuid.
+    /// Cache of the settings of each Learning Flow read so far, keyed by the Learning Flow's UUID.
     private final Map<String, LearningFlowDoc> settings = new HashMap<>();
 
-    /// @param supervisorResource The supervisor's resource, which reads the settings.
+    /// @param supervisorResource The REST resource used to read the settings.
     /// @param restFactory        Makes REST requests.
-    /// @param owner              The controller whose requests these are: nothing is told once it is disposed.
-    /// @param taskMonitor        The task monitor a request shows on, as the owner has it when it starts.
+    /// @param owner              The controller that owns the requests. No callback runs once it is disposed.
+    /// @param taskMonitor        Supplies the task monitor to show a request on, from the owner at the time the
+    ///                           request starts.
     PipelineLearners(final SupervisorResource supervisorResource,
                      final RestFactory restFactory,
                      final HasControllerNode owner,
@@ -56,11 +59,11 @@ final class PipelineLearners {
         this.taskMonitor = taskMonitor;
     }
 
-    /// Finds an element's learner among a pipeline's.
+    /// Finds an element's learner among a pipeline's learners.
     ///
     /// @param learners  The pipeline's learners, or null for none.
     /// @param elementId The element's id.
-    /// @return The element's learner, or null where it has none.
+    /// @return The element's learner, or null if it has none.
     static SupervisorLearner learnerOf(final List<SupervisorLearner> learners, final String elementId) {
         return NullSafe.list(learners).stream()
                 .filter(learner -> elementId.equals(learner.getLearner().getElementId()))
@@ -68,25 +71,26 @@ final class PipelineLearners {
                 .orElse(null);
     }
 
-    /// Forgets the settings read, e.g. when another pipeline is shown.
+    /// Clears the cached settings, e.g. when another pipeline is shown.
     void clear() {
         settings.clear();
     }
 
-    /// The settings of the Learning Flow a learner learns under, read once. A failure to read them is told
-    /// as any failed request is.
+    /// Gets the settings of the Learning Flow a learner learns under, from the cache or else from the server.
+    /// A failure to read them is reported to the user in the usual way for a failed request.
     ///
-    /// @param row  The learner, which names a Learning Flow.
-    /// @param then Given the settings.
+    /// @param row  The learner, which must name a Learning Flow.
+    /// @param then Called with the settings.
     void read(final SupervisorLearner row, final Consumer<LearningFlowDoc> then) {
         read(row, then, false);
     }
 
-    /// The settings of the Learning Flow a learner learns under, read once; null where the learner names
-    /// none or they can't be read.
+    /// Gets the settings of the Learning Flow a learner learns under, from the cache or else from the server.
+    /// Unlike [#read], a learner that names no Learning Flow, or a failure to read the settings, gives null
+    /// rather than an error.
     ///
     /// @param row  The learner.
-    /// @param then Given the settings, or null.
+    /// @param then Called with the settings, or null.
     void readOrNull(final SupervisorLearner row, final Consumer<LearningFlowDoc> then) {
         if (row.getDoc() == null) {
             then.accept(null);
@@ -110,7 +114,7 @@ final class PipelineLearners {
                     settings.put(docUuid, doc);
                     then.accept(doc);
                 })
-                // Left unset, a failure is alerted as any request's is
+                // A null failure handler means the default one, which alerts the user
                 .onFailure(nullOnFailure
                         ? error -> then.accept(null)
                         : null)

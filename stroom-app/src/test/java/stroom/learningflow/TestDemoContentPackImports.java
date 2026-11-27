@@ -43,9 +43,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The pack through the importer, which is the one thing `TestDemoContentPack` cannot reach: it reads
-/// the pack's files with the classes the importer reads them with, but reading a file is not importing
-/// it, and a demo is only a demo if what lands can be opened.
+/// Tests that the Learning Flow demo content pack imports through the real importer and that the imported
+/// documents can be opened.
+///
+/// `TestDemoContentPack` reads the pack's files with the same classes the importer uses, but cannot check
+/// that an actual import succeeds, which is what this test does.
 class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
 
     @Inject
@@ -71,7 +73,7 @@ class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
         final LearningFlowDoc document = learningFlowStore.readDocument(DemoContentPack.documentRef());
         assertThat(document).isNotNull();
         assertThat(document.getName()).isEqualTo(DemoContentPack.DOCUMENT_NAME);
-        // The stage calls the model that came with it, not one that happens to be named the same.
+        // The document must refer to the model shipped in the pack by UUID, not to any model of the same name.
         assertThat(document.getModel()).isNotNull();
         assertThat(document.getModel().getUuid()).isEqualTo(DemoContentPack.MODEL_UUID);
         assertThat(document.getFlow().getSteps()).isNotEmpty();
@@ -87,10 +89,10 @@ class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
                 .containsAll(DemoContentPack.FEEDS);
     }
 
-    /// The filters are what make posting data the only thing left to do. Each arrives over its feed's
-    /// pipeline and names its feed — but switched off, because an import enables filters only when it is
-    /// told to, which on the import screen is the **Enable Processor Filters** tick. The pack's README says
-    /// so, and this says what the README has to say.
+    /// Checks that each processor filter is imported onto its feed's pipeline and selects that feed, so that
+    /// posting data is all a person has to do. The filters arrive disabled, because an import only enables
+    /// filters when asked to, which on the import screen is the **Enable Processor Filters** tick box. The
+    /// pack's README must tell the reader this.
     @Test
     void eachFilterArrivesOverItsFeedsPipelineAndNamesItsFeed() {
         importThePack(false);
@@ -118,8 +120,8 @@ class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
         return filters.getFirst();
     }
 
-    /// The document the demo is pointed at must be the one each pipeline's stage names, or a person who
-    /// posts data gets a stage configured by nothing.
+    /// Checks that the Learning Flow element in each pipeline refers to the imported document. Otherwise data
+    /// posted to the demo would reach an element with no settings to run under.
     @Test
     void theStageInEachPipelineNamesTheDocumentThatWasImported() {
         importThePack();
@@ -148,8 +150,8 @@ class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
         final Path zip = tempDir.resolve("learning-flow-demo.zip");
         DemoContentPack.writeZip(zip);
 
-        // As the import screen does it: a pass that says what would change, every change agreed to, and
-        // then the import itself.
+        // Import as the import screen does: a confirmation pass that lists what would change, then every
+        // change accepted, then the import itself.
         final List<ImportState> confirmations = importExportService.importConfig(
                 zip, ImportSettings.createConfirmation(), new ArrayList<>());
         assertThat(confirmations).isNotEmpty();
@@ -164,9 +166,9 @@ class TestDemoContentPackImports extends AbstractCoreIntegrationTest {
                 confirmations);
     }
 
-    /// Everything the importer said went wrong, named with the document it went wrong for: an import
-    /// records what it could not do rather than throwing, so a pack that half-arrived looks like a pack
-    /// that arrived.
+    /// Collects every error the importer reported, prefixed with the document it concerns. An import
+    /// records what it could not do instead of throwing, so without this check a partly imported pack would
+    /// look like a successful one.
     private static List<String> problems(final List<ImportState> states) {
         return states.stream()
                 .flatMap(state -> state.getMessageList().stream()

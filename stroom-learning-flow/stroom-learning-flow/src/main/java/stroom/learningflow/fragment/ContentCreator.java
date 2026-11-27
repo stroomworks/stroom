@@ -21,41 +21,42 @@ import stroom.util.shared.DocPath;
 
 import java.util.Set;
 
-/**
- * Where learned content goes. A document created straight through its store has no explorer node and
- * is invisible in the tree; in a node the explorer creates it, in the folder its learner's place names
- * (design 06 A113). Tests create through the stores and ignore the folder.
- */
+/// Creates and deletes the documents that learning writes (fragments, XSLTs, text converters). A document
+/// created directly through its store has no explorer node and is invisible in the tree, so on a node
+/// [ExplorerContentCreator] creates it through the explorer, in the folder set on the learner's Smart
+/// Pipeline element. Tests create documents through the stores and ignore the folder.
 public interface ContentCreator {
 
-    /**
-     * @param folder The folder to create in, created itself if need be.
-     * @param type   The document type, e.g. {@code Pipeline}.
-     * @param name   The document name.
-     * @return The new, empty document.
-     */
+    /// Creates a new, empty document.
+    ///
+    /// @param folder The folder to create in, which is itself created if need be.
+    /// @param type   The document type, e.g. `Pipeline`.
+    /// @param name   The document name.
+    /// @return The new, empty document.
     DocRef create(DocPath folder, String type, String name);
 
-    /// Delete a learned document, node and all: what a draft fragment's documents get once the draft has
-    /// been copied into the fragment that serves (A58). Deleting through the store alone would leave the
-    /// explorer node behind.
+    /// Deletes a learned document along with its explorer node. This is used to remove a draft fragment's
+    /// documents once the draft has been copied into the fragment that serves the learner. Deleting
+    /// through the store alone would leave the explorer node behind.
     ///
     /// @param docRef The document to delete.
     void delete(DocRef docRef);
 
-    /// Make a folder, or find it where it is.
+    /// Creates a folder if it does not already exist.
     ///
     /// @param folder The folder.
     void ensure(DocPath folder);
 
-    /// What is already in a folder, of any type: what a new name must not be.
+    /// Lists the names of everything in a folder, of any type, so that a new document can be given a name
+    /// that is not already taken.
     ///
     /// @param folder The folder.
     /// @return The names of what it holds; none where it does not exist yet.
     Set<String> names(DocPath folder);
 
-    /// A name nothing in the folder has (A132): the name itself where it is free, and otherwise the first
-    /// free number after it — `Door access`, then `Door access 2`, `Door access 3`.
+    /// Finds a name that nothing in the folder already has. This is the name itself where it is free, and
+    /// otherwise the name followed by the first free number, e.g. `Door access`, then `Door access 2`,
+    /// `Door access 3`.
     ///
     /// @param folder The folder.
     /// @param name   The name wanted.

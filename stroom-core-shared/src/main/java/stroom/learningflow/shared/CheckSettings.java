@@ -21,8 +21,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/// A Learning Flow's checks as a whole: every check has one setting (the one model of checks), and the
-/// rules a set of settings must keep to.
+/// Utilities for a Learning Flow document's check settings as a whole. Every check has exactly one setting;
+/// this fills in missing ones and validates a set.
 public final class CheckSettings {
 
     private CheckSettings() {
@@ -74,9 +74,9 @@ public final class CheckSettings {
             if (check == Check.COMPILE && !setting.isGate()) {
                 problems.add("The compile check is always a gate.");
             }
-            // What a learned stylesheet may use is a safety check, not a quality one (decision N1): a
-            // Learning Flow cannot turn it down or off, because on an automatic one nobody reads the
-            // stylesheet before it runs
+            // What a learned stylesheet may use is a safety check, not a quality one. A Learning Flow
+            // cannot turn it down or off, because under automatic promotion nobody reads the stylesheet
+            // before it runs
             if (check == Check.PERMITTED && !setting.isGate()) {
                 problems.add("The permitted check is always a gate.");
             }

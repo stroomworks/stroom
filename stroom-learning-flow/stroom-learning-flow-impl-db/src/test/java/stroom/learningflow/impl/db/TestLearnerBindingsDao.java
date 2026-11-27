@@ -32,9 +32,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The bindings of A41 as rows: what the seam promises, against a real database. A binding is a
-/// learner's (design 06 phase J slice 2b), and its uuid names it across every learner. The database
-/// outlives a run, so every uuid and learner here is made fresh for it.
+/// Tests that [LearnerBindingsDao] keeps the promises of the `LearnerBindings` interface against a real
+/// database. A binding belongs to one learner, and its UUID identifies it across all learners. The database
+/// outlives a test run, so every UUID and learner here is made unique to the run.
 class TestLearnerBindingsDao {
 
     private static final String RUN = String.valueOf(System.nanoTime());
@@ -55,15 +55,15 @@ class TestLearnerBindingsDao {
 
     @Test
     void aBoundaryKeepsWhereItsRecordsSit() {
-        // §12 item 25: a binding's fragment splits at a depth, and the depth is part of the boundary
-        // rather than derivable from it. A binding read back without it would write a fragment that splits in
-        // the wrong place, and equals ignores the depth, so nothing else would notice.
+        // A binding's fragment splits the input at a depth, which is stored with the boundary because it
+        // cannot be derived from it. A binding read back without it would produce a fragment that splits
+        // in the wrong place, and equals() ignores the depth, so no other test would notice.
         learnerBindings.append(LEARNER, DOC, Binding.builder()
                 .uuid(fresh("array"))
                 .recordBoundary(RecordBoundary.ofArray("events").atDepth(3))
                 .build());
-        // A draft beside it: a learner has one *live* binding (W7-2), and a draft awaiting review sits
-        // next to it
+        // A draft beside it: a learner has only one live binding, but a draft awaiting review can exist
+        // alongside it.
         learnerBindings.append(LEARNER, DOC, Binding.builder()
                 .uuid(fresh("element"))
                 .draft(true)
@@ -83,9 +83,9 @@ class TestLearnerBindingsDao {
 
     @Test
     void aBoundaryOfAContainersChildrenSurvivesTheRoundTrip() {
-        // The shape that lets a feed whose records have different element names be learned at all
-        // (`docs/learning-flow-mixed-record-elements.md`). Without a column of its own it was written
-        // as all-nulls and read back as no boundary, so a node would have lost it silently.
+        // This form of boundary is what lets a feed whose records have different element names be learned
+        // at all. It needs a column of its own; otherwise it would be written as all nulls and read back
+        // as no boundary, and a node would lose it silently.
         learnerBindings.append(LEARNER, DOC, Binding.builder()
                 .uuid(fresh("children"))
                 .recordBoundary(RecordBoundary.ofChildrenOf("batch").atDepth(2))
@@ -124,7 +124,7 @@ class TestLearnerBindingsDao {
 
     @Test
     void replacingABindingKeepsItAndPromotingOneThatWentPutsItBack() {
-        // One live binding, and a draft beside it: a second live one is refused now (W7-2)
+        // One live binding, and a draft beside it, since a second live binding would be refused.
         final String a = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
         final String b = learnerBindings.append(LEARNER, DOC,
                 named("b").copy().draft(true).build()).getUuid();
@@ -142,9 +142,9 @@ class TestLearnerBindingsDao {
 
     @Test
     void aSecondLiveBindingForOneLearnerIsRefusedAndTheFirstHandedBack() {
-        // Audit finding W7-2. A node whose cache has not yet seen another node's promotion would
-        // otherwise write a second live binding, after which the first by id wins and the second is
-        // orphaned — serving nothing, visible to nobody, and with a regression corpus of its own.
+        // Without this guard, a node whose cache has not yet seen another node's promotion would write a
+        // second live binding. The one with the lower id would then serve, and the other would be
+        // orphaned: serving nothing, visible to nobody, and with a regression corpus of its own.
         final String first = learnerBindings.append(LEARNER, DOC, named("first")).getUuid();
 
         final Binding second = learnerBindings.append(LEARNER, DOC, named("second"));
@@ -157,7 +157,7 @@ class TestLearnerBindingsDao {
 
     @Test
     void aDraftSitsBesideTheLiveBinding() {
-        // The guard is about what *serves* a learner: a draft awaiting review is not that
+        // The guard is only on what serves a learner, and a draft awaiting review does not serve it.
         final String live = learnerBindings.append(LEARNER, DOC, named("live")).getUuid();
 
         final String draft = learnerBindings.append(LEARNER, DOC,
@@ -168,9 +168,9 @@ class TestLearnerBindingsDao {
 
     @Test
     void aReplaceFromACopyTheRowHasMovedPastIsRefused() {
-        // Audit finding W7-3. Taking the row lock was not enough: the writer then wrote every field back
-        // from a copy taken before the other, so a node promoting a provisional binding from its cache
-        // reverted a rebind another node had made to the pipeline and the snapshot.
+        // A row lock alone is not enough: the second writer would write every field back from a copy taken
+        // before the first writer's change, so a node writing a binding from its cache would revert another
+        // node's change to the binding's pipeline and snapshot. The version check prevents this.
         final String uuid = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
         final Binding read = binding(uuid);
 
@@ -190,8 +190,8 @@ class TestLearnerBindingsDao {
 
     @Test
     void aBindingBuiltRatherThanReadIsWrittenAsBefore() {
-        // No version is "no opinion": a promotion whose row was pruned between the run and the write must
-        // not be lost because it cannot say what version it saw
+        // A binding with no version skips the version check, so that a promotion whose row was removed
+        // between the run and the write is not lost because it cannot say which version it saw.
         final String uuid = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
 
         assertThat(learnerBindings.replace(LEARNER, DOC, Binding.builder().uuid(uuid).score(0.9).build()))
@@ -199,8 +199,8 @@ class TestLearnerBindingsDao {
         assertThat(binding(uuid).getScore()).isEqualTo(0.9);
     }
 
-    /// A row records the document the learner runs under, and a replacement brings it up to date: a
-    /// pipeline whose element is pointed at another document keeps what it learned, under the new one.
+    /// A row records the document the learner runs under, and a replacement updates it, so that a pipeline
+    /// whose element is pointed at another document keeps what it learned, under the new document.
     @Test
     void aReplacementRecordsTheDocumentTheLearnerNowRunsUnder() {
         final String a = learnerBindings.append(LEARNER, DOC, named("a")).getUuid();
@@ -222,7 +222,8 @@ class TestLearnerBindingsDao {
                 .hasSize(1);
     }
 
-    /// The snapshot a binding serves with (A61) goes round the trip, and moves with a replacement.
+    /// The snapshot a binding serves with survives being written and read back, and is updated by a
+    /// replacement.
     @Test
     void aBindingKeepsItsSnapshotAndTakesTheNextOnReplacement() {
         learnerBindings.append(LEARNER, DOC, Binding.builder().uuid(fresh("snapshot")).snapshot("snap-1").build());

@@ -12,8 +12,9 @@
     </Events>
   </xsl:template>
 
-  <!-- The degeneracy trap in the wild: every Data copied to a Data under Unknown, the EventID as the type;
-       it validates and says nothing -->
+  <!-- A degenerate translation of real-world data, for testing the extraction quality check: every Data
+       copied to a Data under Unknown, with the EventID as the type. It is valid against the schema, but
+       says nothing useful. -->
   <xsl:template match="Event">
     <Event>
       <EventTime>

@@ -28,9 +28,10 @@ import com.google.gwt.user.client.ui.Widget;
 import java.util.EnumMap;
 import java.util.Map;
 
-/// The content of the dialog that says which feeds a Learning Flow document's Feeds tab lists: by where
-/// they stand ([FeedFilter]), each with how many feeds stand there, and whether those whose pipeline was
-/// deleted are listed too. [FeedFilterEditorController] shows it.
+/// The content of the dialog that filters a list of Smart Pipelines, on a Learning Flow document's Pipelines
+/// tab or on the Smart Pipelines screen. It offers a choice of learner state ([FeedFilter]), each with the
+/// number of pipelines in that state, and whether to list pipelines that have been deleted.
+/// [FeedFilterEditorController] shows it.
 public class FeedFilterEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -42,7 +43,7 @@ public class FeedFilterEditor extends Component {
 
     private final Map<FeedFilter, Integer> counts = new EnumMap<>(FeedFilter.class);
 
-    /// Makes an editor listing every feed, without counts.
+    /// Creates an editor set to list every feed, without counts.
     public FeedFilterEditor() {
         initWidget(BINDER.createAndBindUi(this));
         filter.setDisplayValueFunction(value -> value == null
@@ -54,20 +55,20 @@ public class FeedFilterEditor extends Component {
         filter.setValue(FeedFilter.ALL);
     }
 
-    /// Shows how many feeds each choice lists, as the tab last read them.
+    /// Shows how many pipelines each choice would list, as of the list's last refresh.
     ///
-    /// @param byFilter How many, by choice.
+    /// @param byFilter The number of pipelines for each choice.
     public void setCounts(final Map<FeedFilter, Integer> byFilter) {
         counts.clear();
         counts.putAll(byFilter);
-        // The items are drawn as they are added, so they are added again to show the new counts
+        // An item's text is rendered when it is added, so the items are added again to show the new counts
         final FeedFilter chosen = filter.getValue();
         filter.clear();
         filter.addItems(FeedFilter.values());
         filter.setValue(chosen);
     }
 
-    /// @return Which feeds to list, all of them where nothing is chosen.
+    /// @return Which feeds to list; all of them if nothing is chosen.
     public FeedFilter getFilter() {
         final FeedFilter chosen = filter.getValue();
         return chosen == null

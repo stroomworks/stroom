@@ -19,18 +19,18 @@ package stroom.learningflow.fragment;
 import stroom.learningflow.scoring.Verdict;
 import stroom.processor.api.DeferTaskException;
 
-/// A record fell short of the bar while the chain was being served (design 04 §3): thrown from inside the
-/// fragment's pipeline to stop it reading any further, and caught by the runner, which hands the stage
-/// the record and the verdict. It is a deferral by type so that the pipeline's layers let it through as
-/// they let any deferral through, and so that one which somehow escaped would still mean *defer* and
-/// never *fail*.
+/// Thrown by [RecordGate] from inside a fragment's pipeline when a record falls short of the bar while a
+/// stream is being served, to stop the pipeline reading any further. [PipelineFragmentRunner] catches it
+/// and returns the record and its verdict to the stage. It extends [DeferTaskException] so that the
+/// pipeline's layers let it through as they let any deferral through, and so that if it ever escaped, the
+/// task would be deferred rather than failed.
 public final class RecordShortfall extends DeferTaskException {
 
     private final transient int index;
     private final transient Verdict verdict;
     private final transient String record;
 
-    /// @param index   Which record, from zero, in output order.
+    /// @param index   The record's zero-based index, in output order.
     /// @param verdict The verdict that failed it.
     /// @param record  The record as the judge was given it.
     public RecordShortfall(final int index, final Verdict verdict, final String record) {

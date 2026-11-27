@@ -58,7 +58,7 @@ class TestStageFactory {
     @Test
     @SuppressWarnings("unchecked")
     void theLearnableElementsAreThoseOfTheRunners() {
-        // Making a runner calls nothing it is given
+        // Creating the runners calls none of their dependencies, so mocks with no behaviour are enough
         final List<StepRunner> runners = StageFactory.runners(
                 mock(DataSplitterCompiler.class),
                 mock(Provider.class),
@@ -67,7 +67,8 @@ class TestStageFactory {
                 mock(Provider.class),
                 mock(TaskContextFactory.class));
 
-        // What a document chooses from, and the Setup tab offers, is what a run can learn with, in order
+        // The elements a document can choose from, and the Setup tab offers, must be exactly those a runner
+        // exists for, in the same order
         assertThat(runners)
                 .extracting(StepRunner::elementType)
                 .containsExactlyElementsOf(FlowStep.LEARNABLE_ELEMENTS);

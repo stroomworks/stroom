@@ -44,12 +44,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 47 (design 03 §3): a sign-on log of six columns by position and no delimiter, under
-/// the escalating flow. A parser that captures four columns and matches the rest of the line consumes every
-/// character, so coverage is full and says nothing; the transform written over it cannot state an outcome,
-/// the business rule refuses it twice, and the flow escalates to a target. Asked again against the targets,
-/// the four-column parser is caught by preservation — the records carry no value for the reason the target
-/// event states — and the six-column parser is promoted.
+/// Tests learning a fixed-width sign-on log, with six columns by position and no delimiter, under the
+/// escalating flow.
+///
+/// A parser that captures four columns and matches the rest of the line consumes every character, so
+/// coverage is full and does not catch the dropped columns. The transform written over its output cannot
+/// state an outcome, so the business rule refuses it twice and the flow escalates to proposing targets. When
+/// asked again against the targets, the four-column parser is caught by the preservation check, because the
+/// records carry no value for the reason the target event states. The six-column parser is then promoted.
 class TestScenario47FixedWidth {
 
     private static final String SIX = Scenarios.resource("fixed-width.ds3.xml");
@@ -105,8 +107,8 @@ class TestScenario47FixedWidth {
                         .withFeedbackMentioning("a sign-on decision states its outcome")
                         .withFeedbackMentioning("fails for 24 of 24 records"))
                 .reply(Scenarios.fenced(FOUR_XSLT))
-                // The transform's candidates are spent; targets are proposed (the structure answers), and the
-                // parser is asked again against them: four columns, then six.
+                // The transform's candidates are spent, so targets are proposed (answered automatically by the
+                // script) and the parser is asked again against them: first four columns, then six.
                 .expect(QuestionMatcher.configuration("DSParser").withTargets(2)).reply(Scenarios.fenced(FOUR))
                 .expect(QuestionMatcher.configuration("DSParser")
                         .withFeedbackMentioning("the records carry no value for")
@@ -119,9 +121,10 @@ class TestScenario47FixedWidth {
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
         assertThat(run.output()).isEqualTo(EVENTS);
-        // The split is asked of every input (A39): one record per line here, answered by the structure.
+        // The split is asked for every input. Here it is one record per line, answered automatically by the
+        // script.
         assertThat(script.asked()).filteredOn(Split.class::isInstance).hasSize(1);
-        // Two kinds of line — a reason of two words and of one — and a target for each.
+        // There are two kinds of line, with a reason of two words and of one, and a target for each.
         assertThat(script.asked()).filteredOn(TargetFor.class::isInstance).hasSize(2);
         final List<Exchange> turns = run.transcript();
         assertThat(turns.stream().map(Exchange::step))
@@ -131,7 +134,7 @@ class TestScenario47FixedWidth {
                 StepOutcome.PASSED, StepOutcome.PASSED, StepOutcome.PASSED, StepOutcome.RULES_SHORT,
                 StepOutcome.RULES_SHORT, StepOutcome.PASSED, StepOutcome.PASSED, StepOutcome.PRESERVATION_SHORT,
                 StepOutcome.PASSED, StepOutcome.PASSED);
-        // Coverage never spoke: the four-column parser consumed every character of every line.
+        // Coverage never gave feedback, because the four-column parser consumed every character of every line.
         assertThat(turns.stream().flatMap(turn -> turn.question().feedback().stream()))
                 .extracting(error -> error.getMessage())
                 .noneMatch(message -> message.startsWith("Input coverage")

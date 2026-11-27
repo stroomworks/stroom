@@ -23,9 +23,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/// What a learning run's turn was put to the model with (decision N9, Track 2 step 4), rebuilt from the
-/// words the run recorded and the sample read back from its stream rather than stored. Either the prompt,
-/// with what a reader should know about it, or why it can't be shown.
+/// The prompt that one turn of a learning session sent to the model, rebuilt on request for the Supervisor.
+///
+/// Prompts are not stored, because a stored prompt would be a copy of the stream's text that people without
+/// permission to view data could read, and it would outlive the stream under retention. Instead the prompt is
+/// rebuilt from what the session recorded and the sample read back from its stream. This holds either the
+/// prompt, with notes a reader should know about it, or the reason it can't be shown.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class RebuiltPrompt {
 

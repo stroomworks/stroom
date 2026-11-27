@@ -28,10 +28,12 @@ import stroom.util.shared.ModelStringUtil;
 import java.util.ArrayList;
 import java.util.List;
 
-/// The words the Learning Flow screens use for what the engine calls by its own names: a flow's steps,
-/// how an answer was judged, the checks, the example flows, and counts, percentages and durations. The
-/// design terms (learner, binding, candidate, park …) stay in the code and the design documents; a person
-/// reads these. Worked out from the shared model alone, so that it can be tested without a browser.
+/// Provides the user-facing wording the Learning Flow screens use in place of the engine's internal names,
+/// e.g. for a flow's steps, how an answer was judged, the checks and the example flows, plus formatting of
+/// counts, percentages and durations.
+///
+/// Internal terms such as learner, binding, candidate and park stay in the code; users see these plain words
+/// instead. It depends only on the shared model, so that it can be unit tested without a browser.
 public final class PlainWords {
 
     private static final long SECOND_MS = 1000L;
@@ -43,11 +45,12 @@ public final class PlainWords {
         // Static utility
     }
 
-    /// What a step is doing while a session is at it, e.g. "writing the parser", for "Learning: …".
+    /// Describes what a step is doing while a session is running it, e.g. "writing the parser", for use in
+    /// text such as "Learning: …".
     ///
-    /// @param kind The kind of question.
+    /// @param kind The kind of question the step asks, or null.
     /// @param role The role of a Configure step, or null.
-    /// @return What it is doing, in lower case.
+    /// @return The description, in lower case.
     public static String doing(final QuestionKind kind, final ConfigureRole role) {
         if (kind == null) {
             return "asking the AI";
@@ -72,9 +75,9 @@ public final class PlainWords {
         }
     }
 
-    /// How an answer was judged, as a short result, e.g. "Didn't read all the input".
+    /// Describes how an answer was judged, as a short result, e.g. "Didn't read all the input".
     ///
-    /// @param outcome The outcome, or null where the answer has not been judged.
+    /// @param outcome The outcome, or null if the answer has not been judged.
     /// @return The result.
     public static String result(final StepOutcome outcome) {
         if (outcome == null) {
@@ -118,10 +121,10 @@ public final class PlainWords {
         }
     }
 
-    /// A check's name as the list of checks shows it, e.g. "Reads all the input".
+    /// Gets a check's name as shown in the list of checks, e.g. "Reads all the input".
     ///
-    /// @param check The check.
-    /// @return Its name.
+    /// @param check The check, or null.
+    /// @return The check's name, or empty for null.
     public static String checkName(final Check check) {
         if (check == null) {
             return "";
@@ -160,7 +163,8 @@ public final class PlainWords {
         }
     }
 
-    /// A score against its threshold, e.g. "Reading the input scored 42%. It needs 90%.".
+    /// Describes a score against its threshold, e.g. "Reading the input scored 42%. It needs 90%.". A score
+    /// that met its threshold says "It needed" instead.
     ///
     /// @param score The score that decided a turn.
     /// @return The sentence.
@@ -204,10 +208,10 @@ public final class PlainWords {
         }
     }
 
-    /// The name of an example flow as the Setup tab offers it as a starting point.
+    /// Gets the name of an example flow as the Setup tab offers it as a starting point.
     ///
-    /// @param example The example.
-    /// @return Its name, e.g. "Quick, then careful".
+    /// @param example The example flow.
+    /// @return The flow's name, e.g. "Quick, then careful".
     public static String example(final FlowExample example) {
         switch (example) {
             case DIRECT:
@@ -221,10 +225,11 @@ public final class PlainWords {
         }
     }
 
-    /// When a step is asked, as its card's menu and tags say it, e.g. "only for XML input".
+    /// Describes which input a step applies to, as shown in its card's menu and tags, e.g. "only for XML
+    /// input".
     ///
-    /// @param guard When it is asked, or null.
-    /// @return The words, or empty for null.
+    /// @param guard The step's guard, or null.
+    /// @return The description, or empty for null.
     public static String guard(final StepGuard guard) {
         if (guard == null) {
             return "";
@@ -242,7 +247,7 @@ public final class PlainWords {
     }
 
     /// @param example An example flow.
-    /// @return What it does and what it suits, in a sentence or two.
+    /// @return What the flow does and what kind of feed it suits, in a sentence or two.
     public static String exampleDescription(final FlowExample example) {
         switch (example) {
             case DIRECT:
@@ -259,7 +264,7 @@ public final class PlainWords {
         }
     }
 
-    /// A fraction as a whole percentage, e.g. "42%".
+    /// Formats a fraction as a whole percentage, e.g. "42%".
     ///
     /// @param fraction The fraction, in [0, 1].
     /// @return The percentage.
@@ -267,7 +272,7 @@ public final class PlainWords {
         return Math.round(fraction * 100) + "%";
     }
 
-    /// A count with its thousands grouped, e.g. "12,000".
+    /// Formats a count with its thousands grouped, e.g. "12,000".
     ///
     /// @param value The count, zero or more.
     /// @return The number as text.
@@ -275,18 +280,19 @@ public final class PlainWords {
         return ModelStringUtil.formatCsv(value);
     }
 
-    /// A count of something, e.g. "1 stream", "2 streams".
+    /// Formats a count of something with the correct plural, e.g. "1 stream", "2 streams".
     ///
     /// @param count    How many.
-    /// @param singular The thing, singular.
-    /// @return The count.
+    /// @param singular The singular noun; an "s" is added for the plural.
+    /// @return The count and noun.
     public static String count(final long count, final String singular) {
         return number(count) + " " + (count == 1
                 ? singular
                 : singular + "s");
     }
 
-    /// A duration in the largest whole unit, e.g. "3 hours", "less than a minute".
+    /// Formats a duration in the largest whole unit up to days, rounding down, e.g. "3 hours", "less than a
+    /// minute".
     ///
     /// @param ms The duration, in milliseconds.
     /// @return The duration.
@@ -303,10 +309,10 @@ public final class PlainWords {
         return "less than a minute";
     }
 
-    /// Joins words as a list is spoken: "a", "a and b", "a, b and c".
+    /// Joins words into an English list: "a", "a and b", "a, b and c".
     ///
     /// @param words The words.
-    /// @return The list.
+    /// @return The list, or empty if there are no words.
     public static String list(final List<String> words) {
         if (words.isEmpty()) {
             return "";
@@ -324,7 +330,7 @@ public final class PlainWords {
         if (text == null || text.isEmpty()) {
             return "";
         }
-        // A name that begins with capitals, such as "XMLParser", is left as it is
+        // Leave a name that begins with an acronym, such as "XMLParser", as it is
         return text.length() > 1 && Character.isUpperCase(text.charAt(1))
                 ? text
                 : Character.toLowerCase(text.charAt(0)) + text.substring(1);

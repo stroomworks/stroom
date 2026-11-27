@@ -23,10 +23,12 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What stops a runaway costing money without limit (ruling A24, the policy over A44's counter).
+/// Tests the spend breaker, which stops runaway learning from spending money without limit.
 ///
-/// An attempt's own budgets bound one session. Nothing bounded a feed that keeps opening them — a
-/// learner that cannot be taught, a format that changes every hour, a model that charges and fails.
+/// An attempt's own budgets limit one session, but not a feed that keeps opening sessions: a learner that
+/// cannot be taught, a format that changes every hour, or a model that charges and fails. The breaker applies
+/// hourly ceilings on tokens and questions, per Learning Flow and across the cluster, and when one is reached
+/// no new session is started.
 class TestSpendBreaker {
 
     private static final String DOC = "doc-1";
@@ -52,8 +54,8 @@ class TestSpendBreaker {
 
     @Test
     void oneDocumentCannotSpendAnothersAllowance() {
-        // A per-document ceiling cannot bound a cluster: a hundred documents each inside their own are a
-        // hundred times it, which is why both ceilings exist
+        // A per-document ceiling cannot limit a cluster, because a hundred documents each within their own
+        // ceiling spend a hundred times it. That is why both ceilings exist
         spend.record(OTHER, 900L, 1, SpendBreaker.WINDOW_MS);
         spend.record(DOC, 200L, 1, SpendBreaker.WINDOW_MS);
 
@@ -94,16 +96,18 @@ class TestSpendBreaker {
 
     @Test
     void zeroIsNoCeilingAtAll() {
-        // Which leaves unattended learning with no upper bound on what it can spend, so the configuration
-        // says so in as many words
+        // That leaves unattended learning with no limit on what it can spend, so the configuration's
+        // description says so explicitly
         spend.record(DOC, 9_999_999L, 9_999, SpendBreaker.WINDOW_MS);
 
         assertThat(new SpendBreaker(spend, 0L, 0).tripped(doc(null, null))).isEmpty();
         assertThat(new SpendBreaker(spend, 0L, 0).tripped(doc(0L, 0))).isEmpty();
     }
 
+    /// Builds a document with the given hourly spend ceilings.
+    ///
     /// @param tokens The Learning Flow's token ceiling, or null for none of its own.
-    /// @param calls  Its call ceiling, or null for none of its own.
+    /// @param calls  Its question ceiling, or null for none of its own.
     /// @return The document.
     private static LearningFlowDoc doc(final Long tokens, final Integer calls) {
         return LearningFlowDoc.builder()

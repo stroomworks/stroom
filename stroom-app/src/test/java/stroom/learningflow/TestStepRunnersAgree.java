@@ -44,15 +44,16 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 01 §12 item 2: a node judges a candidate with the element that will run it, and the Tier 1
- * scenarios judge with the module's own runner instead (design 02 §2). They are meant to agree, and a
- * stand-in that has drifted is worse than no stand-in — the model would be told to correct a fault the
- * pipeline does not have, and a candidate the pipeline is happy with would be thrown away.
- * <p>
- * One case per kind of element, because each stands in for something different: Saxon's configuration
- * for a stylesheet, the DS3 factory for a splitter, the JSON reader, the fragment wrapper.
- */
+/// Tests that the module's stand-in step runners give the same results as the pipeline step runner that a
+/// node uses to judge a candidate with the real element.
+///
+/// The module's own scenarios judge candidates with the stand-ins. If a stand-in drifted from the real
+/// element, the model would be told to fix faults the pipeline does not have, and candidates the pipeline
+/// would accept would be thrown away.
+///
+/// There is one case per kind of element, because each stand-in replaces something different: Saxon's
+/// configuration for a stylesheet, the DS3 parser factory for a Data Splitter, the JSON reader, and the
+/// XML fragment wrapper.
 class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
 
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
@@ -93,14 +94,15 @@ class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void theFragmentParserWrapsTheSameStreamEitherWay() {
-        // Nothing is asked for its wrapper, so nothing passes one: both sides have to find their own.
+        // The model is never asked for a wrapper, so no configuration is passed and both runners must
+        // find their own.
         agree(XmlFragmentStep::new, null, FRAGMENTS);
     }
 
     @Test
     void aStylesheetThatWillNotCompileIsRefusedWithSomethingToGoOn() {
-        // A candidate that refuses must come back as a step that produced nothing and said why: a
-        // re-ask carrying no shortfall spends an attempt for nothing (§10, A44).
+        // A candidate that fails must come back as a step that produced nothing and says why. Asking the
+        // model again without saying what was wrong would waste a candidate.
         pipelineScopeRunnable.scopeRunnable(() -> {
             final StepRunner pipeline = new PipelineStepRunner(new XsltStep(), pipelineFactoryProvider,
                     headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider,
@@ -115,8 +117,8 @@ class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void inputThatWillNotParseIsRefusedByWhateverRefusedItRatherThanInSilence() {
-        // The element under test is not always the one that objects: a transform is given text, and
-        // text that is not well formed is refused by the parser standing in front of it.
+        // The element under test is not always the one that reports the error. A transform is given text,
+        // and text that is not well formed is rejected by the parser in front of it.
         pipelineScopeRunnable.scopeRunnable(() -> {
             final StepRunner pipeline = new PipelineStepRunner(new XsltStep(), pipelineFactoryProvider,
                     headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider,
@@ -133,9 +135,9 @@ class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void aPreparedCandidateIsBuiltOnceAndGivenRecordAfterRecord() {
-        // Building the pipeline is what compiles the candidate, and compiling does not depend on the
-        // input: a stylesheet judged over a stream's records is compiled for the candidate, not for
-        // each record of it (§12 item 25).
+        // Building the pipeline compiles the candidate, and compiling does not depend on the input. A
+        // stylesheet judged over a stream's records is therefore compiled once per candidate, not once
+        // per record.
         pipelineScopeRunnable.scopeRunnable(() -> {
             final StepRunner pipeline = new PipelineStepRunner(new XsltStep(), pipelineFactoryProvider,
                     headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider,
@@ -157,7 +159,8 @@ class TestStepRunnersAgree extends AbstractProcessIntegrationTest {
         });
     }
 
-    /// The parser's output, which is what a transform is given while it is being written.
+    /// Returns the JSON parser's output for [#RECORDS], which is what a transform is given as input while
+    /// it is being learned.
     private String jsonRecords() {
         return new JsonStep().run(null, RECORDS).output();
     }

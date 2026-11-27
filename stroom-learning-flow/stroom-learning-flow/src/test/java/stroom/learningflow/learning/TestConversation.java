@@ -60,13 +60,13 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The A21 conversation end to end against a simulated model: a Learning Flow document, a sample from
- * the {@code TestDS3} corpus, and canned replies that carry the corpus's own Data Splitter
- * configuration and a stylesheet that turns its records into {@code event-logging:3} events. What is
- * asserted is the order and content of the questions — that is the design — and the translation that
- * comes out of the end.
- */
+/// Tests the learning conversation end to end against a simulated model.
+///
+/// The conversation asks the model first for the chain of elements, then for each element's configuration,
+/// showing it the real output of the element before. These tests use a Learning Flow document, a sample from the
+/// `TestDS3` corpus, and canned replies carrying the corpus's own Data Splitter configuration and a stylesheet
+/// that turns its records into `event-logging:3` events. They assert the order and content of the questions,
+/// which is the behaviour being designed, and the translation that comes out at the end.
 class TestConversation {
 
     private static final NodeFixture FIXTURE = new NodeFixture();
@@ -74,26 +74,21 @@ class TestConversation {
     private static final Failing BAD_CSV = failing("008_invalid_xml_FAIL");
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
     private static final String EXPECTED_EVENTS = Scenarios.resource("csv-logon.events.xml");
-    /**
-     * The sample as the supervisor would build it: the text plus the stream's feed and type (A126).
-     */
+    /// The sample as the stage would build it: the stream's text plus its feed and type.
     private static final Sample SAMPLE = Sample.of(CSV.input(), "DOOR-ACCESS", "Raw Events");
 
-    /**
-     * These tests are about the conversation; the scorecard is the compile gate alone so that a step passes
-     * when it runs. Scoring has its own tests and the scenarios.
-     */
+    /// Creates a conversation whose scorecard is only the compile gate, so a step passes as long as it compiles
+    /// and runs. Scoring is covered by its own tests and by the scenario tests.
     private static Conversation conversation(final Advisor advisor) {
-        // These tests are about A21's mechanics — the chain, the re-ask, the refusal, the budgets — so they
-        // run the direct shape; the split and target turns of A31 have their own tests.
+        // These tests are about the conversation's mechanics (the chain, re-asking, refusals and budgets), so
+        // they use the Direct example's steps. The split and target questions have their own tests.
         return new Conversation(advisor, List.of(new DataSplitterStep(FIXTURE.compiler()), new StandInXsltStep()),
                 Scorecard.of(List.of(CheckSetting.of(Check.COMPILE, CheckState.GATE)),
                         List.of(new CompileScorer())), Clock.systemUTC());
     }
 
     private static LearningFlowDoc policy() {
-        // With `Direct`'s steps: a document built here has none of its own (Track 2 step 1c), and these
-        // tests are about the conversation the steps drive.
+        // A document built here has no steps of its own, so it is given the Direct example's steps.
         return LearningFlowDoc.builder()
                 .uuid("policy-1")
                 .name("csv-logon")
@@ -101,10 +96,8 @@ class TestConversation {
                 .build();
     }
 
-    /**
-     * A clock that jumps by a set amount every time it is read, so a question can be made to take as long
-     * as a test needs.
-     */
+    /// A clock that jumps forward by a set amount every time it is read, so a question can be made to take as
+    /// long as a test needs.
     private static Clock ticking(final long stepMs) {
         return new Clock() {
             private long now;
@@ -129,8 +122,9 @@ class TestConversation {
 
     @Test
     void aTargetThatIsNotEventLoggingHasNoFallbackSoASpentTransformStopsForAPerson() {
-        // Task 7, W1-3: the fallback writes event-logging's marked Unknown, which another schema doesn't
-        // have. Reached for one, the run stops for a person instead of asking for markup that can't conform
+        // The fallback writes event-logging's marked Unknown, which another schema does not have. When the
+        // fallback is reached for another schema, the run stops for a person instead of asking for markup that
+        // cannot conform
         final TargetSchema sightings = new TargetSchema(
                 new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
                 "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
@@ -168,8 +162,8 @@ class TestConversation {
 
     @Test
     void anAttemptThatOutrunsItsWallClockBudgetIsAbandoned() {
-        // A5: the budget bounds the whole conversation. Every read of the clock moves it by a minute, so the
-        // first question's check passes at one minute and the check after it fails at two.
+        // The time budget covers the whole conversation. Every read of the clock moves it on a minute, so the
+        // check before the first question passes at one minute and the check after it fails at two.
         final CannedAdvisor model = new CannedAdvisor(
                 "DSParser -> XSLTFilter",
                 CannedAdvisor.fenced(CSV.configuration()),
@@ -397,7 +391,8 @@ class TestConversation {
         final Conversation conversation = new Conversation(model, List.of(passThrough, new StandInXsltStep()),
                 Scorecard.of(List.of(), List.of()), Clock.systemUTC());
 
-        // A run-only element with no runner in a node, named so that the conversation offers it
+        // XMLParser takes no configuration and is only run. The document allows it so that the conversation
+        // offers it, with the failing stand-in above as its runner
         final LearningFlowDoc doc = policy().copy().allowedElements(List.of("XMLParser", "XSLTFilter")).build();
         final Outcome outcome = conversation.run(doc, SAMPLE);
 
@@ -410,8 +405,8 @@ class TestConversation {
 
     @Test
     void aRunOnlyElementThatFailsIsARunFailureAndItsStepMayGoOnSpent() {
-        // No configuration was asked for, so nothing failed to compile: the outcome is run-failed, and the one
-        // run is the step's only candidate, so 'on spent' is where the flow says to go from it.
+        // No configuration was asked for, so nothing failed to compile and the outcome is run-failed. The one
+        // run is the step's only candidate, so the step is then spent and its 'when spent' rule applies too.
         final StepRunner failing = new StepRunner() {
             @Override
             public String elementType() {
@@ -439,8 +434,8 @@ class TestConversation {
                         Severity.FATAL_ERROR, null, new ElementId(elementId()), "not XML")));
             }
         };
-        // Either rule takes the flow to 'end': the one that fires on the failure, and the one that fires
-        // when the step's candidates are spent.
+        // Either rule takes the flow to 'end': the one for a run failure, and the one for when the step's
+        // candidates are spent.
         for (final Transition transition : List.of(new Transition(StepOutcome.RUN_FAILED, Transition.END),
                 new Transition(null, Transition.END))) {
             final CannedAdvisor model = new CannedAdvisor("XMLParser, XSLTFilter");
@@ -454,8 +449,8 @@ class TestConversation {
 
             final Outcome outcome = conversation.run(doc, SAMPLE);
 
-            // The transition fired: the flow ended at 'end', where the unconfigured elements are found out,
-            // rather than abandoning at the parser.
+            // The transition was followed: the flow went to 'end', where the missing configurations are
+            // reported, rather than abandoning at the parser.
             assertThat(outcome).describedAs(transition.toString()).isInstanceOf(Abandoned.class);
             assertThat(((Abandoned) outcome).reason()).describedAs(transition.toString())
                     .startsWith("The learning steps ended without writing ");
@@ -476,8 +471,8 @@ class TestConversation {
 
     @Test
     void feedbackCarriedToARunOnlyElementReachesTheNextQuestionAsked() {
-        // A goto lands on a CONFIGURE step whose element takes no configuration: nothing is asked there, so
-        // what the transition carried is kept for the transform, which is asked next.
+        // A transition goes to a CONFIGURE step whose element takes no configuration. Nothing is asked there,
+        // so the feedback the transition carried is kept for the transform, which is asked next.
         final StepRunner passThrough = new StepRunner() {
             @Override
             public String elementType() {

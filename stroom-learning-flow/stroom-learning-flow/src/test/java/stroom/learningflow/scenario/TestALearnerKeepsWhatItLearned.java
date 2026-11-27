@@ -39,12 +39,12 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Design 06 phase J slice 2b (A114, A124): **what a learner learns is its own.**
+/// Tests that what a learner learns belongs to the learner, not to the Learning Flow document it runs under.
 ///
-/// A learner is a pipeline and an element, and two of them may run under one document: what one binds,
-/// gives up or is told about a learner is nothing to the other, which meets the same feed afresh. And a
-/// learner whose element is pointed at another document takes what it learned with it, since the
-/// document is only what the Supervisor lists it under and what decides who may act on it.
+/// A learner is identified by a pipeline and an element, and two learners may run under one document. A
+/// binding, give-up or guidance for one learner does not affect the other, which learns the same feed from
+/// scratch. A learner whose element is pointed at another document takes its binding with it, because the
+/// document only decides where the Supervisor lists the learner and who may act on it.
 class TestALearnerKeepsWhatItLearned {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -135,7 +135,7 @@ class TestALearnerKeepsWhatItLearned {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Named, because a document with no scorers scores every chain 1.0.
+                // The checks are set explicitly, because a document with no scorers scores every chain 1.0.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

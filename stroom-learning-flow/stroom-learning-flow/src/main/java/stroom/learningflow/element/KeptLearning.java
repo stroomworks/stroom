@@ -19,26 +19,30 @@ package stroom.learningflow.element;
 import java.util.List;
 import java.util.Set;
 
-/// The learning a node keeps, as the retention job sees it (design 06 A134, A136): which pipelines have
-/// any, which of those were marked deleted long enough ago, and forgetting one. Across every table a
-/// learner keeps rows in, so only the node's database has it; the stage's side of a deletion is
-/// [stroom.learningflow.stage.DeletedPipelines].
+/// The view of stored learning that the retention job ([AttemptRetention]) needs: which pipelines have
+/// any learning, which of those were marked deleted before a given time, and a way to remove all of a
+/// pipeline's learning. It spans every table a learner keeps rows in, so it is implemented by the
+/// database module. Marking a pipeline deleted, rather than removing its learning, is done through
+/// `stroom.learningflow.stage.DeletedPipelines`.
 public interface KeptLearning {
 
-    /// Every pipeline whose learning is kept and not marked deleted: what the retention job checks is
-    /// still there, for a delete no node heard (A134).
+    /// Lists every pipeline that has learning stored and is not marked deleted. The retention job checks
+    /// that each of these still exists, to catch deletions that no node received an event for.
     ///
-    /// @return The pipelines' uuids.
+    /// @return The pipelines' UUIDs.
     Set<String> pipelines();
 
-    /// @param timeMs The time.
-    /// @return The pipelines marked deleted before it, oldest first.
+    /// Lists the pipelines that were marked deleted before a given time.
+    ///
+    /// @param timeMs The cut-off time, in milliseconds since the epoch.
+    /// @return The UUIDs of the pipelines marked deleted before `timeMs`, oldest first.
     List<String> deletedBefore(long timeMs);
 
-    /// Forget a deleted pipeline's learning (A136): every row its learners keep — state, bindings,
+    /// Removes all of a deleted pipeline's learning: every row its learners keep (state, bindings,
     /// guidance, waiting streams, attempts and their turns, and the outputs, corpus and snapshots of its
-    /// bindings — and the mark. The documents it wrote are content in the tree, and stay.
+    /// bindings), and the deleted mark itself. The documents learning wrote (fragments, XSLTs and so on)
+    /// are ordinary content in the explorer tree and are kept.
     ///
-    /// @param pipelineUuid The pipeline.
+    /// @param pipelineUuid The UUID of the deleted pipeline.
     void forget(String pipelineUuid);
 }

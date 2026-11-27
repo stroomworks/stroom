@@ -16,32 +16,19 @@
 
 package stroom.learningflow.shared;
 
-/**
- * The pipeline element types a supervised stage can be (design 01 §3, §12 item 4), shared because the
- * client has to recognise them: the stepper shows a stage pane where these elements' code pane would be
- * (A30), and which elements those are is not something the stepper can be told at runtime.
- * <p>
- * One stage, two shapes. The parser is the extraction stage, fed the stream; the filter is the
- * transformation stage, fed the records a parser above it made. They differ only in where they can
- * stand.
- */
+/// Names of the Smart Pipeline element type and its document property, shared so that the client can
+/// recognise the element. The stepper shows a Learning Flow pane in place of this element's code pane, and it
+/// cannot be told at runtime which elements need that.
 public final class LearningFlowElements {
 
-    /**
-     * The extraction stage: sits where a parser sits.
-     */
+    /// The element type of the Smart Pipeline element, which sits in a pipeline where a parser sits.
     public static final String PARSER = "LearningFlow";
 
-    /**
-     * The element's property naming the Learning Flow document it learns under: the name Stroom gives
-     * the element's {@code setLearningFlow}. The server reads it to join a learner to its document, and a
-     * pipeline's editor to find the documents its AI elements learn under.
-     */
+    /// The element's property naming the Learning Flow document it learns under, i.e. the property name Stroom
+    /// derives from the element's `setLearningFlow` method. The server reads it to join a learner to its
+    /// document, and the pipeline editor reads it to find the documents a pipeline's Smart Pipeline elements
+    /// learn under.
     public static final String DOCUMENT_PROPERTY = "learningFlow";
-
-    /**
-     * The transformation stage: sits where a filter sits, which a parser cannot.
-     */
 
     private LearningFlowElements() {
     }

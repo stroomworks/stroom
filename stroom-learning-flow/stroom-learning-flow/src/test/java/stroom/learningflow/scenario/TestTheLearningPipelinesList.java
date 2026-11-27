@@ -41,20 +41,22 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/// Design 06 A115, A142, with A46: **the way in.** The Supervisor's learning pipelines list, a row per
-/// pipeline's learner: where it stands, what serves it, what waits on it, and how much has been said to
-/// it. A binding serving at 0.93 is above every threshold and nothing will ever raise it, so a person who
-/// wants it better finds it here, as they find a learner that has given up or a draft that waits for them.
+/// Tests the Supervisor's learning pipelines list, which has one row per pipeline's learner showing its
+/// state, what serves it, how many streams wait on it, and how much guidance it has been given.
+///
+/// The list is how a person finds a learner to act on. A binding serving at 0.93 is above every threshold
+/// and nothing will ever flag it, so a person who wants it improved finds it here, as they find a learner
+/// that has given up or a draft that waits for them.
 class TestTheLearningPipelinesList {
 
     private static final String XSLT = Scenarios.resource("csv-logon.xsl");
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
-    /// Two feeds' pipelines, and so two learners (A127).
+    /// Two feeds' pipelines, and so two learners.
     private static final Learner DOOR = Scenarios.LEARNER;
     private static final Learner LIFT = new Learner("pipeline-lift", Scenarios.LEARNER.elementId());
 
-    /// What the stage learns is what the view shows. A binding promoted by a stream is in the list without
-    /// anything else being written down: the learner it serves is the learner the view joins it to.
+    /// What the stage learns is what the list shows. A binding promoted by a stream appears in the list
+    /// without anything else being written, because the list joins each binding to the learner it serves.
     @Test
     void whatTheStageLearnsIsWhatAPersonBrowses() {
         final Scenarios scenarios = new Scenarios();
@@ -82,8 +84,8 @@ class TestTheLearningPipelinesList {
         assertThat(page.learners().get(0).getState()).isEqualTo(LearnerState.SERVING);
     }
 
-    /// One pipeline's learners, as its own editor asks for them: the others' are left out, and the count is
-    /// of that pipeline's alone.
+    /// Asking for one pipeline's learners, as that pipeline's editor does, leaves out other pipelines'
+    /// learners, and the total counts that pipeline's learners alone.
     @Test
     void onePipelinesLearnersAreAskedForAlone() {
         final Scenarios scenarios = new Scenarios();
@@ -101,8 +103,8 @@ class TestTheLearningPipelinesList {
                 .learners()).isEmpty();
     }
 
-    /// Most waiting streams first (A142): the learner holding the most of a feed back is the one a person
-    /// should look at first, whatever its score.
+    /// The list is ordered with the most waiting streams first: the learner holding back the most streams is
+    /// the one a person should look at first, whatever its score.
     @Test
     void theLearnerWithTheMostWaitingComesFirst() {
         final Scenarios scenarios = new Scenarios();
@@ -126,8 +128,8 @@ class TestTheLearningPipelinesList {
                 .containsExactly("busy");
     }
 
-    /// Each row says how much has been said to its learner (A46), so that a person can see whether the
-    /// last hint was acted on before giving another.
+    /// Each row shows how much guidance its learner has been given, so that a person can see whether the last
+    /// hint was acted on before giving another.
     @Test
     void aRowSaysHowMuchHasBeenSaidToItsLearner() {
         final Scenarios scenarios = new Scenarios();
@@ -142,8 +144,8 @@ class TestTheLearningPipelinesList {
                 .containsExactly(2);
     }
 
-    /// A draft awaiting review makes its learner wait for a person (A25), while the binding the row shows
-    /// is the one that serves.
+    /// A draft awaiting review puts its learner in the waiting-for-a-person state, while the binding the row
+    /// shows is the one that serves.
     @Test
     void aDraftMakesItsLearnerWaitForAPerson() {
         final Scenarios scenarios = new Scenarios();
@@ -161,8 +163,8 @@ class TestTheLearningPipelinesList {
                 });
     }
 
-    /// The documents a person may read go into the query, as they do for the attempts: naming none
-    /// answers nothing rather than everything.
+    /// The query is limited to the documents a person may read, as it is for attempts. Naming no documents
+    /// returns nothing rather than everything.
     @Test
     void aDocumentNobodyNamedIsNotInTheAnswer() {
         final Scenarios scenarios = new Scenarios();
@@ -203,7 +205,7 @@ class TestTheLearningPipelinesList {
                 .learningMode(LearningMode.AUTOMATIC)
                 .allowedElements(List.of("DSParser", "XSLTFilter"))
                 .minRecordsToLearn(1)
-                // Named, because a document with no scorers scores every chain 1.0.
+                // The checks are set explicitly, because a document with no scorers scores every chain 1.0.
                 .checks(List.of(
                         new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
                         CheckSetting.of(Check.COVERAGE, CheckState.OFF),

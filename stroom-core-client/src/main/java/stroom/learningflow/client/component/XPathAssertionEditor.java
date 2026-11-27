@@ -25,8 +25,8 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Widget;
 
-/// The content of the dialog that adds or edits one of a business rules scorer's assertions: its name
-/// and its XPath. [XPathAssertionEditorController] shows it and checks what is entered.
+/// The content of the dialog that adds or edits one of the business rules scorer's assertions, i.e. its name
+/// and its XPath. [XPathAssertionEditorController] shows it and validates what is entered.
 public class XPathAssertionEditor extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -41,7 +41,7 @@ public class XPathAssertionEditor extends Component {
         initWidget(BINDER.createAndBindUi(this));
     }
 
-    /// @return The name entered, as typed.
+    /// @return The name exactly as typed.
     public String getName() {
         return name.getValue();
     }
@@ -51,7 +51,7 @@ public class XPathAssertionEditor extends Component {
         name.setValue(value);
     }
 
-    /// @return The XPath entered, as typed.
+    /// @return The XPath exactly as typed.
     public String getXpath() {
         return xpath.getValue();
     }
@@ -61,7 +61,7 @@ public class XPathAssertionEditor extends Component {
         xpath.setValue(value);
     }
 
-    /// Puts the focus on its first field, the name.
+    /// Puts the keyboard focus in the first field, the name.
     public void focus() {
         name.setFocus(true);
     }

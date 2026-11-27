@@ -32,12 +32,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/// A stylesheet taken apart far enough for [LearnedStylesheetCheck] to judge it: the XSLT elements it uses,
-/// every XPath expression in it with the namespace prefixes in scope where that expression sits, and the
-/// functions it declares itself.
+/// A stylesheet broken down far enough for [LearnedStylesheetCheck] to check it: the XSLT elements it uses,
+/// every XPath expression in it with the namespace prefixes in scope where that expression sits, the
+/// functions it declares itself, and its literal text.
 ///
-/// The parse is the confined one the rest of the module uses ([ConfinedXml]), so reading the stylesheet
-/// cannot itself reach a DTD or an external entity.
+/// It is parsed with the restricted parser the rest of the module uses ([ConfinedXml]), so reading the
+/// stylesheet cannot itself fetch a DTD or an external entity.
 final class StylesheetScan {
 
     private final List<Instruction> instructions;
@@ -58,7 +58,7 @@ final class StylesheetScan {
     /// Reads a stylesheet.
     ///
     /// @param stylesheet The stylesheet.
-    /// @return What it holds.
+    /// @return The parts of the stylesheet.
     /// @throws IllegalArgumentException where it does not parse.
     static StylesheetScan of(final String stylesheet) {
         final Handler handler = new Handler();
@@ -86,10 +86,11 @@ final class StylesheetScan {
         return declaredFunctions;
     }
 
-    /// Every value the stylesheet writes out as itself rather than reading from the record: the text of a
-    /// literal result element, and the string literals of its XPath. What the literals check reads.
+    /// Returns every piece of non-blank text in the stylesheet, stripped, which is what it writes out as
+    /// itself rather than reading from the record. String literals in its XPath are not included here;
+    /// [LearnedStylesheetCheck#literals] adds those.
     ///
-    /// @return The values, in the order they appear.
+    /// @return The text, in the order it appears.
     List<String> literals() {
         return literals;
     }
@@ -98,8 +99,8 @@ final class StylesheetScan {
     // --------------------------------------------------------------------------------
 
 
-    /// Collects the elements, expressions and declarations as SAX meets them, keeping the namespace
-    /// prefixes in scope so that an expression can resolve its own.
+    // Collects the elements, expressions, declarations and text as SAX reports them, keeping track of the
+    // namespace prefixes in scope so that each expression can resolve its own.
     private static final class Handler extends DefaultHandler {
 
         private final List<Instruction> instructions = new ArrayList<>();
@@ -161,11 +162,11 @@ final class StylesheetScan {
 
         @Override
         public void characters(final char[] ch, final int start, final int length) {
-            // Text is only an attribute value template under xsl:expand-text, which is not on the
-            // allow-list of attributes; checking braces here anyway costs nothing and closes the gap
+            // Text holds expressions in braces only where expand-text is on (a text value template), which
+            // this scan does not track; checking braces in all text costs nothing and closes the gap
             final String text = new String(ch, start, length);
             if (!text.isBlank()) {
-                // What the stylesheet writes out as itself: the likeliest place for a value copied from
+                // Text the stylesheet writes out as itself is the likeliest place for a value copied from
                 // the stream it was learned on
                 literals.add(text.strip());
             }
@@ -179,11 +180,8 @@ final class StylesheetScan {
             }
         }
 
-        /// The expressions inside the braces of an attribute value template, with `{{` and `}}` read as
-        /// escaped braces rather than as an expression.
-        ///
-        /// @param value The attribute's value.
-        /// @return The expressions, in order; empty where there are none.
+        // Returns the expressions inside the braces of an attribute value template, in order. `{{` is read as
+        // an escaped brace rather than the start of an expression.
         private static List<String> braced(final String value) {
             final List<String> found = new ArrayList<>();
             int i = 0;
@@ -196,8 +194,8 @@ final class StylesheetScan {
                     }
                     final int close = closing(value, i + 1);
                     if (close < 0) {
-                        // An unclosed brace is not something to read past quietly: give the rest to the
-                        // check, which refuses what it cannot make sense of
+                        // Don't skip an unclosed brace: pass the rest to the check, which refuses what it
+                        // cannot make sense of
                         found.add(value.substring(i + 1));
                         return found;
                     }
@@ -210,9 +208,8 @@ final class StylesheetScan {
             return found;
         }
 
-        /// @param value The attribute's value.
-        /// @param from  Just after the opening brace.
-        /// @return The index of the closing brace, ignoring braces inside string literals, or -1.
+        // Returns the index of the closing brace at or after `from` (just after the opening brace), ignoring
+        // braces inside string literals, or -1 if there is none.
         private static int closing(final String value, final int from) {
             char quote = 0;
             for (int i = from; i < value.length(); i++) {
@@ -250,6 +247,8 @@ final class StylesheetScan {
     /// @param scope The prefixes in scope, by prefix.
     record Expression(String text, Map<String, String> scope) {
 
+        /// Resolves a function name's prefix to its namespace.
+        ///
         /// @param prefix The prefix, or null for none.
         /// @return The namespace it stands for; the standard function library for no prefix, and null for a
         ///         prefix the stylesheet does not declare.

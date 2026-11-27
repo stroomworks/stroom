@@ -24,10 +24,10 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.OptionalBinder;
 
-/**
- * Learning Flow in a test node: the feature's module, with the scripted advisor of design 02 §3 in
- * place of a model.
- */
+/// Installs Learning Flow in a test node, with a scripted advisor in place of a real AI model.
+///
+/// The advisor is bound to an [AdvisorHolder], so a test can set the script of canned answers that every
+/// learning session in the node will receive.
 public class LearningFlowTestModule extends AbstractModule {
 
     @Override

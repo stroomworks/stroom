@@ -31,9 +31,11 @@ import java.util.OptionalDouble;
 
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowLearnerState.LEARNING_FLOW_LEARNER_STATE;
 
-/// The learner state of A117 and A124 as rows: one per learner, recording the document it runs under,
-/// holding what the stage knows about it — given up, marked to learn again, awaiting review — and its
-/// rolling score. The row is made on first mention.
+/// The database implementation of [LearnerStates], which stores the state of each learner.
+///
+/// There is one row per learner. It records the document the learner runs under, whether it has given up,
+/// whether it is marked to learn again, any draft binding awaiting review, and its rolling score. The row is
+/// created the first time anything is written for the learner.
 @Singleton
 public class LearnerStatesDao implements LearnerStates {
 
@@ -54,8 +56,9 @@ public class LearnerStatesDao implements LearnerStates {
         set(learner, docUuid, LEARNING_FLOW_LEARNER_STATE.GIVEN_UP_REASON, reason);
     }
 
-    /// The rolling score of §5, folded in one transaction so that two nodes serving the same learner at once
-    /// do not each read the old mean and write over the other's.
+    /// Adds a stream's score to the learner's rolling score, a mean over at most `memory` records. This
+    /// is done in one transaction with the row locked, so that two nodes serving the same learner at once
+    /// do not both read the old mean and overwrite each other's update.
     @Override
     public OptionalDouble scored(final Learner learner,
                                  final String docUuid,
@@ -80,9 +83,9 @@ public class LearnerStatesDao implements LearnerStates {
                     ? (was * remembered + score * records) / (remembered + records)
                     : was;
             final int held = remembered + records;
-            // The skips are carried with the records they belong to: where the memory has dropped older
-            // records, their skips go with them, in the same proportion, or a learner that skipped badly
-            // once would look as though it still were
+            // The skip count is scaled down in the same proportion as the older records that the memory
+            // has dropped. Otherwise a learner that once skipped many records would go on looking as
+            // though it still did.
             final int skipsWas = current.get(LEARNING_FLOW_LEARNER_STATE.ROLLING_SKIPS);
             final int kept = current.get(LEARNING_FLOW_LEARNER_STATE.ROLLING_RECORDS) == 0
                     ? 0
@@ -127,7 +130,8 @@ public class LearnerStatesDao implements LearnerStates {
         return text(learner, LEARNING_FLOW_LEARNER_STATE.AWAITING_BINDING_UUID);
     }
 
-    /// Nothing is made for a learner with no row: it has nothing to forget.
+    /// Clears the learner's state and rolling score. No row is created for a learner that has none, since
+    /// there is nothing to clear.
     @Override
     public void reset(final Learner learner) {
         JooqUtil.context(connProvider, context -> {
@@ -145,8 +149,8 @@ public class LearnerStatesDao implements LearnerStates {
         });
     }
 
-    /// Whatever the row holds, scored or not; a row that has never been scored reads as nothing, so that
-    /// a list shows no score rather than showing zero, which would read as a learner scoring badly.
+    /// Returns the learner's rolling score, or empty if it has never been scored. Returning empty lets a
+    /// list show no score rather than zero, which would look like a learner scoring badly.
     @Override
     public Optional<Rolling> rolling(final Learner learner) {
         return JooqUtil.contextResult(connProvider, context -> context
@@ -196,8 +200,8 @@ public class LearnerStatesDao implements LearnerStates {
                 .and(LEARNING_FLOW_LEARNER_STATE.ELEMENT_ID.eq(learner.elementId()));
     }
 
-    /// The row for a learner, made where this node is the first to mention it; see
-    /// [RowMaker#makeIfMissing] for why it is made as it is.
+    /// Creates the learner's row if it does not exist yet. See [RowMaker#makeIfMissing] for why it is
+    /// created that way.
     private static void row(final DSLContext context,
                             final Learner learner,
                             final String docUuid) {

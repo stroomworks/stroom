@@ -39,7 +39,8 @@ class TestYieldScorer {
 
     @Test
     void textThatLooksLikeMarkupIsCountedAsText() {
-        // Two lines beginning with a bracketed word are not a document: by lines, two records from two lines.
+        // Two lines that each begin with a bracketed word are not an XML document, so they are counted by
+        // lines: two records from two lines.
         assertThat(scored(YieldBasis.LINES, 1.0, "<alice> hello\n<bob> hi\n")).isEqualTo(1.0);
         assertThat(scored(YieldBasis.LINES, 1.0,
                 "<38>Sep 21 09:15:00 gate01 sshd[1]: x\n<38>Sep 21 09:15:01 gate01 sshd[2]: y\n")).isEqualTo(1.0);
@@ -47,15 +48,17 @@ class TestYieldScorer {
 
     @Test
     void aDocumentOfNoRecordsIsStillRecordsIn() {
-        // A parser that produced an empty document leaves the transform with nothing: judged, and found wanting.
+        // A parser that produced an empty document leaves the transform with nothing, so it is judged and
+        // scores zero.
         assertThat(scored(YieldBasis.RECORDS, 1.0, "<records xmlns=\"records:2\"/>")).isEqualTo(0.0);
         assertThat(scored(YieldBasis.LINES, 0.35, "<records xmlns=\"records:2\"/>")).isEqualTo(0.0);
     }
 
     @Test
     void aRecordsInputIsCountedByTheBoundaryWhereOneWasSettled() {
-        // The parser's XML of a JSON document has one root child, the map holding the array: by the array the
-        // split named, the input is three records, and three events is one per record (A35).
+        // The parser's XML for a JSON document has one root child, the map holding the array. Counted by the
+        // array the split step named as the record boundary, the input is three records, so three events is
+        // one per record.
         final String document = "<map xmlns=\"http://www.w3.org/2013/XSL/json\"><string key=\"source\">x</string>"
                                 + "<array key=\"events\"><map/><map/><map/></array></map>";
         final String three = "<Events xmlns=\"event-logging:3\"><Event/><Event/><Event/></Events>";
@@ -73,9 +76,9 @@ class TestYieldScorer {
         assertThat(scorer.score(records, new Attempted("XSLTFilter", false, nested,
                 new StepResult(two, List.of()), RecordBoundary.ofElement("entry"), null), null).orElseThrow().value())
                 .isEqualTo(1.0);
-        // The output is counted by the boundary too, or the two ends disagree: a parser's XML of one map
-        // holding three items is three records to the stage and would be one here. Three JSON lines in,
-        // three records out, one per line.
+        // The output is counted by the boundary too, or input and output would be counted differently: a
+        // parser's XML of one map holding three items is three records to the stage, but would be one here.
+        // Three JSON lines in, three records out, one per line.
         final String parsed = "<map xmlns=\"http://www.w3.org/2013/XSL/json\"><array key=\"events\">"
                               + "<map/><map/><map/></array></map>";
         final Attempted json = new Attempted("JSONParser", true, "{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n",
@@ -90,7 +93,8 @@ class TestYieldScorer {
 
     @Test
     void aStepWhoseInputIsRecordsIsJudgedRecordForRecordWhateverTheBasis() {
-        // A lines basis describes raw input; over records in, one out per one in is expected.
+        // A lines basis only makes sense for raw input; when the input is already records, one record out per
+        // record in is expected, whatever the basis.
         assertThat(scored(YieldBasis.LINES, 0.35, TWO_RECORDS)).isEqualTo(1.0);
         assertThat(scored(YieldBasis.RECORDS, 0.5, TWO_RECORDS)).isEqualTo(0.5);
     }

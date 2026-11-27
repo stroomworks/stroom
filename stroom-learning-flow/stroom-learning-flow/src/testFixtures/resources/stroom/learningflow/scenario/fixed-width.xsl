@@ -13,7 +13,7 @@
     </Events>
   </xsl:template>
 
-  <!-- One line is one sign-on decision: the columns are padded to their width, so each is trimmed -->
+  <!-- One line is one sign-on decision. The columns are padded to a fixed width, so each is trimmed. -->
   <xsl:template match="record">
     <xsl:variable name="time" select="data[@name='time']/@value"/>
     <xsl:variable name="user" select="normalize-space(data[@name='user']/@value)"/>

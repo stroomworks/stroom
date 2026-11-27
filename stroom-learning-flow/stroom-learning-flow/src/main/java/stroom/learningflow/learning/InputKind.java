@@ -16,9 +16,13 @@
 
 package stroom.learningflow.learning;
 
-/// What the stage's input is, as the flow's guards read it and the split question is put (A31, A35): raw
-/// text a parser with a configuration cuts; XML that is already records; or JSON a run-only parser turns into
-/// records. Settled by the chain: its first element says which.
+/// What kind of input a learning session is working on. It decides how the split question is put, and which
+/// steps of the flow run, since a step can be limited to one kind of input. It is settled by the chain's first
+/// element:
+///
+/// - `TEXT`: raw text, which a parser with a configuration (the Data Splitter) cuts into records.
+/// - `XML`: XML that already contains the records.
+/// - `JSON`: JSON, which a parser with no configuration turns into XML whose records are an array's items.
 public enum InputKind {
     TEXT,
     XML,

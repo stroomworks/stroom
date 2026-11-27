@@ -28,15 +28,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/**
- * Input coverage (rulings A11, A36) as a scorer: the share of the input's characters the split
- * consumed. Lines are counted and named in the diagnostic, so the model is told which it missed, but
- * do not set the score: on a sample of seven lines a header line is a seventh by lines and a
- * sixteenth by characters, and the live runs (design 02 §6.3) found that difference deciding
- * promotions. A dropped header costs what it is worth; a dropped record costs its size. Applies only
- * to a step that reports record ranges — an extraction step — and only when it produced output; a step
- * that did not run has nothing to cover and is the compile gate's to fail.
- */
+/// The input coverage scorer: the share of the input's characters that the parser consumed. Lines are
+/// counted and named in the diagnostic, so the model is told which lines it missed, but they do not set
+/// the score. On a sample of seven lines, a header line is a seventh of the input by lines but a
+/// sixteenth by characters, and in practice that difference decided promotions. Scoring by characters
+/// means a dropped header costs only its size, as does a dropped record. It applies only to a step that
+/// reports record ranges (an extraction step), and only when the step produced output; a step that did
+/// not run has nothing to cover and is failed by the compile check.
 public final class InputCoverageScorer implements Scorer {
 
     private static final ElementId COVERAGE = new ElementId("InputCoverage");
@@ -65,9 +63,8 @@ public final class InputCoverageScorer implements Scorer {
         return Optional.of(new Score(type(), value, diagnostics));
     }
 
-    /**
-     * The first few lines nothing consumed, so the model can see what it missed rather than only how much.
-     */
+    /// Lists the first few lines that nothing consumed, so the model can see what it missed rather than
+    /// only how much.
     private static String uncovered(final InputCoverage coverage) {
         final List<Integer> lines = coverage.linesUncovered();
         if (lines.isEmpty()) {

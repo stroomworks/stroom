@@ -25,13 +25,16 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
 
-/// The learners' states as a map, by learner: what scenarios run over. The rolling score is a running mean
-/// whose memory is capped in records: the two columns a row can hold, `score` and `records`, with
-/// `records` never counted above the memory so that the latest stream always weighs against at most that
-/// many earlier records. Every method is synchronised: one node's tasks share it.
+/// An in-memory [LearnerStates], held as a map by learner, for scenarios. Every method is synchronised,
+/// because one node's tasks share it.
+///
+/// The rolling score is a running mean over a limited number of records, kept as a score and a record
+/// count, as the table does. The count carried forward never exceeds the memory, so the latest stream
+/// is always weighed against at most that many earlier records.
 public final class InMemoryLearnerStates implements LearnerStates {
 
-    /// What a learner nothing was written of reads as. Never written to: only [#row] hands out a row to write.
+    /// What a learner with no state reads as. It is never written to, because only [#row] returns a row to
+    /// write.
     private static final Row NONE = new Row();
 
     private final Map<Learner, Row> rows = new HashMap<>();
@@ -58,9 +61,9 @@ public final class InMemoryLearnerStates implements LearnerStates {
         if (remembered + records > 0) {
             row.score = (row.score * remembered + score * records) / (remembered + records);
         }
-        // The skips go with the records they belong to: where the memory has dropped older records,
-        // their skips go with them, or a learner that skipped badly once would look as though it still
-        // were
+        // The skip count is scaled down in the same proportion as the older records that the memory has
+        // dropped. Otherwise a learner that once skipped many records would go on looking as though it
+        // still did.
         row.skips = (row.records == 0
                 ? 0
                 : (int) Math.round((double) row.skips * remembered / row.records)) + skipped;
@@ -90,9 +93,9 @@ public final class InMemoryLearnerStates implements LearnerStates {
         return Optional.ofNullable(read(learner).draft);
     }
 
-    /// What was learned is forgotten; who is learning is not. A promotion resets the state while the
-    /// attempt that promoted it is still open, and the attempt's row is what holds the claim (A45), so a
-    /// reset here takes nothing from it.
+    /// Clears what was learned, but not who is learning. A promotion resets the state while the attempt
+    /// that promoted it is still open; the claim is held by the attempt, not by the state, so a reset
+    /// does not affect it.
     @Override
     public synchronized void reset(final Learner learner) {
         final Row row = row(learner);
@@ -104,8 +107,9 @@ public final class InMemoryLearnerStates implements LearnerStates {
         row.skips = 0;
     }
 
-    /// Whatever the row holds, scored or not: the list of A46 shows a learner that has brought three
-    /// records as well as one that has brought a thousand, and says how many each rests on.
+    /// Returns the rolling score whether or not its memory is full, or empty if no records have been
+    /// scored. The Supervisor list shows a learner with three records as well as one with a thousand,
+    /// and says how many records each score is based on.
     @Override
     public synchronized Optional<Rolling> rolling(final Learner learner) {
         final Row row = rows.get(learner);
@@ -115,23 +119,25 @@ public final class InMemoryLearnerStates implements LearnerStates {
     }
 
     /// @param learner The learner.
-    /// @return Its rolling score, nought where it has none.
+    /// @return Its rolling score, or zero if it has none.
     public synchronized double rollingScore(final Learner learner) {
         return read(learner).score;
     }
 
-    /// @return Every learner that has a state, for the learning pipelines list.
+    /// Returns every learner that has a state, for the in-memory learning pipelines list.
+    ///
+    /// @return The learners.
     public synchronized Set<Learner> learners() {
         return Set.copyOf(rows.keySet());
     }
 
     /// @param learner The learner.
-    /// @return The document its state was last written under, where it has a state.
+    /// @return The document its state was last written under, or empty if it has no state.
     public synchronized Optional<String> documentOf(final Learner learner) {
         return Optional.ofNullable(read(learner).docUuid);
     }
 
-    /// The learner's state, brought to the document it runs under (see [InMemoryLearners]).
+    /// Updates the learner's state, if it has one, to the document it runs under (see [InMemoryLearners]).
     ///
     /// @param learner The learner.
     /// @param docUuid The document.
@@ -143,12 +149,12 @@ public final class InMemoryLearnerStates implements LearnerStates {
     }
 
     /// @param learner The learner.
-    /// @return Whether a person is to decide its draft.
+    /// @return Whether it has a draft waiting for a person to decide.
     public synchronized boolean awaitsReview(final Learner learner) {
         return read(learner).draft != null;
     }
 
-    /// @return Whether no learner has a state: nothing was written of any, since a read makes no row.
+    /// @return Whether no learner has a state. A read creates no row, but a write or a reset does.
     public synchronized boolean isEmpty() {
         return rows.isEmpty();
     }
@@ -161,7 +167,8 @@ public final class InMemoryLearnerStates implements LearnerStates {
         return rows.computeIfAbsent(learner, k -> new Row());
     }
 
-    /// The row, recording the document it was last written under, as the table's row does.
+    /// Returns the learner's row for writing, recording the document it is written under, as the table's
+    /// row does.
     private Row row(final Learner learner, final String docUuid) {
         final Row row = row(learner);
         row.docUuid = docUuid;

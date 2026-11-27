@@ -56,26 +56,22 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Everything a {@link DataSplitterCompiler} needs in order to run outside a Stroom node.
- * <p>
- * The Data Splitter validates each configuration against the {@code data-splitter:3} schema, which it
- * resolves through Stroom's XML schema store. That schema is not in the repository; it ships in the
- * {@code core-xml-schemas} content pack (design §2.1), so this fixture fetches the pack into the shared
- * test download area and stands up an in-memory schema store holding just that one document.
- */
+/// Provides what a [DataSplitterCompiler] and the schema conformance scorer need in order to run outside a
+/// Stroom node, for tests.
+///
+/// The Data Splitter validates each configuration against the `data-splitter:3` schema, which it finds
+/// through Stroom's XML schema store. That schema is not in the repository; it ships in the
+/// `core-xml-schemas` content pack. So this fixture downloads the pack into the shared test download area
+/// and creates an in-memory schema store holding that schema. It does the same for the event-logging 3.0.0
+/// schema, which translations are scored against.
 public final class NodeFixture {
 
-    /**
-     * Where the schema sits inside the content pack, by the pack's own naming.
-     */
+    /// The path of the Data Splitter schema inside the content pack, using the pack's own file naming.
     private static final String SCHEMA_FILE = "XML_Schemas/data_splitter/"
             + "data_splitter_v3_0.XMLSchema.9e1e2567-ba83-4720-95c0-f882b951bd3e.xsd";
     private static final String EVENTS_SCHEMA_FILE = "XML_Schemas/event_logging/"
             + "event_logging_v3_0_0.XMLSchema.4fe14042-770e-4297-8711-d92e607bc4d5.xsd";
-    /**
-     * As the pack's {@code .meta} declares the 3.0.0 schema.
-     */
+    /// The schema group of the event-logging 3.0.0 schema, as the pack's `.meta` file declares it.
     public static final String EVENTS_SCHEMA_GROUP = "EVENTS";
     private static final String EVENTS_NAMESPACE_URI = "event-logging:3";
     private static final String EVENTS_SYSTEM_ID = "file://event-logging-v3.0.0.xsd";
@@ -98,9 +94,9 @@ public final class NodeFixture {
         final XmlSchemaCache schemaCache = new XmlSchemaCache(schemaStore, securityContext);
         final SchemaPool schemaPool = new LoadingSchemaPool(new SchemaLoaderImpl(schemaCache));
 
-        // The factory's constructor is package-private and injected, so it is reached the way the
-        // node reaches it: through Guice. Each factory takes a fresh filter, as the filter is
-        // stateful across a configure; every filter reports through the one proxy the compiler owns.
+        // The parser factory's constructor is package-private and injected, so it is created as a node
+        // creates it: through Guice. Each factory gets a new schema filter, because the filter keeps state
+        // during a configure, and every filter reports errors through the one proxy the compiler owns.
         final ErrorReceiverProxy errorReceiverProxy = new ErrorReceiverProxy();
         final Injector injector = Guice.createInjector(binder -> binder
                 .bind(SchemaFilter.class)
@@ -119,9 +115,8 @@ public final class NodeFixture {
         return compiler;
     }
 
-    /**
-     * The event-logging 3.0.0 schema text, for what reads a schema rather than validates against one.
-     */
+    /// Returns the text of the event-logging 3.0.0 schema, for code that reads a schema rather than
+    /// validating against one.
     public static String eventLoggingSchema() {
         final ContentPack pack = ContentPacks.EVENT_LOGGING_XML_SCHEMA_PACK;
         final Path packDir = ContentPackZipDownloader.downloadContentPack(
@@ -130,32 +125,32 @@ public final class NodeFixture {
         return StreamUtil.fileToString(packDir.resolve(pack.getPath()).resolve(EVENTS_SCHEMA_FILE));
     }
 
-    /**
-     * A scorer over a fresh schema filter each run, reporting through the fixture's proxy, as a node's does.
-     */
+    /// Returns a schema conformance scorer that uses a new schema filter for each run and reports errors
+    /// through the fixture's proxy, as a node's scorer does.
     public SchemaConformanceScorer schemaConformanceScorer() {
         return new SchemaConformanceScorer(schemaFilters, errorReceiverProxy, schemaStore, securityContext);
     }
 
-    /// Target schemas over the fixture's own store, which holds event-logging 3.0.0 (task 7), so that a
-    /// scenario reads a real `XMLSchema` document rather than a made-up one.
+    /// Returns target schemas backed by the fixture's own store, which holds event-logging 3.0.0, so that
+    /// a scenario reads a real `XMLSchema` document rather than a made-up one.
     ///
-    /// @return Them.
+    /// @return The target schemas.
     public TargetSchemas targetSchemas() {
         return new XmlSchemaTargetSchemas(schemaStore, securityContext);
     }
 
-    /// The event-logging schema the fixture loaded, for a scenario that sets a document's target.
+    /// Returns the event-logging schema the fixture loaded, for a scenario that sets a document's target
+    /// schema.
     ///
-    /// @return Its reference.
+    /// @return A reference to the schema document.
     public DocRef eventLoggingSchemaRef() {
         return schemaRef(EVENTS_NAMESPACE_URI);
     }
 
-    /// A schema the fixture loaded, by its namespace.
+    /// Finds a schema the fixture loaded, by its namespace.
     ///
-    /// @param namespaceURI Its namespace, e.g. `data-splitter:3`.
-    /// @return Its reference.
+    /// @param namespaceURI The schema's namespace, e.g. `data-splitter:3`.
+    /// @return A reference to the schema document.
     public DocRef schemaRef(final String namespaceURI) {
         final FindXMLSchemaCriteria criteria = new FindXMLSchemaCriteria();
         criteria.setNamespaceURI(namespaceURI);
@@ -197,10 +192,8 @@ public final class NodeFixture {
                 .build());
     }
 
-    /**
-     * Compiles each distinct schema once and hands it out on every borrow. There is one schema and no
-     * contention here, so the node's pooled cache would add machinery without adding anything else.
-     */
+    /// Compiles each distinct schema once and returns it on every borrow. There are few schemas and no
+    /// contention in tests, so the node's pooled cache would add complexity for no benefit.
     private static final class LoadingSchemaPool implements SchemaPool {
 
         private final SchemaLoaderImpl loader;

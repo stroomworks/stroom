@@ -37,19 +37,17 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// Everything a supervisor has said to one learner (A46, A128), oldest first, in a dialog
-/// ([GuidanceEditor]), with a way to say another thing and a way to take one back.
+/// Shows the dialog ([GuidanceEditor]) listing the notes (guidance) people have left for one learner, oldest
+/// first, where a note can be added or withdrawn.
 ///
-/// Taking one back is why this exists rather than a count on a row. A hint that turned out to be wrong is
-/// worse than no hint: it is carried into every question the learner asks from then on, and a person who
-/// cannot see what is standing cannot know that. The turns that already carried it still say they did
-/// (A45): what is withdrawn stops being carried, and does not stop having been.
+/// Withdrawing is the main reason for this dialog, rather than just showing a count of notes. A note that
+/// turns out to be wrong is worse than none, because it is included in every question the learner asks from
+/// then on, and a person can't know that without seeing which notes are in use. Withdrawing a note stops it
+/// being included in later questions; the recorded turns that already included it are not changed.
 ///
-/// Not paged. Guidance is what one person wrote about one feed; a learner with a hundred hints is one
-/// somebody should be talking to rather than typing at.
+/// The list is not paged, because the notes for one feed are expected to be few.
 ///
-/// Not modal: an editor of the row it was opened from, which takes which learner it is about when it is
-/// opened.
+/// The dialog is not modal. It records which learner it is about when it is opened.
 public class GuidanceEditorController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
@@ -61,16 +59,15 @@ public class GuidanceEditorController extends Controller {
     private LearnerRef learner;
     private Runnable onChange = () -> {
     };
-    /// Whether what is shown may only be read: a deleted pipeline's learner is told nothing more (design
-    /// 06 A137).
+    /// Whether the notes may only be read, which is the case for a deleted pipeline's learner.
     private boolean readOnly;
 
-    /// Made by GIN, with its list.
+    /// Created by GIN.
     ///
     /// @param eventBus       The application's event bus.
-    /// @param view           Its component.
-    /// @param restFactory    Makes REST requests.
-    /// @param promptProvider Makes the prompt that asks what to say.
+    /// @param view           The dialog's content.
+    /// @param restFactory    Creates REST requests.
+    /// @param promptProvider Creates the dialog that asks for the text of a new note.
     @Inject
     public GuidanceEditorController(final EventBus eventBus,
                                     final GuidanceEditor view,
@@ -87,15 +84,15 @@ public class GuidanceEditorController extends Controller {
         updateButtons();
     }
 
-    /// Shows what has been said to a learner, as a dialog owned by `opener` until it is closed, filled
-    /// once it has been read: shown first, so that it is owned while it is read.
+    /// Shows the notes left for a learner, as a dialog owned by `opener` until it is closed. The dialog is
+    /// shown first and filled once the notes have been fetched, so that it owns the request while it runs.
     ///
-    /// @param opener   What shows it.
-    /// @param docUuid  The learner's document.
-    /// @param learner  The learner, as the row names it.
-    /// @param readOnly Whether it may only be read, as a deleted pipeline's learner may.
-    /// @param onChange Run when something is said or taken back, so that the count on the row the dialog
-    ///                 was opened from is read again.
+    /// @param opener   The screen that opens the dialog.
+    /// @param docUuid  The UUID of the learner's Learning Flow document.
+    /// @param learner  The learner.
+    /// @param readOnly Whether the notes may only be read, as for a deleted pipeline's learner.
+    /// @param onChange Run when a note is added or withdrawn, so that the screen the dialog was opened from
+    ///                 can refresh its count of notes.
     public void show(final HasControllerNode opener,
                      final String docUuid,
                      final LearnerRef learner,
@@ -112,13 +109,13 @@ public class GuidanceEditorController extends Controller {
                 .modeless()
                 .caption("What has been said to this learner")
                 .fire();
-        // Its request shows on the dialog's spinner
+        // Fetched after the dialog is shown so that the request shows on the dialog's spinner
         read(this::set);
     }
 
     private void add() {
-        // Which learner this is about, taken now rather than when OK is pressed: the dialog can be
-        // reopened on another while a prompt is up.
+        // Record the learner now rather than when OK is pressed, because the dialog can be reopened for
+        // another learner while the prompt is open.
         final LearnerRef whose = learner;
         final String onDocument = docUuid;
         promptProvider.get().ask(this,
@@ -126,7 +123,7 @@ public class GuidanceEditorController extends Controller {
                 "What should this learner know? It is kept against the learner, so every question it "
                 + "asks from now on carries it.",
                 message -> {
-                    // Empty is nothing to record.
+                    // An empty note is not recorded.
                     if (NullSafe.isBlankString(message)) {
                         return;
                     }
@@ -141,8 +138,8 @@ public class GuidanceEditorController extends Controller {
                 });
     }
 
-    /// Confirmed, because nothing here is versioned: a hint taken back is gone, and its words were
-    /// somebody's.
+    /// Withdraws the selected note, after confirmation. Confirmation is needed because notes are not
+    /// versioned: a withdrawn note is gone, and someone wrote it.
     private void remove() {
         final SupervisorGuidance said = view.getSelectionModel().getSelected();
         if (said == null) {
@@ -169,7 +166,7 @@ public class GuidanceEditorController extends Controller {
 
     private void changed(final List<SupervisorGuidance> said) {
         set(said);
-        // The row this was opened from shows how much has been said, and it has just changed.
+        // The screen this was opened from shows the number of notes, which has just changed.
         onChange.run();
     }
 

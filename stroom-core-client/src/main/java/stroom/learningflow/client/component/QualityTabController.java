@@ -41,18 +41,21 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-/// A Smart Pipeline's Quality Assurance tab ([QualityTab]; design 07), for a QA person judging one pipeline's
-/// translated output: the figures of the translation each of its Smart Pipeline elements has in use
-/// ([QualityFigures]) and its learning runs' scores, read by the pipeline's permissions as Learning Status is.
-/// Its owner tells it the pipeline's Smart Pipeline elements, which Learning Status finds ([PipelineAiElement]),
-/// so that the pipeline isn't read twice; it is shown only where there are any.
+/// Controls a pipeline's Quality Assurance tab ([QualityTab]), where a person checks the quality of a Smart
+/// Pipeline's translated output.
 ///
-/// Beside the figures, through the quality resource ([QualityResource]): the volume day by day and what the
-/// records of the translation in use became, samples of those records beside what they became (for someone who
-/// may also view data; for anyone else, a sentence says why there are none).
+/// For the chosen Smart Pipeline element it shows the headline figures of the translation in use
+/// ([QualityFigures]) and the scores of its learning runs. As on the Learning Status tab, access follows the
+/// pipeline's permissions. The owner passes in the pipeline's Smart Pipeline elements, as found by the Learning
+/// Status tab ([PipelineAiElement]), so that the pipeline is not read twice; the tab is shown only when there
+/// are any.
 ///
-/// Read when it is shown, and when another element is chosen: quality changes over hours, not seconds, so it
-/// isn't read again on a timer.
+/// It also reads, from the quality resource ([QualityResource]), the daily volume, the cardinality of the
+/// translation in use, and samples of its records beside their output. Samples are only shown to users who
+/// may view the pipeline's data; anyone else sees a message saying why there are none.
+///
+/// The tab is read when it is shown and when another element is chosen. It is not refreshed on a timer,
+/// because quality changes over hours rather than seconds.
 public class QualityTabController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
@@ -64,23 +67,24 @@ public class QualityTabController extends Controller {
 
     private final QualityTab view;
     private final RestFactory restFactory;
-    /// The settings of each Learning Flow an element learns under, read once while the tab is open.
+    /// Finds learners and caches the settings of each Learning Flow they learn under while the tab is open.
     private final PipelineLearners learners;
     private DocRef pipeline;
     private List<PipelineAiElement> elements = List.of();
     private PipelineAiElement chosen;
     private boolean showing;
-    /// Whether the pipeline can't be edited here: then an open issue isn't offered to be resolved.
+    /// Whether the pipeline is read-only. It is tracked, and a change refreshes the tab, but nothing in this
+    /// controller currently reads it.
     private boolean readOnly = true;
-    /// Which read is current, so that a slower earlier reply is ignored.
+    /// A counter identifying the latest refresh, so that replies to an earlier, slower refresh are ignored.
     private int asked;
 
-    /// Made by GIN, with its tab.
+    /// Made by GIN.
     ///
     /// @param eventBus          The application's event bus.
     /// @param view              The tab.
     /// @param restFactory       Makes REST requests.
-    /// @param dateTimeFormatter        Says when each learning run started, as the user likes dates.
+    /// @param dateTimeFormatter Formats dates and times in the user's preferred format.
     @Inject
     public QualityTabController(final EventBus eventBus,
                                 final QualityTab view,
@@ -107,10 +111,11 @@ public class QualityTabController extends Controller {
         });
     }
 
-    /// Tells it the pipeline's Smart Pipeline elements, as Learning Status found them.
+    /// Sets the pipeline and its Smart Pipeline elements, as found by the Learning Status tab. The element
+    /// chosen before stays chosen if it is still present; otherwise the first is chosen.
     ///
     /// @param pipelineRef The pipeline.
-    /// @param found       Its Smart Pipeline elements; empty for none.
+    /// @param found       The pipeline's Smart Pipeline elements; empty if it has none.
     public void setElements(final DocRef pipelineRef, final List<PipelineAiElement> found) {
         if (pipeline == null || !pipeline.getUuid().equals(pipelineRef.getUuid())) {
             learners.clear();
@@ -130,7 +135,8 @@ public class QualityTabController extends Controller {
         }
     }
 
-    /// Shows one of the pipeline's Smart Pipeline elements, e.g. from Learning Status, read when the tab is shown.
+    /// Chooses one of the pipeline's Smart Pipeline elements, e.g. when asked from the Learning Status tab. Its
+    /// figures are read now if the tab is visible, otherwise when it is next shown.
     ///
     /// @param elementId The element's id.
     public void showElement(final String elementId) {
@@ -145,9 +151,9 @@ public class QualityTabController extends Controller {
         }
     }
 
-    /// Says whether the tab is on screen: it is read whenever it comes to be.
+    /// Tells the controller whether the tab is visible. The tab is read again each time it becomes visible.
     ///
-    /// @param showing Whether it is the tab shown, in the pipeline shown.
+    /// @param showing Whether this tab is the selected tab of the visible pipeline.
     public void setShowing(final boolean showing) {
         final boolean back = showing && !this.showing;
         this.showing = showing;
@@ -186,7 +192,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // The element's learning runs, newest first, then everything shown
+    // Reads the element's learning runs, newest first, then shows the figures and runs and reads the rest
     private void readRuns(final int request, final SupervisorLearner row, final LearningFlowDoc doc) {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
@@ -203,7 +209,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // The volume and cardinality, and the samples, each shown as it comes
+    // Reads the quality report (volume and cardinality) and the samples, showing each as its reply arrives
     private void readQuality(final int request, final SupervisorLearner row) {
         final String pipelineUuid = row.getLearner().getPipelineUuid();
         final String elementId = row.getLearner().getElementId();
@@ -226,7 +232,8 @@ public class QualityTabController extends Controller {
                         view.showSamples(NullSafe.list(samples));
                     }
                 })
-                // Refused for someone who may not view data, which the samples are: said, not alerted
+                // Samples are the pipeline's data, so the request is refused for a user who may not view
+                // data. Show a message rather than an error alert.
                 .onFailure(error -> {
                     if (request == asked) {
                         view.showSamplesNote(NO_DATA);
@@ -237,7 +244,7 @@ public class QualityTabController extends Controller {
                 .exec();
     }
 
-    // A day (UTC) as the volume's table and chart name it, e.g. "17 Nov"
+    // Formats a day (UTC) as the volume table and chart label it, e.g. "17 Nov"
     private static String day(final long dayMs) {
         return DAY_FORMAT.format(new Date(dayMs), UTC);
     }

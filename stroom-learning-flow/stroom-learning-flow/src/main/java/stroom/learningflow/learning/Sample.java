@@ -24,32 +24,30 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * What an attempt is about: the input to learn from and the stream's feed and type (A29, A126).
- * <p>
- * The model sees the feed and the type and nothing else of the stream's attributes, so the attribute
- * map's sender-set entries — hostnames, paths, tokens — never travel. The text and the values travel as
- * they arrive: **samples are never redacted** (A146, which supersedes A17 and A38). Redaction good enough
- * to protect data would itself need a model, and a model asked to translate redacted data loses the
- * context it translates by, so a feed is pointed at a model only where its data may go to that model.
- *
- * @param text    The input sample, as the first element of the chain will receive it.
- * @param headers The feed and type the stream carries, in that order.
- * @param facts   The stream it came from.
- * @param cutFrom How many bytes of the stream the sample was taken from, where it is less than all of
- *                them; zero where the sample is the whole of what was read. A person reading "couldn't
- *                write the parser" is owed the fact that the model saw eight kilobytes of a two-megabyte
- *                stream (supervisor visibility item 3, audit finding S4).
- * @param beyondPrefix Whether the stream is longer than the prefix that was read as text at all
- *                ({@code Input#PREFIX_BYTES}). A prefix of a single XML or JSON document is not a
- *                document, so a stream like that cannot be sampled: it has to be refused with a reason
- *                rather than passed over in silence (N2 option E).
- */
+/// What a learning attempt is about: the input to learn from, and the stream's feed and type.
+///
+/// The model is shown the feed and the type and none of the stream's other attributes, so values set by the
+/// sender (hostnames, paths, tokens) are never sent. The text and those values are sent as they arrive:
+/// **samples are never redacted**. Redaction good enough to protect data would itself need a model, and a
+/// model asked to translate redacted data loses the context it needs, so a feed should be pointed at a model
+/// only where its data may be sent to that model.
+///
+/// @param text         The input sample, as the first element of the chain will receive it.
+/// @param headers      The feed and type the stream carries, in that order.
+/// @param facts        The stream it came from.
+/// @param cutFrom      How many bytes the sample was cut from, where the sample is less than all of them;
+///                     zero where the sample is the whole of what was read. A person reading that the model
+///                     "couldn't write the parser" needs to know that it saw, say, eight kilobytes of a
+///                     two-megabyte stream.
+/// @param beyondPrefix Whether the stream is longer than the prefix that was read as text at all
+///                     (`Input#PREFIX_BYTES`). A prefix of a single XML or JSON document is not a complete
+///                     document, so such a stream cannot be sampled; it has to be refused with a reason
+///                     rather than skipped without explanation.
 public record Sample(String text, Map<String, String> headers, StreamFacts facts, int cutFrom,
                      boolean beyondPrefix) {
 
     public Sample {
-        // Order is kept: a prompt lists the values in order, strongest signal first.
+        // Keep the order, because a prompt lists the values in order, strongest hint first.
         headers = Collections.unmodifiableMap(new LinkedHashMap<>(headers));
         facts = facts == null
                 ? StreamFacts.none()
@@ -73,20 +71,20 @@ public record Sample(String text, Map<String, String> headers, StreamFacts facts
     }
 
     /// @param beyondPrefix Whether the stream runs past what was read as text.
-    /// @return The same sample, knowing that.
+    /// @return A copy of this sample with that flag set.
     public Sample beyondPrefix(final boolean beyondPrefix) {
         return new Sample(text, headers, facts, cutFrom, beyondPrefix);
     }
 
-    /// @param wholeBytes How many bytes the sample was taken from.
-    /// @return The same sample, knowing how much of its stream it is.
+    /// @param wholeBytes How many bytes the sample was cut from.
+    /// @return A copy of this sample recording that size, or zero if the sample is all of it.
     public Sample cutFrom(final int wholeBytes) {
         return new Sample(text, headers, facts, Math.max(0, wholeBytes - Input.bytes(text)) == 0
                 ? 0
                 : wholeBytes, beyondPrefix);
     }
 
-    /// How many bytes of the stream the model was not shown; zero where it saw all that was read.
+    /// @return How many bytes of what was read the model was not shown; zero where it saw all of it.
     public int notShown() {
         return cutFrom == 0
                 ? 0
@@ -100,7 +98,7 @@ public record Sample(String text, Map<String, String> headers, StreamFacts facts
     }
 
     /// @param facts The stream this came from.
-    /// @return The same sample, knowing its stream.
+    /// @return A copy of this sample with the stream's facts.
     public Sample from(final StreamFacts facts) {
         return new Sample(text, headers, facts, cutFrom, beyondPrefix);
     }
@@ -109,10 +107,10 @@ public record Sample(String text, Map<String, String> headers, StreamFacts facts
         return new Sample(text, Map.of());
     }
 
-    /**
-     * @param feed The stream's feed, where it has one.
-     * @param type The stream's type, where it has one.
-     */
+    /// @param text The sample.
+    /// @param feed The stream's feed, or null where it has none.
+    /// @param type The stream's type, or null where it has none.
+    /// @return A sample whose headers are the feed and type that are given.
     public static Sample of(final String text, final String feed, final String type) {
         final Map<String, String> headers = new LinkedHashMap<>();
         if (feed != null) {

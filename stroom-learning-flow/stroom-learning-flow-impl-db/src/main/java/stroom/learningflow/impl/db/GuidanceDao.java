@@ -27,11 +27,12 @@ import java.util.List;
 
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowGuidance.LEARNING_FLOW_GUIDANCE;
 
-/// A supervisor's messages as rows (A46): one per thing said, keyed by the learner it was said to.
+/// The database implementation of [Guidance], which stores the messages people leave for a learner to
+/// steer its learning. There is one row per message, keyed by the learner it was left for.
 ///
-/// Kept where every node can read it, because the node that carries a hint into a question is rarely
-/// the node the person who gave it was talking to — and because a hint outlives the attempt that first
-/// used it, which is the point of attaching it to the learner.
+/// Guidance is kept in the database so that every node can read it, since the node that puts a message
+/// into a question is rarely the node the person was using when they wrote it. It is keyed by learner
+/// rather than by attempt, so that it applies to every later attempt too.
 @Singleton
 public class GuidanceDao implements Guidance {
 
@@ -59,8 +60,8 @@ public class GuidanceDao implements Guidance {
                 .fetchOne(LEARNING_FLOW_GUIDANCE.ID));
     }
 
-    /// Oldest first: the order a person wrote them in is the order they should be read in, and a later
-    /// hint that corrects an earlier one only reads as a correction if it comes after it.
+    /// Returns the learner's guidance oldest first. The model should read the messages in the order they
+    /// were written, so that a later message that corrects an earlier one reads as a correction.
     @Override
     public List<Given> standing(final Learner learner) {
         return JooqUtil.contextResult(connProvider, context -> context
@@ -79,7 +80,8 @@ public class GuidanceDao implements Guidance {
                         row.get(LEARNING_FLOW_GUIDANCE.CREATE_TIME_MS))));
     }
 
-    /// By document as well as id, so that a mistyped id cannot take back somebody else's hint.
+    /// Deletes a message, matching on the document as well as the id, so that a wrong id cannot delete
+    /// a message left under another document.
     @Override
     public void withdraw(final String docUuid, final long id) {
         JooqUtil.context(connProvider, context -> context

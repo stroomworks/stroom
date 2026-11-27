@@ -18,14 +18,16 @@ package stroom.learningflow.learning;
 
 import java.util.Optional;
 
-/**
- * What one kind of input record should become (design 01 §10.1, ruling A31): the representative record
- * as the split cut it, and the event the model proposed for it — validated before anything downstream
- * was written — or nothing, for a kind of record that yields no event (a header line, a comment).
- *
- * @param record The representative input record's text, exactly as the split yielded it.
- * @param event  The event as a single document, or empty where the kind yields none.
- */
+/// What one kind of input record should become, as settled by the target step of a learning flow. It pairs
+/// a representative record, as the split cut it, with the event the model proposed for it, which was
+/// validated before any later step ran. A kind of record that yields no event (a header line, a comment)
+/// has no event.
+///
+/// The configuration questions show the targets to the model, and at promotion they become expected
+/// outputs in the regression set.
+///
+/// @param record The representative input record's text, exactly as the split produced it.
+/// @param event  The event as a single document, or empty where the kind yields none.
 public record Target(String record, Optional<String> event) {
 
     public static Target none(final String record) {

@@ -29,10 +29,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * The dependency function on its own. {@code StoreImpl} uses it for three things — import remapping,
- * copying and the dependency graph — and the inherited null would silently disable all three.
- */
+/// Tests the Learning Flow store's dependency remap function on its own.
+///
+/// `StoreImpl` uses this function for import remapping, copying and the dependency graph, and if the store
+/// returned the inherited `null` all three would be silently disabled.
 class TestLearningFlowDependencyRemap {
 
     private final DependencyRemapFunction<LearningFlowDoc> function = function();
@@ -48,8 +48,8 @@ class TestLearningFlowDependencyRemap {
 
     @Test
     void declaresTheModelAndNothingElseAsADependency() {
-        // Since A41 the fragments are named by rows, not by the document, so an exported document depends
-        // on its model alone — as a processor filter's state is not part of the pipeline it runs.
+        // Learned fragments are recorded in the binding tables, not on the document, so an exported document
+        // depends only on its model, just as a processor filter's state is not part of the pipeline it runs.
         final DependencyRemapper remapper = new DependencyRemapper();
 
         function.remap(doc(), remapper);
@@ -60,8 +60,8 @@ class TestLearningFlowDependencyRemap {
 
     @Test
     void rewritesTheModelAndNothingElse() {
-        // Since A41 the document names no fragment: the bindings are rows, and an exported document carries
-        // its configuration and none of what it learned.
+        // The document names no fragment, because bindings are held in tables. An exported document carries
+        // only what a person configured, none of what was learned, so remapping a fragment changes nothing.
         final DocRef importedModel = LearningFlowFixture.MODEL.copy().uuid("model-2").build();
         final DocRef importedFragment = LearningFlowFixture.FRAGMENT.copy().uuid("fragment-2").build();
         final DependencyRemapper remapper = new DependencyRemapper(Map.of(

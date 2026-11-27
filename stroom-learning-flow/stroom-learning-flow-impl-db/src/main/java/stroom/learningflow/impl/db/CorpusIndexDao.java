@@ -28,8 +28,11 @@ import org.jooq.Record;
 
 import java.util.List;
 
-/// The corpus index of design 04 §4.1 as a table: a row per entry, keyed by binding and ordered by id, which
-/// is the order the entries were accepted in.
+/// The database implementation of [CorpusIndex], which records which records make up each binding's
+/// regression corpus.
+///
+/// There is one row per corpus entry, keyed by binding. Rows are ordered by id, which is the order in which
+/// the entries were accepted, so that trimming the corpus to its cap drops the oldest entries first.
 @Singleton
 public class CorpusIndexDao implements CorpusIndex {
 
@@ -55,7 +58,7 @@ public class CorpusIndexDao implements CorpusIndex {
             return;
         }
         JooqUtil.context(connProvider, context -> {
-            // One statement per row, in order, so that the ids say the order they were accepted in.
+            // One statement per row, in order, so that the generated ids follow the order of acceptance.
             for (final Row row : rows) {
                 context.insertInto(LearningFlowCorpus.LEARNING_FLOW_CORPUS)
                         .set(LearningFlowCorpus.LEARNING_FLOW_CORPUS.DOC_UUID, row.docUuid())
@@ -120,7 +123,8 @@ public class CorpusIndexDao implements CorpusIndex {
                 .execute());
     }
 
-    /// Of the streams just dropped from, the ones no row names any more.
+    /// Returns those of the given streams that no corpus row refers to any more, so that the caller can
+    /// remove them.
     private static List<Long> orphaned(final DSLContext context, final List<Long> streams) {
         if (streams.isEmpty()) {
             return List.of();

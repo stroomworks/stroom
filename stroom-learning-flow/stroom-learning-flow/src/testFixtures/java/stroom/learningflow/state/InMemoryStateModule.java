@@ -34,17 +34,19 @@ import stroom.learningflow.stage.Spend;
 import com.google.inject.AbstractModule;
 import com.google.inject.Scopes;
 
-/// The runtime state in memory, for a harness that has no database: the node binds these to the tables of
-/// A26 through `stroom-learning-flow-impl-db` instead. What is in memory is one JVM's and lasts as long
-/// as it does, which is why the tables exist.
+/// The Guice module that binds the Learning Flow's state interfaces to in-memory implementations, for tests
+/// that have no database. A real node binds them to the database tables through
+/// `stroom-learning-flow-impl-db` instead, because in-memory state belongs to one JVM and lasts only as
+/// long as it does.
 public class InMemoryStateModule extends AbstractModule {
 
     @Override
     protected void configure() {
         super.configure();
         bind(Attempts.class).to(InMemoryAttempts.class).in(Scopes.SINGLETON);
-        // One instance behind each seam and the class itself: the serving view walks every binding, and what
-        // brings a learner's rows to its document reaches past the seams to the rows behind them.
+        // The interface and the concrete class share one instance, because the learning pipelines list
+        // reads every binding, and InMemoryLearners updates the rows directly rather than through the
+        // interfaces.
         bind(InMemoryLearnerBindings.class).in(Scopes.SINGLETON);
         bind(LearnerBindings.class).to(InMemoryLearnerBindings.class);
         bind(InMemoryGuidance.class).in(Scopes.SINGLETON);
@@ -61,7 +63,8 @@ public class InMemoryStateModule extends AbstractModule {
         bind(CorpusIndex.class).to(InMemoryCorpusIndex.class).in(Scopes.SINGLETON);
         bind(Snapshots.class).to(InMemorySnapshots.class).in(Scopes.SINGLETON);
         bind(Volumes.class).to(InMemoryVolumes.class).in(Scopes.SINGLETON);
-        // One set of marks, which the attempts and the serving view read to leave a deleted pipeline out.
+        // One set of marks, which the attempts and the learning pipelines list read to leave deleted
+        // pipelines out.
         bind(InMemoryDeletedPipelines.class).in(Scopes.SINGLETON);
         bind(DeletedPipelines.class).to(InMemoryDeletedPipelines.class);
         bind(KeptLearning.class).to(InMemoryKeptLearning.class).in(Scopes.SINGLETON);

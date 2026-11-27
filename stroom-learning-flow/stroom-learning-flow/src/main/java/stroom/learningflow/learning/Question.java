@@ -21,24 +21,28 @@ import stroom.util.shared.StoredError;
 
 import java.util.List;
 
-/**
- * The typed questions of the A21 conversation. Each carries what the model needs to answer it and nothing
- * about how it is rendered into a prompt, which is the {@link Advisor}'s concern.
- */
+/// The kinds of question a learning session asks the model. Each carries what the model needs to answer it,
+/// but nothing about how it is worded in a prompt, which is the job of [QuestionText] and the [Advisor].
 public sealed interface Question {
 
-    /// What joins a question's identity to how much it had been told, in its [#summary()].
+    /// The text that joins a question's identity to its count of shortfalls in its [#summary()].
     String SHORTFALLS_AFTER = ", after ";
 
-    /**
-     * Diagnostics from the previous answer to the same question, if it was refused or failed. Empty the
-     * first time a question is asked — unless the attempt is relearning a bound learner (A29), when the
-     * first asking of each question carries why the incumbent fell short.
-     */
+    /// Diagnostics from the previous answer to the same question, if it was refused or failed.
+    ///
+    /// Empty the first time a question is asked, unless the attempt was opened with feedback (for example,
+    /// when relearning a learner whose current binding fell short), in which case the first asking of each
+    /// question carries why it fell short.
+    ///
+    /// @return The diagnostics, or an empty list.
     List<StoredError> feedback();
 
-    /// Which kind of question this is: what a recorded turn names it (A28). Static, because two of these
-    /// records carry a `kind` of their own and a question's kind is not theirs.
+    /// Returns which kind of question this is, as a recorded turn names it. It is static rather than an
+    /// instance method because two of these records already have a `kind` component that means something
+    /// else.
+    ///
+    /// @param question The question.
+    /// @return Its kind.
     static QuestionKind kindOf(final Question question) {
         return switch (question) {
             case Chain ignored -> QuestionKind.CHAIN;
@@ -50,18 +54,16 @@ public sealed interface Question {
         };
     }
 
-    /// This question in one line: the kind, what it was about, and how much the step had been told when
-    /// it was asked. This is what a turn records as the question asked (A28), which a person reads and a
-    /// resumed attempt compares its re-walk against (A45) — everything in it is re-derived by walking the
-    /// same flow over the same sample, so two walks that have reached the same place write the same line.
+    /// Returns this question in one line: its kind, what it was about, and how many shortfalls it had been
+    /// told of when it was asked. This is what a turn records as the question asked. A person reads it, and
+    /// a resumed attempt checks its replay against it. Everything in it is derived again by walking the same
+    /// flow over the same sample, so two walks that reach the same place produce the same line.
     ///
-    /// Not the rendered prompt: that carries the stream's own text, which would be a second copy of
-    /// real data under the attempt's retention rather than the stream's. What was asked is rebuilt
-    /// instead, from the recorded templates, for someone with *View Data* (N9).
+    /// It is not the rendered prompt, because the prompt contains the stream's text, and recording it would
+    /// keep a second copy of real data under the attempt's retention rather than the stream's. The prompt
+    /// is instead rebuilt from the recorded templates for someone with *View Data* permission.
     ///
-    /// It used to say the raw exchange was audited by `stroom-ai`, and that the prompt would join the
-    /// record "when redaction is built". Neither holds: no code audits the raw exchange, and A146
-    /// settled that samples are never redacted.
+    /// @return The one-line summary.
     default String summary() {
         return identity()
                + (feedback().isEmpty()
@@ -69,11 +71,14 @@ public sealed interface Question {
                 : SHORTFALLS_AFTER + feedback().size() + " shortfall(s)");
     }
 
-    /// The kind and what it is about, which is what a resumed attempt compares its re-walk against (A45):
-    /// an answer kept is an answer to this, whatever the step had been told by then. How much it had been
-    /// told is the record's to show and not the comparison's to make, since a session that bound a
-    /// fragment of its own and then parked is re-walked over the shortfalls of what it bound, which its
-    /// first questions, asked before it, were not.
+    /// Returns the question's kind and what it is about. A resumed attempt compares its replay against this
+    /// to check that each recorded answer still answers the question being asked.
+    ///
+    /// The count of shortfalls is left out of the comparison on purpose. A session that bound a fragment of
+    /// its own and then parked is replayed with the shortfalls of what it bound, which its first questions,
+    /// asked before the binding, did not have, so the counts would differ even though the questions match.
+    ///
+    /// @return The kind and subject of the question.
     default String identity() {
         final String about = switch (this) {
             case Chain chain -> "choose from " + chain.allowedElements();
@@ -85,7 +90,10 @@ public sealed interface Question {
         return kindOf(this).getDisplayValue() + ": " + about;
     }
 
-    /// The [#identity()] of a question from the [#summary()] a turn recorded.
+    /// Recovers the [#identity()] of a question from the [#summary()] a turn recorded.
+    ///
+    /// @param summary The recorded summary.
+    /// @return The identity part of it.
     static String identityOf(final String summary) {
         final int after = summary.lastIndexOf(SHORTFALLS_AFTER);
         return after > 0 && summary.endsWith(" shortfall(s)")
@@ -93,24 +101,22 @@ public sealed interface Question {
                 : summary;
     }
 
-    /**
-     * Which chain of elements fits the sample, chosen from the document's allowed elements (A21 step 1).
-     * The sample's key values are the cheap half of the answer (A29): a {@code Format} of JSON, where the
-     * key includes it, names the parser before the text is read.
-     */
+    /// Asks which chain of pipeline elements fits the sample, chosen from the document's allowed elements.
+    /// This is the first question of a session. The sample's feed and type are shown with it, as they can
+    /// hint at the format before the text is read.
     record Chain(Sample sample,
                  List<String> allowedElements,
                  List<StoredError> feedback) implements Question {
 
     }
 
-    /**
-     * What one record is in this input (A31): asked before anything about meaning, for every kind of
-     * input, and answered without a target. For raw text the reply is a Data Splitter configuration
-     * that cuts the input into records and emits each record's whole text as one field — the boundary
-     * and nothing else — judged by coverage and yield alone; for XML the element that is one record
-     * (A35); for JSON the key of the array whose items are records, or {@code root}.
-     */
+    /// Asks what one record is in this input. It is asked before anything about meaning, for every kind of
+    /// input, and answered without a target.
+    ///
+    /// For raw text the reply is a Data Splitter configuration that cuts the input into records and emits
+    /// each record's whole text as one value, finding the boundary and nothing else. It is judged by
+    /// coverage, yield and wholeness. For XML the reply is the element that is one record (or `name/*` for
+    /// every child of a container). For JSON it is the key of the array whose items are records, or `root`.
     record Split(Sample sample,
                  String elementType,
                  String documentType,
@@ -119,16 +125,14 @@ public sealed interface Question {
 
     }
 
-    /**
-     * What one kind of record should become (A31): one representative record, as the split cut it, put
-     * with the schema's rules and the document's instructions; the reply is the event as a single
-     * document, or {@code none} for a kind that yields no event. Validated at once by the scorers of
-     * meaning, so the re-ask carries the shortfall of the document the model itself wrote.
-     *
-     * @param record The representative record's text.
-     * @param kind   Which of the sample's record kinds this is, one-based.
-     * @param total  How many kinds the sample has.
-     */
+    /// Asks what one kind of record should become. The model is shown one representative record, as the
+    /// split cut it, with the schema's rules and the document's instructions. The reply is the target event
+    /// as a single document, or `none` for a kind that yields no event. The reply is validated at once by the
+    /// scorers that judge meaning, so a re-ask carries the shortfalls of the event the model itself wrote.
+    ///
+    /// @param record The representative record's text.
+    /// @param kind   Which of the sample's record kinds this is, one-based.
+    /// @param total  How many kinds the sample has.
     record TargetFor(Sample sample,
                      String record,
                      int kind,
@@ -139,48 +143,51 @@ public sealed interface Question {
 
     /// How many records the stream holds and how many kinds they are of, as the split found them.
     ///
-    /// @param kinds How many kinds of record the stream carries, by the discrimination the split uses:
-    ///              one where every record is alike, more where a feed reports several things.
+    /// @param total How many records the stream holds.
+    /// @param kinds How many kinds of record the stream holds, as the split tells them apart: one where every
+    ///              record is alike, more where a feed reports several kinds of thing.
     record Records(int total, int kinds) {
 
         public static final Records UNKNOWN = new Records(0, 0);
     }
 
-    /**
-     * The configuration document for one element of the chain (A21 step 2). Carries the real input that
-     * element will receive — the sample for the first element, the previous element's output after that —
-     * and the previous configuration if this is a re-ask.
-     *
-     * @param elementType           The pipeline element type, e.g. {@code XSLTFilter}.
-     * @param documentType          The document type the element consumes, e.g. {@code XSLT}.
-     * @param sample                The input sample and headers the whole attempt is about.
-     * @param input                 What this element will actually be given to process.
-     * @param previousConfiguration The configuration this question is asking to improve on, or null.
-     * @param split                 The record boundary already settled (A31, A35): the configuration that
-     *                              cuts it, for the parser that must extract within it, or the element
-     *                              that is one record, for a transform over XML; null where the flow has
-     *                              no split or it does not concern this element.
-     * @param targets               What each kind of record must become (A31): the parser's records must
-     *                              carry every value these need, the transform must produce exactly
-     *                              these. Empty where the conversation has no targets.
-     * @param oneRecord             Whether the input shown is one record rather than the whole stream:
-     *                              the fragment's `SplitFilter` gives this element one record at a time
-     *                              (§12 item 25), so it is asked for a configuration that handles one,
-     *                              and told so, as a person writing a Stroom stylesheet is shown one.
-     * @param records               How many records the stream holds, and how many kinds they are of,
-     *                              where the input is one of them: one record shown is one record's
-     *                              worth of evidence, and a configuration written for it is run over all
-     *                              of them, so what it is not being shown is said rather than hidden.
-     * @param otherKinds            One record of each *other* kind the split found (A47), where the flow
-     *                              has not yet settled its targets. Saying a second kind exists is not
-     *                              the same as showing it, and a configuration written from a login
-     *                              alone drops the logouts. Empty where the targets already show a
-     *                              record of each kind beside the event it must become, and where the
-     *                              stream carries one kind. <b>Not necessarily every other kind</b>: the
-     *                              representatives are capped, and {@link Records#kinds()} is what says
-     *                              how many there are, so a question built from this must not promise
-     *                              the model it has seen them all.
-     */
+    /// Asks for the configuration document for one element of the chain. It carries the real input that
+    /// element will receive (the sample for the first element, the previous element's output after that),
+    /// and the previous configuration if this is a re-ask.
+    ///
+    /// @param elementType           The pipeline element type, e.g. `XSLTFilter`.
+    /// @param documentType          The document type the element consumes, e.g. `XSLT`.
+    /// @param sample                The input sample and headers the whole attempt is about.
+    /// @param input                 What this element will actually be given to process.
+    /// @param previousConfiguration The configuration this question is asking to improve on, or null.
+    /// @param split                 The record boundary already settled: the configuration that cuts the
+    ///                              records, for a parser that must extract within it, or the element
+    ///                              that is one record, for a transform over XML. Null where the flow has
+    ///                              no split step or the split does not concern this element.
+    /// @param targets               What each kind of record must become. The parser's records must carry
+    ///                              every value these need, and the transform must produce exactly these.
+    ///                              Empty where the flow has no target step.
+    /// @param oneRecord             Whether the input shown is one record rather than the whole stream.
+    ///                              The fragment's `SplitFilter` gives this element one record at a time,
+    ///                              so the model is asked for a configuration that handles one record, and
+    ///                              told so, just as a person writing a Stroom stylesheet is shown one.
+    /// @param records               How many records the stream holds, and how many kinds they are of,
+    ///                              where the input shown is one of them. One record is limited evidence,
+    ///                              and the configuration will be run over all of them, so the model is
+    ///                              told what it is not being shown.
+    /// @param otherKinds            One record of each *other* kind the split found, where the flow has not
+    ///                              yet settled its targets. Saying that a second kind exists is not the
+    ///                              same as showing it, and a configuration written from a login record
+    ///                              alone will drop the logouts. Empty where the targets already show a
+    ///                              record of each kind beside the event it must become, and where the
+    ///                              stream has one kind. **Not necessarily every other kind**: the number
+    ///                              of examples is capped, and [Records#kinds()] gives how many kinds there
+    ///                              are, so a question built from this must not tell the model it has
+    ///                              seen them all.
+    /// @param admitting             Whether this is the exhaustion step's question, which asks for a
+    ///                              transform that writes marked `Unknown` events for the records nothing
+    ///                              better could be done with.
+    /// @param feedback              Diagnostics from the previous answer, if it was refused or failed.
     record Configuration(String elementType,
                          String documentType,
                          Sample sample,

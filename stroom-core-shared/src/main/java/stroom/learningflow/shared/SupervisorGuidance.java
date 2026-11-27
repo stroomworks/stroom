@@ -22,14 +22,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
-/**
- * One thing a supervisor has told a learner (A46): a hint, a correction, or a fact about the feed that
- * no sample of it shows.
- * <p>
- * It belongs to the learner and not to a turn or an attempt, so nothing has to be timed and nothing is
- * refused for arriving at the wrong moment. A hint given while an attempt is running is carried by the
- * next question that attempt asks, and outlives it either way.
- */
+/// One note a person has left for a learner, as the Supervisor shows it: a hint, a correction, or a fact
+/// about the feed that no sample of it shows.
+///
+/// Guidance belongs to the learner, not to a turn or a session, so it can be given at any time and is never
+/// refused for arriving at the wrong moment. A note given while a session is running is included in the next
+/// question that session asks, and stays with the learner after the session ends.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SupervisorGuidance {
 
@@ -61,9 +59,7 @@ public class SupervisorGuidance {
         return message;
     }
 
-    /**
-     * Who said it. A person reading a hint a year later needs to know whose it was.
-     */
+    /// @return Who left the note, so that a person reading it much later knows whose it was.
     public String getAuthor() {
         return author;
     }

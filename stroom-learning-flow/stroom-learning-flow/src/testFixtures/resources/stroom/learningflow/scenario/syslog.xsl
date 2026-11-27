@@ -13,7 +13,7 @@
     </Events>
   </xsl:template>
 
-  <!-- The BSD form has no year: the feed is known to be current, so the year is this one -->
+  <!-- The BSD syslog form has no year, so the year of the test data, 2026, is used -->
   <xsl:template match="record">
     <xsl:variable name="months" select="('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')"/>
     <xsl:variable name="time">

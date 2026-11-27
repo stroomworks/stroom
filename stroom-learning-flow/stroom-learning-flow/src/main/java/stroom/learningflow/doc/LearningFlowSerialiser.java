@@ -40,20 +40,23 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+/// Serialises Learning Flow documents, and upgrades the JSON of documents saved by earlier versions of the
+/// feature as they are read.
 public class LearningFlowSerialiser implements DocumentSerialiser2<LearningFlowDoc> {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(LearningFlowSerialiser.class);
 
-    /// The asset the delegate keeps the document's JSON in.
+    /// The name of the asset the delegate keeps the document's JSON in.
     private static final String META = "meta";
     private static final String FLOW = "flow";
-    /// The names the flow was saved under before it was named so, newest first: `plan` until A81, and
-    /// `dialogue` before A37. These are names in **stored data** and so can never be renamed: a document
-    /// written then has them in its JSON whatever this feature decides to call the thing today. The
-    /// shared class cannot carry them, since its JSON codec is generated for the client too, so they
-    /// are honoured here, on the way in only.
+    /// Earlier names of the `flow` property, newest first: documents saved by earlier versions have the flow
+    /// under `plan` or, earlier still, `dialogue`. These are names in **stored data**, so they must keep
+    /// being recognised even though the property has been renamed. The shared document class cannot carry
+    /// them, because its JSON codec is also generated for the client, so they are handled here, on read
+    /// only.
     private static final List<String> LEGACY_FLOW = List.of("plan", "dialogue");
-    /// Where the chain question's elements were kept before A95 put them on the Chain step.
+    /// The document-level property that held the chain question's elements in documents saved before the
+    /// elements were moved onto the Chain step.
     private static final String LEGACY_ELEMENTS = "allowedElements";
     private static final String LEGACY_PRESET = "preset";
 
@@ -64,15 +67,17 @@ public class LearningFlowSerialiser implements DocumentSerialiser2<LearningFlowD
         this.delegate = serialiser2Factory.createSerialiser(LearningFlowDoc.class);
     }
 
-    /// A read is a read: nothing is written here. A document's bindings from before A41 are not carried over
-    /// (design 06 phase J slice 2b): they named no learner, and chose their streams in a way that no
-    /// longer means anything, so they have nowhere to go; the document reads without them.
+    /// Reads a document, upgrading any properties saved under earlier names. Nothing is written back.
+    ///
+    /// Documents saved by early versions of the feature may hold bindings. Those are ignored: they named no
+    /// learner and selected their streams by a mechanism that no longer exists, so there is nowhere to put
+    /// them.
     @Override
     public LearningFlowDoc read(final ImportExportDocument importExportDocument) throws IOException {
         final LearningFlowDoc read = delegate.read(importExportDocument);
         final LearningFlowDoc document = legacyElements(read, importExportDocument);
-        // A document saved when the flow was the plan (before A81) or the conversation (before A37) reads
-        // as it was written, and only where an old name occurs at all.
+        // A document that saved its flow under an earlier property name has the flow read from that
+        // property. The JSON is only parsed again if an old name occurs in it at all.
         final byte[] meta = importExportDocument.getExtAssetData(META);
         if (document == null || meta == null) {
             return document;
@@ -91,18 +96,18 @@ public class LearningFlowSerialiser implements DocumentSerialiser2<LearningFlowD
             return document;
         }
         LearningFlow flow = JsonUtil.getMapper().treeToValue(legacy, LearningFlow.class);
-        // Before A34 the section carried a preset in place of steps; a document that chose one gets its steps.
+        // Early documents named a preset flow instead of holding steps; such a document gets the preset's steps.
         final JsonNode preset = legacy.get(LEGACY_PRESET);
         if (preset != null && !preset.isNull() && (legacy.get("steps") == null || legacy.get("steps").isNull())) {
-            // A preset this build does not know — a renamed example, a hand-edited document — leaves the
-            // steps as the default rather than making the document unopenable, and so unrepairable.
+            // A preset name this build does not recognise (a renamed example, or a hand-edited document) gets
+            // the default steps, rather than making the document impossible to open and so to repair.
             flow = flow.withSteps(FlowExamples.steps(example(preset.asText())));
         }
         return document.copy().flow(flow).build();
     }
 
-    /// A document saved before A95 carried the chain question's elements as its own field: they go on its
-    /// Chain step, where the step names none of its own.
+    /// Documents saved by an earlier version held the chain question's elements in a document-level
+    /// property. Those elements are moved onto the Chain step, unless a Chain step already names elements.
     private static LearningFlowDoc legacyElements(final LearningFlowDoc document,
                                                     final ImportExportDocument importExportDocument)
             throws IOException {

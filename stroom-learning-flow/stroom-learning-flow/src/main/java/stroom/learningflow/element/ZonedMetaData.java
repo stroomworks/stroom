@@ -19,16 +19,16 @@ package stroom.learningflow.element;
 import stroom.meta.api.AttributeMap;
 import stroom.pipeline.state.MetaDataProvider;
 
-/// The stream's metadata with the resolved time zone added (decision N6).
+/// Wraps the stream's metadata to add the resolved time zone.
 ///
-/// A learned stylesheet reads the zone with `stroom:meta('ResolvedTimeZone')` and hands it to
+/// A learned stylesheet reads the zone with `stroom:meta('ResolvedTimeZone')` and passes it to
 /// `stroom:format-date`, so that a timestamp with no offset is read in the zone the feed is actually in.
-/// Resolving it here rather than letting the translation decide is what makes a zone change take effect
-/// without relearning — and it is why the model is never asked to assume one.
+/// Resolving the zone here rather than in the translation means a zone change takes effect without
+/// relearning, and the model is never asked to assume one.
 ///
-/// **The sender's own `TimeZone` attribute is left alone.** What the sender said and what the stage made
-/// of it are different things, and overwriting the first with the second would lose the evidence for why
-/// a date came out as it did.
+/// **The sender's own `TimeZone` attribute is left unchanged.** What the sender said and what was
+/// resolved from it are different things, and overwriting one with the other would lose the evidence for
+/// why a date came out as it did.
 public class ZonedMetaData implements MetaDataProvider {
 
     private final MetaDataProvider delegate;
@@ -41,8 +41,8 @@ public class ZonedMetaData implements MetaDataProvider {
         this.zone = zone;
     }
 
-    /// Adds the zone to a provider, replacing a zone added before rather than wrapping it again: one
-    /// pipeline scope serves one stream after another, and each must carry its own zone.
+    /// Adds the zone to a provider, replacing any zone added before rather than wrapping it again, because
+    /// one pipeline scope handles one stream after another and each must carry its own zone.
     ///
     /// @param provider The provider as it stands; null where nothing has set one.
     /// @param zone     The zone this stream's timestamps are read in.

@@ -44,20 +44,23 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.LongSupplier;
 
-/// What a Smart Pipeline's Quality Assurance tab reads and records of one learner (its pipeline and AI
-/// Translator element), held to the pipeline's permissions ([LearnerAccess]):
+/// Provides what a Smart Pipeline's Quality Assurance tab shows about one learner (a pipeline and its Smart
+/// Pipeline element). Access is checked against the pipeline's permissions by [LearnerAccess].
 ///
-/// - **Volume**: streams and records translated each day of the last fortnight (UTC), by the learner's
-///   translations ([Volumes]).
-/// - **Cardinality**: of the records its translation in use was learned and checked on ([RegressionSet]), how
-///   many became a real translation, a marked Unknown or nothing, and how many kinds of record it settled.
-/// - **Samples**: those records beside what they became, newest first, for someone who may also view data.
-///   Reading them reads the feed's data, so a stream the person may not read is left out by the store.
+/// The tab shows:
+///
+/// - **Volume**: the streams and records translated on each day of the last fortnight (UTC) by any of the
+///   learner's bindings ([Volumes]).
+/// - **Cardinality**: of the records the serving binding was learned and checked on (its corpus, in
+///   [RegressionSet]), how many became a real translation, a marked Unknown or no event, and how many
+///   distinct target kinds of record there are.
+/// - **Samples**: those records beside what they became, newest first, for a user who also has permission to
+///   view data. The records are the feed's data, so the store leaves out any stream the user may not read.
 public class QualityService {
 
-    /// How many days of volume are shown.
+    /// How many days of volume are shown, ending today.
     static final int DAYS = 14;
-    /// The most samples shown.
+    /// The maximum number of samples returned.
     static final int MOST_SAMPLES = 20;
     private static final long DAY_MS = 24L * 60 * 60 * 1000;
 
@@ -68,13 +71,13 @@ public class QualityService {
     private final Provider<RegressionSet> regressionSetProvider;
     private final LongSupplier clock;
 
-    /// Made by Guice.
+    /// Creates the service using the system clock.
     ///
-    /// @param access                  Who may do what with a learner.
-    /// @param securityContextProvider Who is asking.
-    /// @param learnerBindingsProvider A learner's translations.
-    /// @param volumesProvider         What its translations translated, day by day.
-    /// @param regressionSetProvider   The records its translation was learned and checked on.
+    /// @param access                  Checks whether the user may view a learner.
+    /// @param securityContextProvider The current user, for the view-data permission check.
+    /// @param learnerBindingsProvider Supplies a learner's bindings.
+    /// @param volumesProvider         Supplies the daily volumes translated by the bindings.
+    /// @param regressionSetProvider   Supplies the corpus records the serving binding was accepted on.
     @Inject
     public QualityService(final LearnerAccess access,
                           final Provider<SecurityContext> securityContextProvider,
@@ -85,7 +88,7 @@ public class QualityService {
                 System::currentTimeMillis);
     }
 
-    /// For tests, with the time given.
+    /// For tests, with a supplied clock.
     QualityService(final LearnerAccess access,
                    final Provider<SecurityContext> securityContextProvider,
                    final Provider<LearnerBindings> learnerBindingsProvider,
@@ -100,10 +103,12 @@ public class QualityService {
         this.clock = clock;
     }
 
-    /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its Smart Pipeline element.
-    /// @return Its volume over the last [#DAYS] days, every day present, and the cardinality of its translation
-    ///         in use.
+    /// Builds the volume and cardinality report for one learner.
+    ///
+    /// @param pipelineUuid The UUID of the pipeline.
+    /// @param elementId    The id of its Smart Pipeline element.
+    /// @return Its volume over the last [#DAYS] days, with a zero row for each day with no streams, and the
+    ///         cardinality of its serving binding's corpus.
     public QualityReport report(final String pipelineUuid, final String elementId) {
         final Learner learner = readable(pipelineUuid, elementId);
         final List<Binding> bindings = learnerBindingsProvider.get().forLearner(learner);
@@ -139,11 +144,13 @@ public class QualityService {
         return new QualityReport(days, serving, translated, unknown, none, kinds);
     }
 
-    /// @param pipelineUuid The pipeline.
-    /// @param elementId    Its Smart Pipeline element.
-    /// @return The records its translation in use was learned and checked on, newest first, at most
-    ///         [#MOST_SAMPLES]; empty where none is in use.
-    /// @throws PermissionException Where the person may not view data, which the records are.
+    /// Gets sample records from the learner's serving binding's corpus, each beside what it became.
+    ///
+    /// @param pipelineUuid The UUID of the pipeline.
+    /// @param elementId    The id of its Smart Pipeline element.
+    /// @return The records the serving binding was learned and checked on, newest first, at most
+    ///         [#MOST_SAMPLES]; empty if no binding is serving.
+    /// @throws PermissionException If the user lacks permission to view data, since the records are feed data.
     public List<QualitySample> samples(final String pipelineUuid, final String elementId) {
         final Learner learner = readable(pipelineUuid, elementId);
         if (!securityContextProvider.get().hasAppPermission(AppPermission.VIEW_DATA_PERMISSION)) {
@@ -164,7 +171,7 @@ public class QualityService {
         return samples;
     }
 
-    // The learner, where this person may view its pipeline (or, for a pipeline since deleted, its Learning Flow)
+    // Returns the learner if the user may view its pipeline (or, for a deleted pipeline, its Learning Flow)
     private Learner readable(final String pipelineUuid, final String elementId) {
         if (NullSafe.isBlankString(pipelineUuid) || NullSafe.isBlankString(elementId)) {
             throw new IllegalArgumentException("Say which pipeline and which of its elements");
@@ -177,7 +184,7 @@ public class QualityService {
         return learner;
     }
 
-    // The translation in use: the binding that isn't a draft
+    // The UUID of the serving binding, which is the one that isn't a draft
     private static Optional<String> serving(final List<Binding> bindings) {
         return bindings.stream()
                 .filter(binding -> !binding.isDraft())

@@ -48,24 +48,23 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.URIResolver;
 import javax.xml.transform.stream.StreamResult;
 
-/**
- * The {@code XSLTFilter} element as the Tier 1 harness runs it, standing in for the pipeline that runs it
- * on a node ({@link XsltStep} describes the element, and is what a node wraps): compile the candidate
- * stylesheet, then transform the input with it. Saxon is driven directly, as the filter drives it, but
- * without the filter's pooling, reference-data loaders or Stroom function library — so a candidate that
- * calls a {@code stroom:} function fails here where the filter would have served it. That is the
- * restricted library of design §11 arriving early, and it is the one respect in which this step is
- * stricter than the element it stands in for.
- * <p>
- * The stylesheet is untrusted (§11): it is refused every way out of the process — {@code document()},
- * {@code unparsed-text()}, {@code collection()}, {@code xsl:include}, {@code xsl:import} and external
- * entities — and a candidate that tries any of them fails with a diagnostic saying so. Those are refused
- * here as well as by the static check, so that the harness does not depend on the check having run.
- */
+/// Runs the `XSLTFilter` element for the in-memory scenario tests, in place of the real pipeline that runs
+/// it on a node ([XsltStep] describes the element, and is what a node wraps). It compiles the candidate
+/// stylesheet, then transforms the input with it.
+///
+/// Saxon is driven directly, as the filter drives it, but without the filter's pooling, reference data
+/// loaders or Stroom function library. Instead, a few `stroom:` functions are provided by
+/// [StroomStandIns]; a candidate calling any other `stroom:` function fails here where the filter would
+/// have run it. That is the one respect in which this step is stricter than the element it stands in for.
+///
+/// The stylesheet is untrusted, so every way it could read outside its input is refused: `document()`,
+/// `unparsed-text()`, `collection()`, `xsl:include`, `xsl:import` and external entities. A candidate
+/// that tries any of them fails with a diagnostic saying so. These are refused here as well as by the
+/// static check, so that the harness does not depend on the check having run.
 public final class StandInXsltStep implements StepRunner {
 
     private static final XsltStep DESCRIPTION = new XsltStep();
-    /// The stream being translated, which is all the stand-in `stroom:` functions may read.
+    /// The stream being translated, which is the only thing the stand-in `stroom:` functions may read.
     private final StreamFacts facts;
     private static final ElementId ELEMENT_ID = new ElementId(XsltStep.ELEMENT_ID);
     private static final String REFUSED = "A candidate stylesheet may not read external resources: ";
@@ -73,13 +72,15 @@ public final class StandInXsltStep implements StepRunner {
         throw new TransformerException(REFUSED + href);
     };
 
-    /// A step that knows nothing of the stream: a stylesheet calling a `stroom:` function that needs it
-    /// fails, saying so.
+    /// Creates a step that knows nothing about the stream, so that a stylesheet calling a `stroom:`
+    /// function that needs it fails, saying so.
     public StandInXsltStep() {
         this(StreamFacts.none());
     }
 
-    /// @param facts The stream being translated, for the stand-in `stroom:` functions.
+    /// Creates a step for the given stream.
+    ///
+    /// @param facts The stream being translated, for the stand-in `stroom:` functions; null means none.
     public StandInXsltStep(final StreamFacts facts) {
         this.facts = facts == null
                 ? StreamFacts.none()
@@ -106,12 +107,12 @@ public final class StandInXsltStep implements StepRunner {
         return prepare(configuration).run(input);
     }
 
-    /// The stylesheet compiled once, to be run over one record after another (§12 item 25): compiling is
-    /// the expensive half and it does not depend on the input, so a candidate is compiled for the
-    /// candidate and not for every record of the stream it is judged on.
+    /// Compiles the stylesheet once, to be run over one record after another. Compiling is the expensive
+    /// part and does not depend on the input, so a candidate is compiled once rather than for every record
+    /// of the stream it is judged on.
     ///
-    /// A stylesheet that will not compile fails once, here, and every record it would have been given
-    /// reports that one failure rather than its own copy of it.
+    /// A stylesheet that does not compile fails once, here, and every record it would have been given
+    /// reports that one failure.
     @Override
     public Prepared prepare(final String configuration) {
         final Diagnostics compiling = new Diagnostics();
@@ -145,8 +146,8 @@ public final class StandInXsltStep implements StepRunner {
                 transformer.setOutputProperty(OutputKeys.INDENT, "yes");
                 transformer.transform(ConfinedXml.source(input), new StreamResult(output));
             } catch (final TransformerException e) {
-                // Saxon reports through the listener before throwing, so this is only the rare fault
-                // nobody has yet recorded.
+                // Saxon reports through the listener before throwing, so this only records the rare
+                // fault that has not been reported already.
                 if (diagnostics.errors.stream().noneMatch(error -> error.getSeverity() == Severity.FATAL_ERROR)) {
                     diagnostics.record(Severity.FATAL_ERROR, e);
                 }
@@ -156,13 +157,11 @@ public final class StandInXsltStep implements StepRunner {
         };
     }
 
-    /**
-     * Closes every route by which a stylesheet could read outside its input. The include/import resolver
-     * is set on the factory, the {@code document()} resolver on each transformer — Saxon keeps them apart —
-     * and both refuse rather than return nothing. Saxon would then recover from a refused
-     * {@code document()} with a warning and an empty sequence, which is not a failure; recovery is turned
-     * off so that the attempt fails as the attempt it was.
-     */
+    /// Closes every route by which a stylesheet could read outside its input. The `xsl:include` and
+    /// `xsl:import` resolver is set on the factory, and the `document()` resolver on each transformer,
+    /// because Saxon keeps them separate; both refuse rather than return nothing. Saxon would recover from
+    /// a refused `document()` with a warning and an empty sequence, which is not a failure, so recovery is
+    /// turned off to make the attempt fail.
     private static void confine(final SaxonTransformerFactory factory) {
         final Configuration configuration = factory.getConfiguration();
         factory.setURIResolver(REFUSING_URI_RESOLVER);
@@ -174,14 +173,12 @@ public final class StandInXsltStep implements StepRunner {
             throw new XPathException(REFUSED + uri);
         });
         // External functions stay off, as SaxonSecurity leaves them, which refuses xsl:result-document
-        // and limits system-property(). The `stroom:` stand-ins registered above still work: they are
-        // registered in Java, which this setting does not govern.
+        // and limits system-property(). The `stroom:` stand-ins registered in prepare() still work,
+        // because they are registered in Java, which this setting does not cover.
         configuration.setRecoveryPolicy(Configuration.DO_NOT_RECOVER);
     }
 
-    /**
-     * Collects what Saxon reports, at the severity Saxon gave it, located as Saxon located it.
-     */
+    /// Collects what Saxon reports, with the severity and location Saxon gave it.
     private static final class Diagnostics implements ErrorListener {
 
         private final List<StoredError> errors = new ArrayList<>();
@@ -201,12 +198,10 @@ public final class StandInXsltStep implements StepRunner {
             record(Severity.FATAL_ERROR, e);
         }
 
-        /**
-         * An {@code xsl:message} as Stroom's {@code XSLTFilter} reads one: an error unless its first child
-         * element names a severity ({@code <warn>}, {@code <info>}), fatal if it terminates; the transform's
-         * own channel for a business rule it found broken (design 01 §8.4). Marked as code so that the
-         * business-rules scorer can tell the transform's messages from Saxon's.
-         */
+        /// Records an `xsl:message` as Stroom's `XSLTFilter` reads one: an error unless its first child
+        /// element names a severity (`<warn>`, `<info>`), and fatal if it terminates. A transform uses
+        /// messages to report a business rule it found broken. They are marked as code errors so that the
+        /// business rules scorer can tell the transform's messages from Saxon's.
         private void message(final XdmNode content, final boolean terminate, final SourceLocator locator) {
             Severity severity = terminate
                     ? Severity.FATAL_ERROR
@@ -249,10 +244,9 @@ public final class StandInXsltStep implements StepRunner {
                     message(e)));
         }
 
-        /**
-         * Saxon wraps a parser's or resolver's failure in a generic message of its own; the detail the
-         * model needs is in the cause.
-         */
+        /// Builds the message for an error, adding the cause's message. Saxon wraps a parser's or
+        /// resolver's failure in a generic message of its own, and the detail the model needs is in the
+        /// cause.
         private static String message(final TransformerException e) {
             final Throwable cause = e.getCause();
             return cause == null || cause.getMessage() == null || e.getMessage().contains(cause.getMessage())

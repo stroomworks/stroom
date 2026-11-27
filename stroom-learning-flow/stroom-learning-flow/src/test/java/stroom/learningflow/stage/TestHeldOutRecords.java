@@ -22,12 +22,11 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Audit finding S5: **the held-out fraction applies to XML and JSON, not only to text.**
+/// Tests that the held-out fraction applies to XML and JSON streams, not only to text.
 ///
-/// A14 is that a promotion is judged on records the model never saw. For a markup or JSON stream within
-/// the sample size limit the whole document used to be shown, so there were no such records — while the
-/// editor said there were: *"the share of a stream's records withheld from the model and used only to
-/// judge promotion"*.
+/// A promotion is judged on records the model never saw. The held-out fraction is the share of a stream's
+/// records withheld from the model and used only to judge promotion, so an XML or JSON stream within the
+/// sample size limit must still have its share held back rather than being shown whole.
 class TestHeldOutRecords {
 
     private static final int RECORDS = 10;
@@ -50,8 +49,8 @@ class TestHeldOutRecords {
 
     @Test
     void nothingHeldBackShowsTheStreamAsItCame() {
-        // And byte for byte, rather than the same document rebuilt with its whitespace changed: a model
-        // shown a reformatted stream is being shown something the parser will never see
+        // Byte for byte, rather than the same document rebuilt with its whitespace changed, because a model
+        // shown a reformatted stream is shown something the parser will never see
         assertThat(LearningPrefix.learningPrefix(xml(), doc(0.0))).isEqualTo(xml());
         assertThat(LearningPrefix.learningPrefix(json(), doc(0.0))).isEqualTo(json());
     }
@@ -64,8 +63,10 @@ class TestHeldOutRecords {
         assertThat(LearningPrefix.learningPrefix(one, doc(0.9))).contains("<id>0</id>");
     }
 
-    /// @param heldOut The share to hold back.
-    /// @return A document with that held-out fraction and a limit nothing here reaches.
+    /// Builds a document with a given held-out fraction.
+    ///
+    /// @param heldOut The share of records to hold back.
+    /// @return A document with that held-out fraction and a sample size limit no test here reaches.
     private static LearningFlowDoc doc(final double heldOut) {
         return LearningFlowDoc.builder()
                 .uuid("d")

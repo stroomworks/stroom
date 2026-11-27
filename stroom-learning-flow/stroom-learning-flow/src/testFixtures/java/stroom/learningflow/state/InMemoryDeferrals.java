@@ -24,8 +24,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-/// The deferral rows as a list: what scenarios inspect, node-local and gone on restart. Every method is
-/// synchronised: one node's tasks share it.
+/// An in-memory [Deferrals], held as a list that scenarios can inspect. It is local to one node and lost
+/// on restart. Every method is synchronised, because one node's tasks share it.
 public final class InMemoryDeferrals implements Deferrals {
 
     private final List<Deferral> rows = new ArrayList<>();
@@ -64,8 +64,7 @@ public final class InMemoryDeferrals implements Deferrals {
         return before - rows.size();
     }
 
-    /// The streams waiting on the learner, brought to the document it runs under (see
-    /// [InMemoryLearners]).
+    /// Updates the learner's waiting streams to the document it runs under (see [InMemoryLearners]).
     ///
     /// @param learner The learner.
     /// @param docUuid The document.
@@ -86,16 +85,16 @@ public final class InMemoryDeferrals implements Deferrals {
 
     @Override
     public synchronized List<Stamp> stampsWaiting() {
-        // Rows with no stamp included (W7-4): a stream waiting for a first learning fell short of
-        // nothing, and leaving it out left it to the retry delay.
+        // Rows with no stamp are included. A stream waiting for a first learning failed against no
+        // binding, and if it were left out it would wait for the full retry delay.
         return rows.stream()
                 .map(row -> new Stamp(row.learner(), row.failedAgainst()))
                 .distinct()
                 .toList();
     }
 
-    /// What waits on the learners of a pipeline, oldest first: what waking the pipeline wakes (see
-    /// [InMemoryWake]).
+    /// Returns the streams waiting on the learners of a pipeline, oldest first, which are what waking the
+    /// pipeline wakes (see [InMemoryWake]).
     ///
     /// @param pipelineUuid The pipeline.
     /// @return Its rows.
@@ -118,7 +117,9 @@ public final class InMemoryDeferrals implements Deferrals {
                 .toList(), mine.size());
     }
 
-    /// @return Every waiting stream, for the learning pipelines list.
+    /// Returns every waiting stream, for the in-memory learning pipelines list.
+    ///
+    /// @return Every waiting stream.
     public synchronized List<Deferral> all() {
         return List.copyOf(rows);
     }

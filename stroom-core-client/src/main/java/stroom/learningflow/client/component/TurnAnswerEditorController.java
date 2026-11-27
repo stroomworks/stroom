@@ -30,22 +30,24 @@ import edu.ycp.cs.dh.acegwt.client.ace.AceEditorMode;
 
 import java.util.function.Consumer;
 
-/// Answers a turn in place of whoever answered it (A28), in a dialog ([TurnAnswerEditor]).
+/// Shows a dialog ([TurnAnswerEditor]) in which a person answers a turn of a learning run in place of the
+/// model, or views or edits the answer the turn already has. It is opened from a Smart Pipeline's Learning
+/// Status tab.
 ///
-/// An editor and not a prompt box, because an answer is often a configuration (a Data Splitter document,
-/// a stylesheet) and a single-line box cannot hold one, let alone show a person what they are editing.
+/// It uses a code editor rather than a simple text box because an answer is often a configuration (a Data
+/// Splitter document or an XSLT stylesheet), which a person needs to see laid out to edit.
 ///
-/// Not modal: what it answers is taken when it is opened, so the list behind it may be read, and moved
-/// about, while it is open.
+/// The dialog is not modal. The turn being answered is fixed when the dialog opens, so the list behind it can
+/// still be read and scrolled while it is open.
 public class TurnAnswerEditorController extends Controller {
 
     private final CodeEditorController editor;
 
-    /// Made by GIN, with its editor.
+    /// Made by GIN.
     ///
     /// @param eventBus                     The application's event bus.
-    /// @param view                         Its component.
-    /// @param codeEditorControllerProvider Makes the code editor's controller.
+    /// @param view                         The dialog's content.
+    /// @param codeEditorControllerProvider Makes the controller for the code editor in the dialog.
     @Inject
     public TurnAnswerEditorController(final EventBus eventBus,
                                       final TurnAnswerEditor view,
@@ -57,13 +59,13 @@ public class TurnAnswerEditorController extends Controller {
         editor.getOptions().getLineNumbersOption().setOn();
     }
 
-    /// Shows an answer as a dialog, owned by `opener` until it is closed.
+    /// Shows an answer in a dialog, owned by `opener` until it is closed.
     ///
-    /// @param opener   What shows it.
+    /// @param opener   The controller that opens the dialog and owns it while it is shown.
     /// @param caption  The dialog's caption, naming the turn and its question.
-    /// @param answer   The answer as it stands, perhaps empty.
-    /// @param readOnly Whether it may only be read: it then closes without asking anything.
-    /// @param onOk     Given the answer as edited when OK is pressed; never where it may only be read.
+    /// @param answer   The current answer, which may be empty.
+    /// @param readOnly Whether the answer may only be viewed. If so, the dialog has only a Close button.
+    /// @param onOk     Called with the edited answer when OK is pressed. Never called when `readOnly` is true.
     public void edit(final HasControllerNode opener,
                      final String caption,
                      final String answer,

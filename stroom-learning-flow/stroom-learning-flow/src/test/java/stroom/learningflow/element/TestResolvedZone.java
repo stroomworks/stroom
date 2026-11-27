@@ -24,13 +24,13 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Which zone a timestamp with no offset is read in (decision N6, option F): the stream's header, else
-/// the pipeline's property, else UTC.
+/// Tests how the time zone for reading timestamps that carry no offset is chosen: the stream's header if it
+/// has one, otherwise the pipeline's property, otherwise UTC. An invalid value is reported, not ignored.
 class TestResolvedZone {
 
     @Test
     void theStreamsOwnHeaderWins() {
-        // The sender knows best: it said what zone its data is written in
+        // The sender knows best, because it has said what zone its data is written in
         final ResolvedZone zone = ResolvedZone.of("Europe/London", "America/New_York");
 
         assertThat(zone.id()).isEqualTo("Europe/London");
@@ -58,7 +58,7 @@ class TestResolvedZone {
 
     @Test
     void aHeaderThatIsNotAZoneIsReportedRatherThanIgnored() {
-        // A misspelt zone would otherwise put every event hours out with nothing said
+        // Otherwise a misspelt zone would silently put every event's time hours out
         final ResolvedZone zone = ResolvedZone.of("Europe/Londn", null);
 
         assertThat(zone.id()).isEqualTo("UTC");
@@ -71,7 +71,7 @@ class TestResolvedZone {
 
     @Test
     void aBadHeaderFallsBackToThePipelineAndSaysSo() {
-        // The sender said something wrong, which is not a reason to stop translating
+        // A bad header from the sender is not a reason to stop translating
         final ResolvedZone zone = ResolvedZone.of("nonsense", "Europe/London");
 
         assertThat(zone.id()).isEqualTo("Europe/London");
@@ -98,8 +98,8 @@ class TestResolvedZone {
 
     @Test
     void theZoneIsAddedToTheMetadataWithoutLosingWhatTheSenderSaid() {
-        // What the sender said and what the stage made of it are different things: overwriting the first
-        // with the second would lose the evidence for why a date came out as it did
+        // The resolved zone is added under its own key. Overwriting the sender's header with it would lose the
+        // evidence of why a date came out as it did
         final AttributeMap attributes = new AttributeMap();
         attributes.put(ResolvedZone.HEADER, "Europe/Londn");
 
@@ -114,8 +114,8 @@ class TestResolvedZone {
 
     @Test
     void wrappingTwiceDoesNotStackTheZones() {
-        // One pipeline scope serves one stream after another, and each must carry its own zone rather
-        // than the first one's
+        // One pipeline scope processes one stream after another, and each stream must use its own zone rather
+        // than the first stream's
         final MetaDataProvider first = ZonedMetaData.wrapping(holding(new AttributeMap()),
                 ResolvedZone.of("Europe/London", null));
         final MetaDataProvider second =
@@ -124,10 +124,10 @@ class TestResolvedZone {
         assertThat(second.get(ResolvedZone.KEY)).isEqualTo("America/New_York");
     }
 
-    /// A provider over a fixed map, standing for the one a pipeline builds.
+    /// Creates a metadata provider over a fixed map, standing in for the one a pipeline builds.
     ///
     /// @param attributes The stream's attributes.
-    /// @return The provider.
+    /// @return A provider that reads from `attributes`.
     private static MetaDataProvider holding(final AttributeMap attributes) {
         return new MetaDataProvider() {
             @Override

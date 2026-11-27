@@ -25,12 +25,12 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Widget;
 
-/// The content of the dialog that gives a parked session more to spend (A65, A77): what it has spent and
-/// been granted against its document's budgets, then more tokens over its life and more minutes for each
-/// run (design 06 A145). [GrantEditorController] shows it.
+/// The content of the dialog that gives a parked session more to spend. It shows what the session has spent
+/// and been granted compared with its document's budgets, then fields for more tokens, which apply over the
+/// session's whole life, and more minutes, which apply to each run. [GrantEditorController] shows it.
 public class GrantEditor extends Component {
 
-    // A grant is bounded only so that a slip of the keyboard cannot grant a session the earth: a billion
+    // A grant is limited only to stop a typing mistake granting a session a huge amount: at most a billion
     // tokens, and a day for each run.
     private static final long MAX_TOKENS = 1_000_000_000L;
     private static final long MAX_MINUTES = 24L * 60L;
@@ -44,7 +44,7 @@ public class GrantEditor extends Component {
     @UiField
     ValueSpinner minutes;
 
-    /// Makes an empty editor, granting nothing.
+    /// Creates an empty editor, granting nothing.
     public GrantEditor() {
         initWidget(BINDER.createAndBindUi(this));
         tokens.setMin(0L);
@@ -55,27 +55,27 @@ public class GrantEditor extends Component {
         minutes.setDelta(1);
     }
 
-    /// @param text What the session has spent and been granted, against its document's budgets.
+    /// @param text What the session has spent and been granted, compared with its document's budgets.
     public void setSoFar(final String text) {
         soFar.setText(text);
     }
 
-    /// @return More tokens to grant, nought for none.
+    /// @return The extra tokens to grant, or zero for none.
     public long getTokens() {
         return value(tokens);
     }
 
-    /// @param value More tokens to grant.
+    /// @param value The extra tokens to grant.
     public void setTokens(final long value) {
         tokens.setValue(value);
     }
 
-    /// @return More minutes to grant each run, nought for none.
+    /// @return The extra minutes to grant each run, or zero for none.
     public long getMinutes() {
         return value(minutes);
     }
 
-    /// @param value More minutes to grant each run.
+    /// @param value The extra minutes to grant each run.
     public void setMinutes(final long value) {
         minutes.setValue(value);
     }

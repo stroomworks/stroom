@@ -47,15 +47,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/// The corpus as a node keeps it (A18; design 04 §4.1): the entries of each promotion as one stream on
-/// the **source feed**, of its own type, one entry per segment; and a row per entry in the index naming
-/// the stream and segment. Kept on the feed the records came from so that the copy carries the feed's
-/// classification and lives under the feed's retention rules, as A18 asks: a corpus that outlived the
-/// data it was taken from would be the data, kept.
+/// The node's storage for the regression corpus: the records a binding was accepted on, each with the
+/// output it was accepted with. The entries of each promotion are written as one stream on the **source
+/// feed**, with its own stream type and one entry per segment, and the index ([CorpusIndex]) holds a row
+/// per entry naming the stream and segment. The corpus is kept on the feed the records came from so that
+/// it carries the feed's classification and is subject to the feed's retention rules; a corpus that
+/// outlived the data it was taken from would amount to keeping that data.
 ///
-/// A stream is written once and never appended to, which is what a stream is; a promotion's entries are a
-/// stream, and a binding's corpus is however many streams its promotions wrote, read through the index. The
-/// cap (A63) drops rows, and a stream no row names any more is logically deleted.
+/// Streams are written once and never appended to. Each promotion's entries form one stream, and a
+/// binding's corpus is all the streams its promotions wrote, read through the index. The document's
+/// regression cap is applied by dropping rows, and a stream that no row refers to any more is logically
+/// deleted.
 @Singleton
 public class StoredRegressionSet implements RegressionSet {
 
@@ -75,7 +77,7 @@ public class StoredRegressionSet implements RegressionSet {
     @Override
     public List<Accepted> accepted(final String bindingUuid) {
         final List<Row> rows = index.rows(bindingUuid);
-        // Each stream read once, however many of its segments the binding still names.
+        // Read each stream once, however many of its segments the binding still refers to.
         final Map<Long, List<String>> streams = new LinkedHashMap<>();
         final List<Accepted> accepted = new ArrayList<>();
         for (final Row row : rows) {
@@ -86,9 +88,10 @@ public class StoredRegressionSet implements RegressionSet {
                         entry.output(), row.kind(), row.score(), row.attemptId(), row.acceptTimeMs(),
                         entry.target()));
             } else {
-                // The stream is gone — retention took it, or a person did — or holds less than the row
-                // says, or this user may not read the feed's data, which the corpus is. An entry nobody
-                // can read holds nothing to anything; it is left out and said.
+                // The stream has gone (removed by retention or by a person), holds fewer entries than the
+                // row says, or this user may not read the feed's data, which is what the corpus is. An
+                // entry that cannot be read cannot hold a candidate to anything, so it is left out and
+                // logged.
                 LOGGER.warn(() -> LogUtil.message("Corpus entry for binding {} names segment {} of stream {}, "
                                                   + "which cannot be read: deleted, or not this user's to read",
                         bindingUuid, row.segment(), row.metaId()));
@@ -107,8 +110,8 @@ public class StoredRegressionSet implements RegressionSet {
         if (entries.isEmpty()) {
             return;
         }
-        // Said here rather than by the store, which would make a stream on no feed or fail somewhere less
-        // telling.
+        // Checked here rather than left to the store, which would create a stream with no feed or fail
+        // with a less helpful message.
         Objects.requireNonNull(feed, "The feed to keep binding " + bindingUuid + "'s records on");
         final long metaId = write(feed, entries);
         final List<Row> rows = new ArrayList<>();
@@ -121,7 +124,7 @@ public class StoredRegressionSet implements RegressionSet {
         delete(index.trim(bindingUuid, cap));
     }
 
-    /// The feed of the stream the binding's newest entry is in.
+    /// Gets the feed of the stream that holds the binding's newest entry.
     @Override
     public Optional<String> feedOf(final String bindingUuid) {
         final List<Row> rows = index.rows(bindingUuid);
@@ -143,13 +146,13 @@ public class StoredRegressionSet implements RegressionSet {
         delete(index.trim(toBindingUuid, cap));
     }
 
-    /// One stream for the entries, one segment per entry, each a line of JSON: the segment is what the
-    /// row names, and the line is what a person opening the stream reads.
+    /// Writes the entries as one stream, with one segment per entry, each a line of JSON. The index rows
+    /// refer to entries by segment, and a person opening the stream sees one line per entry.
     private long write(final String feed, final List<Accepted> entries) {
         final MetaProperties properties = MetaProperties.builder()
                 .feedName(feed)
-                // The stream type the corpus is written as, so that it can be told from the feed's own data and from
-                // what the pipeline produced
+                // The corpus has its own stream type, so that it can be told apart from the feed's own data
+                // and from what the pipeline produced.
                 .typeName(StreamTypeNames.LEARNING_FLOW_CORPUS)
                 .build();
         try (final Target target = store.openTarget(properties)) {
@@ -164,8 +167,8 @@ public class StoredRegressionSet implements RegressionSet {
                             .getBytes(StandardCharsets.UTF_8));
                 }
             } catch (final IOException | RuntimeException e) {
-                // A stream half written names nothing and would sit on the feed as data: taken off before
-                // the failure is reported.
+                // A half-written stream is not referenced by any row and would sit on the feed as data, so
+                // it is deleted before the failure is reported.
                 target.logicallyDelete();
                 throw e;
             }
@@ -190,7 +193,7 @@ public class StoredRegressionSet implements RegressionSet {
         metaIds.forEach(metaService::delete);
     }
 
-    /// What a segment holds: the entry's text, the index holding the rest.
+    /// What a segment holds: the entry's text. The index holds the rest of the entry's details.
     private record Entry(String record,
                          String text,
                          String preamble,

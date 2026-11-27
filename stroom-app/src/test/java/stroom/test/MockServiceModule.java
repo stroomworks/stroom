@@ -117,8 +117,9 @@ public class MockServiceModule extends AbstractModule {
         install(new stroom.pipeline.xsltfunctions.CommonXsltFunctionModule());
         install(new stroom.pipeline.xsltfunctions.DataStoreXsltFunctionModule());
         install(new stroom.pipeline.refdata.ReferenceDataModule());
-        // The mock task service, with its wake made real over the mock task DAO (design 04 §5.3): what
-        // stroom.processor.mock.MockProcessorModule binds, and nothing else.
+        // The mock task service, but with a working wake over the mock task DAO, so that a Learning Flow
+        // promotion can move its pipeline's deferred tasks back to CREATED. Otherwise it is what
+        // stroom.processor.mock.MockProcessorModule binds.
         bind(ProcessorTaskService.class).to(WakingMockProcessorTaskService.class);
         install(new MockResourceModule());
         install(new stroom.task.impl.MockTaskModule());
@@ -132,7 +133,7 @@ public class MockServiceModule extends AbstractModule {
         install(new MockClusterLockModule());
         install(new MockAiModule());
         install(new LearningFlowTestModule());
-        // No database in this harness: the runtime state of A26 is in memory (design 02 §2, tier 1's reach).
+        // There is no database in this harness, so Learning Flow's runtime state is held in memory.
         install(new stroom.learningflow.state.InMemoryStateModule());
         install(new stroom.core.entity.event.EntityEventModule());
 

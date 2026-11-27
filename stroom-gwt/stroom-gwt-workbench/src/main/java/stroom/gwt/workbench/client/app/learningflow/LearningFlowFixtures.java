@@ -22,15 +22,15 @@ import stroom.gwt.workbench.client.app.rest.RestFixtures;
 import stroom.gwt.workbench.client.app.rest.RestReply;
 import stroom.learningflow.shared.LearningFlowDoc;
 
-/// The replies the Learning Flow stories share: a document, the built-in texts its node serves, and what
-/// the Supervisor says about its feeds.
+/// The fake REST replies shared by the Learning Flow stories: a document, the built-in texts the node
+/// serves, and the Supervisor's replies about the document's feeds and learning runs.
 final class LearningFlowFixtures {
 
     static final DocRef DOC_REF = new DocRef(LearningFlowDoc.TYPE, "ss-1", "Firewall logs");
 
-    /// `GET /learningFlow/v1/{uuid}`: learning on, a model, a target schema, checks of its own (the
-    /// Standard ones, with business rules as advice, with one assertion), and a flow of two steps, the second
-    /// going back to the first when it doesn't read all the input.
+    /// The reply to `GET /learningFlow/v1/{uuid}`: a document with learning on, a model, a target schema, its
+    /// own checks (the Standard ones, but with business rules as advice with one assertion), and a flow of
+    /// two steps, where the second goes back to the first when the parser doesn't read all the input.
     static final String DOC = """
             {"type": "LearningFlow", "uuid": "ss-1", "name": "Firewall logs",
               "description": "# Firewall logs",
@@ -55,34 +55,34 @@ final class LearningFlowFixtures {
                   {"kind": "CONFIGURE", "role": "PARSER", "id": "parse",
                     "transitions": [{"on": "COVERAGE_SHORT", "goTo": "chain"}]}]}}""";
 
-    /// [#DOC] targeting a schema that isn't event-logging, which has no marked Unknown for the fallback to
-    /// write.
+    /// [#DOC] with a target schema that isn't event-logging, so it has no marked Unknown for the fallback
+    /// to write.
     static final String OTHER_SCHEMA_DOC = DOC.replace(
             "{\"type\": \"XMLSchema\", \"uuid\": \"schema-1\", \"name\": \"event-logging v4.1.0\"}",
             "{\"type\": \"XMLSchema\", \"uuid\": \"schema-2\", \"name\": \"sightings v2.4\"}");
 
-    /// [#DOC] targeting a schema whose root may hold a header beside its records, each of which would be
-    /// read as a record.
+    /// [#DOC] with a target schema whose root may hold a header beside its records, so the header would be
+    /// read as a record too.
     static final String HEADED_SCHEMA_DOC = DOC.replace(
             "{\"type\": \"XMLSchema\", \"uuid\": \"schema-1\", \"name\": \"event-logging v4.1.0\"}",
             "{\"type\": \"XMLSchema\", \"uuid\": \"schema-3\", \"name\": \"batches v1\"}");
 
-    /// `GET /learningFlow/v1/targetSchema/schema-1`: event-logging, the target of [#DOC].
+    /// The reply to `GET /learningFlow/v1/targetSchema/schema-1`: event-logging, the target of [#DOC].
     private static final String EVENT_LOGGING_SCHEMA = """
             {"name": "event-logging v4.1.0", "eventLogging": true, "rootElement": "Events",
               "rootChildren": ["Event"]}""";
-    /// `GET /learningFlow/v1/targetSchema/schema-2`: a schema that isn't event-logging, the target of
-    /// [#OTHER_SCHEMA_DOC].
+    /// The reply to `GET /learningFlow/v1/targetSchema/schema-2`: a schema that isn't event-logging, the
+    /// target of [#OTHER_SCHEMA_DOC].
     private static final String SIGHTINGS_SCHEMA = """
             {"name": "sightings v2.4", "eventLogging": false, "rootElement": "Sightings",
               "rootChildren": ["Sighting"]}""";
-    /// `GET /learningFlow/v1/targetSchema/schema-3`: a schema whose root may hold a header beside its
-    /// records, the target of [#HEADED_SCHEMA_DOC].
+    /// The reply to `GET /learningFlow/v1/targetSchema/schema-3`: a schema whose root may hold a header
+    /// beside its records, the target of [#HEADED_SCHEMA_DOC].
     private static final String BATCHES_SCHEMA = """
             {"name": "batches v1", "eventLogging": false, "rootElement": "Batch",
               "rootChildren": ["Header", "Record"]}""";
 
-    /// A document as it is made: learning off, no model, the Standard checks, the direct flow. It won't
+    /// A newly created document: learning off, no model, the Standard checks and the Direct flow. It won't
     /// learn anything, and its Pipelines tab says so.
     static final String NEW_DOC = """
             {"type": "LearningFlow", "uuid": "ss-1", "name": "Firewall logs",
@@ -96,7 +96,7 @@ final class LearningFlowFixtures {
                 {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
                 {"kind": "ADMIT"}]}}""";
 
-    /// A document whose checks are all off but compile: the Pipelines tab says nearly any answer would pass,
+    /// A document with every check off except compile. Its Pipelines tab says nearly any answer would pass,
     /// and offers the Standard checks.
     static final String NO_GATES_DOC = """
             {"type": "LearningFlow", "uuid": "ss-1", "name": "Firewall logs",
@@ -116,27 +116,27 @@ final class LearningFlowFixtures {
                 {"kind": "CONFIGURE", "role": "TRANSFORM", "transitions": [{"goTo": "admit"}]},
                 {"kind": "ADMIT"}]}}""";
 
-    /// [#DOC] with the coverage check switched off, though its second step still has a rule that fires when
-    /// the records don't read all the input: the step's card warns that the rule never fires.
+    /// [#DOC] with the coverage check switched off, although its second step still has a rule that fires
+    /// when the parser doesn't read all the input. The step's card warns that the rule never fires.
     static final String RULE_ON_OFF_CHECK_DOC = DOC.replace(
             "{\"check\": \"COMPILE\", \"state\": \"GATE\"},",
             "{\"check\": \"COMPILE\", \"state\": \"GATE\"}, {\"check\": \"COVERAGE\", \"state\": \"OFF\"},");
 
-    /// [#DOC] with its first step naming the element types to choose from itself, one of which, XMLParser,
+    /// [#DOC] with its first step listing its own element types to choose from, one of which, XMLParser,
     /// the AI can't learn.
     static final String DOC_UNLEARNABLE = DOC.replace("{\"kind\": \"CHAIN\", \"id\": \"chain\"}",
             "{\"kind\": \"CHAIN\", \"id\": \"chain\", \"elements\": [\"XMLParser\", \"XSLTFilter\"]}");
 
-    /// `GET /learningFlow/v1/templates`: the built-in texts.
+    /// The reply to `GET /learningFlow/v1/templates`: the built-in question texts.
     static final String TEMPLATES = """
             {"version": 1, "templates": {
               "SYSTEM": "You write Stroom pipelines.",
               "CHAIN": "Choose the elements of the chain.",
               "CONFIGURATION": "Configure the parser."}}""";
 
-    /// `GET /learningFlow/v1/flowExamples`: the built-in default setups (Track 2 step 1c). The client
-    /// names a document's approach against these and loads one from them, so a story that shows the Setup
-    /// tab needs them stubbed; `Direct` is spelled out because `NEW_DOC` is it.
+    /// The reply to `GET /learningFlow/v1/flowExamples`: the built-in default setups. The client compares a
+    /// document's flow with these to name its approach, and loads a setup from them, so any story that shows
+    /// the Setup tab needs them. `Direct` is given in full because [#NEW_DOC] uses it.
     static final String FLOW_EXAMPLES = """
             [{"example": "DIRECT", "displayValue": "Direct", "steps": [
                 {"kind": "CHAIN", "when": "ALWAYS"},
@@ -169,7 +169,7 @@ final class LearningFlowFixtures {
     private static final String DOC_JSON = "{\"type\": \"LearningFlow\", \"uuid\": \"ss-1\", "
                                            + "\"name\": \"Firewall logs\"}";
 
-    /// The firewall's learner: its pipeline waiting for a person, with two streams waiting. A learner's state
+    /// The firewall pipeline's learner, waiting for a person, with two streams waiting. A learner's state
     /// and a run's status are sent as their display values.
     static final String FIREWALL_LEARNER = """
             {"learner": {"pipelineUuid": "p-1", "elementId": "learningFlow"}, "doc": DOC,
@@ -178,23 +178,24 @@ final class LearningFlowFixtures {
               "belowThreshold": false, "pipelineDeleted": false,
               "lastSessionMs": 1761800600000, "oldestWaitMs": 1761700000000}""".replace("DOC", DOC_JSON);
 
-    /// The firewall's learner, which would learn but for its Learning Flow's spend ceiling (A24, Track 2 step 4).
+    /// The firewall pipeline's learner, which would be learning but is paused because its Learning Flow has
+    /// reached its hourly spending limit.
     static final String FIREWALL_SPEND_PAUSED = FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
             "\"state\": \"Learning\", \"spendPaused\": \"This Learning Flow spent 1500 token(s) in the last "
             + "hour, which is its ceiling of 1000. No new learning starts until the hour rolls; what is already "
             + "learning finishes.\",");
 
-    /// The firewall's learner, its pipeline reading timestamps in its own zone (decision N6, Track 2 step 4).
+    /// The firewall pipeline's learner, where the pipeline sets the time zone used to read timestamps.
     static final String FIREWALL_ZONED = FIREWALL_LEARNER.replace("\"belowThreshold\": false,",
             "\"belowThreshold\": false, \"timeZone\": \"Europe/London\", \"timeZoneSource\": \"PIPELINE\",");
 
-    /// The firewall's learner translating with what it learned: its pipeline's learned translation, as the
-    /// Learning Status tab links to it.
+    /// The firewall pipeline's learner serving with what it learned, including the learned translation that
+    /// the Learning Status tab links to.
     static final String FIREWALL_TRANSLATING = FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
             "\"state\": \"Serving\", \"bindingUuid\": \"b-2\", \"fragment\": {\"type\": \"Pipeline\", "
             + "\"uuid\": \"f-2\", \"name\": \"Firewall pipeline learned\"}, \"promotedScore\": 0.97,");
 
-    /// The proxy's learner: its pipeline translating.
+    /// The proxy pipeline's learner, serving.
     static final String PROXY_LEARNER = """
             {"learner": {"pipelineUuid": "p-3", "elementId": "learningFlow"}, "doc": DOC,
               "pipeline": {"type": "Pipeline", "uuid": "p-3", "name": "Proxy pipeline"},
@@ -204,16 +205,16 @@ final class LearningFlowFixtures {
               "waiting": 0, "guidance": 0, "raised": false, "belowThreshold": false,
               "pipelineDeleted": false, "lastSessionMs": 1761600000000}""".replace("DOC", DOC_JSON);
 
-    /// `POST /learningFlowSupervisor/v1/learners` for the document: the firewall's pipeline and the
-    /// proxy's.
+    /// The reply to `POST /learningFlowSupervisor/v1/learners` for the document: the learners of the firewall
+    /// and proxy pipelines.
     static final String LEARNERS = "{\"values\": [" + FIREWALL_LEARNER + ", " + PROXY_LEARNER + "], "
                                    + "\"pageResponse\": {\"offset\": 0, \"length\": 2, \"total\": 2, "
                                    + "\"exact\": true}}";
 
-    /// The question the paused run stopped at, as a turn records it.
+    /// The question the paused run stopped at, as its turn records it.
     static final String TURN_4 = "Configure: dsParser TextConverter, after 1 shortfall(s)";
 
-    // The paused run's parser answer, a configuration of several lines, as JSON carries it
+    // The paused run's parser answer, a multi-line configuration, escaped as it appears in JSON.
     private static final String PARSER = String.join("\\n",
             "<dataSplitter xmlns='data-splitter:3' version='3.0'>",
             "  <split delimiter='\\\\n'>",
@@ -225,8 +226,8 @@ final class LearningFlowFixtures {
             "  </split>",
             "</dataSplitter>");
 
-    // The firewall's run: the chain, a parser that didn't read all the input and went back to the chain,
-    // the chain again, and the parser asked again, where it ran out of time
+    // The turns of the firewall's run: the chain, a parser that didn't read all the input and so went back
+    // to the chain, the chain again, and the parser asked again, at which point the run ran out of time.
     private static final String TURNS = """
             [{"number": 1, "stepId": "chain", "kind": "CHAIN", "candidate": 1,
                "question": "Chain: choose from [dsParser, xmlFragmentParser, xslt]",
@@ -244,8 +245,8 @@ final class LearningFlowFixtures {
             .replace("PARSER", PARSER)
             .replace("TURN_4", TURN_4);
 
-    /// `GET /learningFlowSupervisor/v1/7`: the firewall's run, paused out of time, with its report as the
-    /// engine writes it: the error, the details and the suggestions.
+    /// The reply to `GET /learningFlowSupervisor/v1/7`: the firewall's run, parked because it ran out of
+    /// time, with its report as the server writes it (the error, the details and the suggestions).
     static final String PAUSED = """
             {"id": 7, "learner": {"pipelineUuid": "p-1", "elementId": "learningFlow"}, "doc": DOC,
               "status": "Parked", "feed": "FIREWALL", "type": "Raw Events", "node": "node1a",
@@ -260,7 +261,8 @@ final class LearningFlowFixtures {
                   {"text": "Raise \\"Time for each run\\" on the Setup tab.", "action": "CHANGE_LIMITS"}]},
               "turns": TURNS}""".replace("DOC", DOC_JSON).replace("TURNS", TURNS);
 
-    /// The firewall's run as it would be had the model not replied in time: failed, its learner as it was.
+    /// The firewall's run as it would be if the model had not replied in time: failed, with its learner
+    /// unchanged.
     static final String FAILED = """
             {"id": 7, "learner": {"pipelineUuid": "p-1", "elementId": "learningFlow"}, "doc": DOC,
               "status": "Error", "feed": "FIREWALL", "type": "Raw Events", "node": "node1a",
@@ -277,11 +279,12 @@ final class LearningFlowFixtures {
                   {"text": "Or choose a faster model on the Setup tab.", "action": "CHANGE_MODEL"}]},
               "turns": TURNS}""".replace("DOC", DOC_JSON).replace("TURNS", TURNS);
 
-    /// The firewall's run stopped with a report, for a story of each kind of stop: its status, its decision
-    /// (the report's error line), the report as the engine writes it, and the turns of [#PAUSED].
+    /// Builds the firewall's run stopped with a report, for the stories of each kind of stop. It has the
+    /// given status, its decision is the report's error line, its report is as the server writes it, and
+    /// its turns are those of [#PAUSED].
     ///
     /// @param status The run's status as JSON names it, e.g. "Parked", "Error" or "Abandoned".
-    /// @param error  The report's error line.
+    /// @param error  The report's error line, also used as the run's decision.
     /// @param report The report, as JSON.
     /// @return The run, as JSON.
     static String firewallRun(final String status, final String error, final String report) {
@@ -299,8 +302,8 @@ final class LearningFlowFixtures {
                 .replace("REPORT", report);
     }
 
-    // How the firewall's new translation was judged (Track 2 step 4): two gates passed, one piece of advice
-    // met and one fallen short of
+    // How the firewall's new translation was judged: two gates passed, one advice check met and one advice
+    // check fallen short of.
     private static final String EVIDENCE = """
             "evidence": [
               {"check": "COMPILE", "state": "GATE", "score": 1.0, "threshold": 1.0},
@@ -309,32 +312,32 @@ final class LearningFlowFixtures {
               {"check": "TIMES", "state": "ADVICE", "score": 0.5, "threshold": 1.0}], \
             """;
 
-    /// `GET /learningFlowSupervisor/v1/7`: the firewall's run, its new translation waiting for a person
-    /// to approve it, with how it was judged.
+    /// The reply to `GET /learningFlowSupervisor/v1/7`: the firewall's run, with its new translation waiting
+    /// for a person to approve it, and how it was judged.
     static final String AWAITING_REVIEW = firewallRun("Awaiting review", "Awaiting review, scored 0.88", "null")
             .replace("\"turns\": ", "\"score\": 0.88, \"bindingUuid\": \"b-7\", " + EVIDENCE + "\"turns\": ");
 
-    /// The same run once a person approved it, saying who and when.
+    /// The same run after a person approved it, recording who approved it and when.
     static final String APPROVED = firewallRun("Promoted", "Approved", "null")
             .replace("\"turns\": ", "\"score\": 0.88, \"bindingUuid\": \"b-7\", " + EVIDENCE
                                     + "\"reviewedBy\": \"jo\", \"reviewedTimeMs\": 1761900000000, \"turns\": ");
 
-    /// The firewall's pipeline's learners ([#FIREWALL_LEARNER]) with its learner given up, for the reason
-    /// given, as `GET /learningFlowSupervisor/v1/pipelines/p-1/learners` lists them.
+    /// Builds the firewall pipeline's learners ([#FIREWALL_LEARNER]) with the learner given up for the given
+    /// reason, as `GET /learningFlowSupervisor/v1/pipelines/p-1/learners` lists them.
     ///
-    /// @param reason Why it gave up: its run's error line.
+    /// @param reason Why the learner gave up, i.e. its run's error line.
     /// @return The learners, as JSON.
     static String firewallGivenUp(final String reason) {
         return "[" + FIREWALL_LEARNER.replace("\"state\": \"Waiting for a person\",",
                 "\"state\": \"Given up\", \"givenUpReason\": \"" + json(reason) + "\",") + "]";
     }
 
-    // Text as it goes between a JSON string's quotes
+    // Escapes text for use between a JSON string's quotes.
     private static String json(final String text) {
         return text.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    /// `GET /learningFlowSupervisor/v1/9`: the proxy's run, which put its translation to use.
+    /// The reply to `GET /learningFlowSupervisor/v1/9`: the proxy's run, which promoted its translation.
     static final String PROMOTED = """
             {"id": 9, "learner": {"pipelineUuid": "p-3", "elementId": "learningFlow"}, "doc": DOC,
               "status": "Promoted", "feed": "PROXY", "type": "Raw Events", "node": "node1a",
@@ -349,7 +352,8 @@ final class LearningFlowFixtures {
                   "question": "Configure: dsParser TextConverter", "answer": "<dataSplitter/>",
                   "outcome": "PASSED", "answeredBy": "model"}]}""".replace("DOC", DOC_JSON);
 
-    /// The firewall's run that learned the translation it runs, promoted: [#PROMOTED] as the firewall's.
+    /// The firewall's promoted run that learned the translation it serves: [#PROMOTED] with the firewall's
+    /// run id and pipeline.
     static final String FIREWALL_PROMOTED = PROMOTED
             .replace("\"id\": 9", "\"id\": 7")
             .replace("\"pipelineUuid\": \"p-3\"", "\"pipelineUuid\": \"p-1\"");
@@ -370,9 +374,9 @@ final class LearningFlowFixtures {
         // Static utility
     }
 
-    /// Adds the routes a Learning Flow document's editor asks for, beyond its Permissions tab and
-    /// document pickers: the document (fetched, and echoed when saved), the built-in texts, and what the
-    /// Supervisor says about the document's feeds, and does when asked.
+    /// Adds the routes a Learning Flow document's editor calls, other than those of its Permissions tab and
+    /// document pickers: the document (fetched, and echoed back when saved), the built-in texts, and the
+    /// Supervisor's replies about the document's feeds and to the actions it is asked to take.
     ///
     /// @param builder The story's fixtures.
     /// @param doc     The document, as JSON.
@@ -381,7 +385,7 @@ final class LearningFlowFixtures {
         return editorRoutes(builder, doc, PAUSED);
     }
 
-    /// As [#editorRoutes(RestFixtures.Builder, String)], with the firewall's run given.
+    /// As [#editorRoutes(RestFixtures.Builder, String)], but with the given firewall run.
     ///
     /// @param builder  The story's fixtures.
     /// @param doc      The document, as JSON.
@@ -393,7 +397,7 @@ final class LearningFlowFixtures {
         return editorRoutes(builder, doc, firewall, LEARNERS);
     }
 
-    /// As [#editorRoutes(RestFixtures.Builder, String, String)], with the learners given.
+    /// As [#editorRoutes(RestFixtures.Builder, String, String)], but with the given learners.
     ///
     /// @param builder  The story's fixtures.
     /// @param doc      The document, as JSON.
@@ -427,9 +431,9 @@ final class LearningFlowFixtures {
                 .post("/learningFlowSupervisor/v1/guidance/ss-1", RestReply.json(MORE_GUIDANCE));
     }
 
-    /// Adds the routes a pipeline's AI Translation tab asks for: what the Supervisor says about the firewall's
-    /// and the proxy's pipelines' learners (the firewall's as given), their runs, and does when asked; and the
-    /// settings of the document they learn under.
+    /// Adds the routes a pipeline's AI Translation tab calls: the Supervisor's replies about the learners of
+    /// the firewall and proxy pipelines (the firewall's as given) and their runs, and to the actions it is
+    /// asked to take, and the settings of the document they learn under.
     ///
     /// @param builder          The story's fixtures.
     /// @param doc              The document they learn under, as JSON, e.g. [#DOC].
@@ -445,8 +449,8 @@ final class LearningFlowFixtures {
                 .get("/learningFlowSupervisor/v1/pipelines/p-3/learners",
                         RestReply.json("[" + PROXY_LEARNER + "]"))
                 .get("/learningFlowSupervisor/v1/learners/ss-1/settings", RestReply.json(doc))
-                // Nothing said by QA of any pipeline, which Learning Status asks to flag open issues; a story of
-                // the Quality Assurance tab gives its own replies first
+                // No quality assurance findings for any pipeline. The Learning Status tab asks for them to flag
+                // open issues. A story of the Quality Assurance tab adds its own replies before these.
                 .route(RequestMatcher.get("/learningFlowQuality/v1/*"), RestReply.json("[]"));
     }
 

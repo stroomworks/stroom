@@ -31,27 +31,29 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.xml.transform.sax.TransformerHandler;
 
-/// The documents a fragment's `SplitFilter` hands its transform: one per record, each with the parent
-/// element structure replicated above it, exactly as the pipeline gives them (§12 item 25).
+/// Splits a document into the documents a fragment's `SplitFilter` gives its transform: one per record, each
+/// with the parent element structure above it, exactly as the pipeline produces them. [PerRecord] uses it to
+/// run a step one record at a time.
 ///
-/// Driven by stroom's own `SplitFilter` rather than by a copy of what it does, because the point of
-/// running the chain this way is that what is scored is what will run: a stylesheet that reads the whole
-/// document — counting its siblings, or asking for its position — behaves differently when it is given
-/// one record at a time, and the promotion gate must see that difference before it promotes.
+/// It uses Stroom's own `SplitFilter` rather than a copy of its logic, so that what is scored is what will
+/// run. A stylesheet that reads the whole document (counting its siblings, or asking for its position)
+/// behaves differently when it is given one record at a time, and the promotion gate must see that
+/// difference before it promotes.
 public final class RecordSplit {
 
     private RecordSplit() {
     }
 
-    /// @param document The parsed document, as the element before the filter produced it.
-    /// @param depth    The element depth the records sit at, as the binding's boundary carries it.
-    /// @return One document per record, in order — and *empty* where nothing sits at that depth. The
-    /// filter emits the structure above the records whether it found any or not, so a document with
-    /// nothing at the depth comes back as one empty envelope; that is not a record, and handing it on as
-    /// one would run the chain over an empty document. A stream with exactly one record comes back as one
-    /// document, and is run as the one record it is: "one record" and "no records" must not be the same
-    /// answer, or a stream carrying a single record would be learned from the whole of its envelope and
-    /// then run without it.
+    /// Splits a document into one document per record.
+    ///
+    /// @param document The XML document, as the element before the filter produced it.
+    /// @param depth    The element depth the records sit at, as recorded in the binding's record boundary.
+    /// @return One document per record, in order, or an *empty* list if nothing sits at that depth or the
+    /// document will not parse. The filter emits the structure above the records whether it found any or
+    /// not, so a document with nothing at the depth would otherwise come back as one empty envelope, and the
+    /// chain would be run over an empty document. A stream with exactly one record comes back as one
+    /// document. "One record" and "no records" must give different answers, or a stream with a single record
+    /// would be learned from the whole document and then served one record at a time.
     public static List<String> split(final String document, final int depth) {
         final List<String> records = new ArrayList<>();
         final Capture capture = new Capture(records, depth);
@@ -68,8 +70,8 @@ public final class RecordSplit {
             reader.parse(new InputSource(new StringReader(document)));
             split.endStream();
         } catch (final Exception e) {
-            // A document that will not parse is not one this can cut; the caller runs the chain over the
-            // whole of it, and whatever is wrong with it is the scorers' to say.
+            // A document that will not parse cannot be split. The caller then runs the chain over the whole
+            // of it, and the scorers report whatever is wrong with it.
             return List.of();
         } finally {
             split.endProcessing();
@@ -81,8 +83,8 @@ public final class RecordSplit {
     // --------------------------------------------------------------------------------
 
 
-    /// Each document the filter emits, written back out as text: the transform takes text, so the split
-    /// has to be given back in the form the step runner reads.
+    // Writes each document the filter emits back out as text, because step runners take their input as
+    // text.
     private static final class Capture extends AbstractXMLFilter {
 
         private final List<String> records;
@@ -100,8 +102,8 @@ public final class RecordSplit {
         @Override
         public void startDocument() throws SAXException {
             writing = new StringWriter();
-            // Saxon's, as every other transform in this module uses: one processor family, one set of
-            // serialisation rules.
+            // Use Saxon's serialiser, as every other transform in this module does, so that all output follows
+            // one set of serialisation rules.
             handler = ConfinedXml.serialiser(writing, false, true);
             handler.startDocument();
             open = 0;
@@ -111,7 +113,7 @@ public final class RecordSplit {
         @Override
         public void endDocument() throws SAXException {
             handler.endDocument();
-            // Only where something was actually found at the depth: the filter gives back the structure
+            // Keep the document only if something was found at the depth. The filter emits the structure
             // above the records whether there were any or not, and an empty envelope is not a record.
             if (cut) {
                 records.add(writing.toString());

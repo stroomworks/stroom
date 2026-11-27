@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/// The snapshots as a list: what scenarios inspect. Every method is synchronised.
+/// An in-memory [Snapshots], held as a list that scenarios can inspect. Every method is synchronised.
 public final class InMemorySnapshots implements Snapshots {
 
     private final List<Snapshot> snapshots = new ArrayList<>();

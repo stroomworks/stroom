@@ -25,27 +25,28 @@ import org.jooq.TableField;
 
 import java.util.Map;
 
-/// Makes a row on first mention, for the tables whose rows are then read `FOR UPDATE` in the same
-/// transaction.
+/// Creates a row the first time it is needed, for tables whose rows are then read `FOR UPDATE` in the
+/// same transaction.
 final class RowMaker {
 
     private RowMaker() {
         // Static helpers only.
     }
 
-    /// Makes the row `key` names where it is missing. Two nodes meeting a new key at once both insert;
-    /// the unique key decides, and the loser reads what the winner wrote. The row is looked for first, so
-    /// that the steady path — the row exists — takes no lock here.
+    /// Creates the row that `key` identifies, if it does not exist. If two nodes find the row missing at
+    /// the same time, both insert; the unique key lets only one row be created, and the other insert
+    /// leaves it as it is. The row is looked for first, so that the usual case, where it exists, takes no
+    /// lock here.
     ///
-    /// Where it is missing, the insert is `ON DUPLICATE KEY UPDATE` and not `IGNORE`: on a duplicate an
-    /// `IGNORE` takes a shared lock, and the transactions that met the row missing together each then ask
-    /// for the exclusive lock the others' shared locks refuse, so the database kills one as deadlocked.
-    /// An update takes the exclusive lock at once, so they queue instead and a following `FOR UPDATE` has
-    /// nothing to upgrade.
+    /// The insert uses `ON DUPLICATE KEY UPDATE` rather than `INSERT IGNORE`. On a duplicate, `IGNORE`
+    /// takes a shared lock; transactions that found the row missing together would each then ask for the
+    /// exclusive lock that the others' shared locks block, and the database would abort one as
+    /// deadlocked. An update takes the exclusive lock at once, so the transactions queue instead, and the
+    /// caller's following `FOR UPDATE` has no lock to upgrade.
     ///
-    /// @param context The transaction's context, which the caller goes on to lock the row in.
+    /// @param context The transaction's context, in which the caller goes on to lock the row.
     /// @param table   The table the row belongs in.
-    /// @param key     The condition naming the one row.
+    /// @param key     The condition that identifies the one row.
     /// @param version The table's version column, set to 1 on a new row and left as it is on a duplicate.
     /// @param values  The other columns of a new row.
     /// @param <R>     The table's record type.

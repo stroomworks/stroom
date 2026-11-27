@@ -36,10 +36,10 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// The content of the dialog that edits one check (the one model of checks): whether it is Off, Advice
-/// or a Gate, its threshold where it has one, and beneath them the panel of settings that belongs to the
-/// check, or none for a check that takes none. A threshold or expected ratio that isn't a number it can
-/// be is refused: the field says why, and the dialog's OK refuses while it is shown.
+/// The content of the dialog that edits one of a Learning Flow's quality checks. It shows whether the check is
+/// Off, Advice or a Gate, its threshold if it has one, and beneath them the panel of settings specific to that
+/// check (none for a check that has no settings). A threshold or expected ratio that is not a valid number is
+/// marked invalid, with the field saying why, and the dialog's OK is refused while it is.
 /// [CheckEditorController] shows it and reads and writes the settings.
 public class CheckEditor extends Component {
 
@@ -78,26 +78,27 @@ public class CheckEditor extends Component {
     @UiField
     TickBox includeTransformMessages;
 
-    /// Makes an empty editor, showing no settings.
+    /// Creates an empty editor, showing no check-specific settings.
     public CheckEditor() {
         initWidget(BINDER.createAndBindUi(this));
         state.addItems(CheckState.values());
         basis.addItems(YieldBasis.values());
         threshold.setInvalidReason(InputChecks.numberFrom(0, 1));
-        // Checked only while the yield's panel is shown, as hidden fields are passed over
+        // Only validated while the yield panel is shown, because hidden fields are not validated
         expectedRatio.setInvalidReason(ScoreValues.aboveZero());
         showCheck(null);
     }
 
-    /// @return The list of a business rules check's assertions, for its controller to attach to.
+    /// @return The list of a business rules check's assertions, for the controller to attach its own
+    ///         controller to.
     public XPathAssertionList getAssertions() {
         return assertions;
     }
 
-    /// Shows what belongs to a check: its threshold, where it has one, and the panel of its own settings,
-    /// hiding the others. The compile check is always a gate, so its state can't be chosen.
+    /// Shows the fields that apply to a check (its threshold, if it has one, and the panel of its own settings)
+    /// and hides the rest. The compile check is always a gate, so its state can't be changed.
     ///
-    /// @param check The check, or null for none.
+    /// @param check The check being edited, or null to show no check-specific fields.
     public void showCheck(final Check check) {
         thresholdGroup.setVisible(check != null && check.hasThreshold());
         yieldParameters.setVisible(check == Check.YIELD);
@@ -107,12 +108,12 @@ public class CheckEditor extends Component {
         state.setEnabled(check != Check.COMPILE);
     }
 
-    /// @return The state chosen.
+    /// @return The state chosen: Off, Advice or Gate.
     public CheckState getState() {
         return state.getValue();
     }
 
-    /// @param value The state.
+    /// @param value The state to show: Off, Advice or Gate.
     public void setState(final CheckState value) {
         state.setValue(value);
     }
@@ -139,12 +140,12 @@ public class CheckEditor extends Component {
         expectedRatio.setValue(ScoreValues.format(value));
     }
 
-    /// @return What the yield's output records are counted against.
+    /// @return What the yield check counts output records against.
     public YieldBasis getBasis() {
         return basis.getValue();
     }
 
-    /// @param value What the yield's output records are counted against.
+    /// @param value What the yield check counts output records against.
     public void setBasis(final YieldBasis value) {
         basis.setValue(value);
     }
@@ -159,16 +160,16 @@ public class CheckEditor extends Component {
         return afterDays.getIntValue();
     }
 
-    /// @return The XPath to the time to judge, or blank for event-logging's.
+    /// @return The XPath of the time to check, or blank to use the event-logging schema's event time.
     public String getTimeField() {
         return timeField.getValue();
     }
 
-    /// Shows the window an event's time must fall in, and which time is judged.
+    /// Shows the window that an event's time must fall in, and which time is checked.
     ///
     /// @param before The days before the stream was received.
-    /// @param after  The days after it.
-    /// @param field  The XPath to the time to judge, or null for event-logging's.
+    /// @param after  The days after the stream was received.
+    /// @param field  The XPath of the time to check, or null to use the event-logging schema's event time.
     public void setTimes(final int before, final int after, final String field) {
         beforeDays.setValue(before);
         afterDays.setValue(after);
@@ -197,22 +198,22 @@ public class CheckEditor extends Component {
         requiredFields.setValue(ScoreValues.toLines(values));
     }
 
-    /// @return Whether the transform's own messages count as failed rules.
+    /// @return Whether messages the XSLT itself produces count as failed rules.
     public boolean isIncludeTransformMessages() {
         return includeTransformMessages.getValue();
     }
 
-    /// @param value Whether the transform's own messages count as failed rules.
+    /// @param value Whether messages the XSLT itself produces count as failed rules.
     public void setIncludeTransformMessages(final boolean value) {
         includeTransformMessages.setValue(value);
     }
 
-    /// Puts the focus on its first field, the state.
+    /// Puts the focus on the first field, the state.
     public void focus() {
         state.focus();
     }
 
-    // The assertions' list follows read only itself, through its controller
+    // The assertions list is not set read only here; its own controller does that
     @Override
     protected void onReadOnlyChange(final boolean readOnly) {
         state.setReadOnly(readOnly);

@@ -34,13 +34,13 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Calibrates the extraction-stage scorers against ground truth (design §9, item 2). Every golden
- * configuration in the corpus must compile, reproduce its expected output exactly, and score at the top;
- * every failing configuration must be rejected or raise errors. A scorer that ranks a shipped,
- * golden-diffing configuration poorly is broken, and this is where that is discovered — before the
- * scorer gates a promotion.
- */
+/// Calibrates the extraction scorers against a corpus of known good and known bad Data Splitter
+/// configurations.
+///
+/// Every golden configuration must compile, reproduce its expected records exactly and yield records, and its
+/// input coverage is logged for inspection. Every failing configuration must be rejected by the compiler or
+/// raise errors when run. If a golden configuration fails here, the scorers would wrongly hold back a correct
+/// configuration, so this is where that is found before a scorer gates a promotion.
 class TestExtractionCalibration {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TestExtractionCalibration.class);

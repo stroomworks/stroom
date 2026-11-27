@@ -23,8 +23,8 @@ import stroom.util.entityevent.EntityEventBus;
 
 import com.google.inject.AbstractModule;
 
-/// The tables against a real database, with nothing else of Stroom wired in: these tests are about the
-/// rows (design 02 §2, tier 2's smallest form).
+/// The Guice module for the DAO tests: the Learning Flow's tables in a real database, with nothing else of
+/// Stroom wired in, since these tests are only about the rows.
 public class TestModule extends AbstractModule {
 
     @Override
@@ -33,13 +33,13 @@ public class TestModule extends AbstractModule {
         install(new DbTestModule());
         install(new LearningFlowDbModule());
         install(new LearningFlowDaoModule());
-        // The caches the DAO module binds in front of the rows need somewhere to live and something to
-        // tell, and these tests are about the rows: a real cache manager, and a bus nothing listens on.
+        // The caches that the DAO module binds in front of the DAOs need a cache manager and an event bus.
+        // These tests are about the rows, so they get a real cache manager and a bus nothing listens on.
         bind(CacheManager.class).toInstance(new CacheManagerImpl());
         bind(EntityEventBus.class).toInstance(new EntityEventBus() {
             @Override
             public void fire(final stroom.util.entityevent.EntityEvent event) {
-                // Nothing else is running: there is no other node to tell.
+                // Nothing else is running, so there is no other node to notify.
             }
 
             @Override

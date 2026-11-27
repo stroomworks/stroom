@@ -64,15 +64,12 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 01 §12 item 2: a node judges and serves a fragment by running it as a pipeline, and the Tier 1
- * scenarios run the same fragment with the module's step runners instead (design 02 §2). They are meant
- * to agree, and this is what holds them to it.
- * <p>
- * A stand-in that has drifted from the thing it stands in for is worse than no stand-in: every scenario
- * would still pass while the pipeline refused what they promoted. So the same fragment, written the way
- * a promotion writes it, is run both ways over the same stream and the events compared.
- */
+/// Tests that the stand-in fragment runner used by the unit-level scenarios produces the same results as the
+/// real pipeline fragment runner that a node uses to judge and serve a fragment.
+///
+/// If the stand-in drifted from the real runner, the unit-level scenarios would keep passing while a real
+/// pipeline rejected what they promoted. So each test writes a fragment as a promotion writes it, runs it
+/// both ways over the same input, and compares the results.
 class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow", "AGREEMENT");
@@ -82,7 +79,7 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
     /// A headerless CSV of exactly four fields; any other line is unmatched content.
     private static final String FIELDS = Scenarios.resource("csv-fields.ds3.xml");
 
-    /// Six lines, of which the last two are in a shape the splitter no longer matches.
+    /// Six lines, of which the last two use a different delimiter that [#FIELDS] does not match.
     private static final String PART_DRIFTED = """
             2020-06-17T08:00:00.000Z,user0,office,logon
             2020-06-17T08:01:00.000Z,user1,office,logon
@@ -92,15 +89,15 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
             2020-06-17T08:05:00.000Z|user5|office|logon
             """;
     private static final Golden CSV = Scenarios.corpus("001_csv_with_header");
-    /// Counts what it is given, so that a run over the whole document and a run over one record at a
-    /// time cannot produce the same answer.
+    /// A stylesheet that counts the records it is given, so that a run over the whole document and a run
+    /// over one record at a time give different answers.
     private static final String COUNTS = """
             <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                             xpath-default-namespace="records:2" version="2.0">
               <xsl:template match="/"><counted><xsl:value-of select="count(//record)"/></counted>
               </xsl:template>
             </xsl:stylesheet>""";
-    /// Will not compile, so that a candidate's failure is scored rather than thrown.
+    /// A stylesheet that does not compile, to check that a compile failure is reported rather than thrown.
     private static final String BROKEN = "<xsl:stylesheet";
     private static final Verdict UNSCORED = new Verdict(List.of(), 1.0);
 
@@ -171,16 +168,12 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
         assertThat(canonical(last(ran))).contains("<Event>");
     }
 
-    /**
-     * The chain's capture is <b>taken</b> from the runner, not read: after one ask the runner is left
-     * holding nothing.
-     * <p>
-     * That is what keeps a stage that ran no chain from showing the last one that did. A stage decides
-     * many things without running a fragment at all — a reserved binding matches, a draft awaits review,
-     * the learner has been given up — and a caller that merely read the last capture would be handed the
-     * previous stream's chain and hang it in the stepping tree beneath a stage that says nothing was
-     * bound. The same shape of fault as serving a rejected candidate's events, met once already.
-     */
+    /// Checks that `takeRecords()` clears the runner's captured records, so a second call returns nothing.
+    ///
+    /// The Learning Flow element often decides what to do with a stream without running a fragment, for
+    /// example when a draft awaits review or the learner has been given up. If the capture were only read
+    /// and not cleared, the stepper would show the previous stream's chain beneath an element that ran
+    /// nothing for this stream.
     @Test
     void theChainsCaptureIsTakenAndNotLeftBehind() {
         final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
@@ -218,10 +211,10 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void aChainWithNoRecordBoundaryIsRunWholeBothWays() {
-        // A fragment for raw text carries no SplitFilter: the Data Splitter cuts the records and the
-        // transform is given the parsed document whole, which is what the pipeline does in production.
-        // A capture that inserted a split of its own would hand the transform one record instead and
-        // judge the candidate on a difference the pipeline will never show it.
+        // A fragment for raw text has no SplitFilter. The Data Splitter divides the input into records and
+        // the transform is given the whole parsed document, as in production. If a runner added its own
+        // split, the transform would see one record at a time, and the candidate would be judged on
+        // output the production pipeline never produces.
         final List<Attempted> stood = new ArrayList<>();
         final List<Attempted> ran = new ArrayList<>();
         run(() -> {
@@ -244,8 +237,8 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
 
     @Test
     void aCandidateThatWillNotCompileIsScoredRatherThanThrown() {
-        // Without an error receiver in place the first thing a failing element says is a
-        // NullPointerException, and the attempt dies instead of being judged.
+        // Without an error receiver in place, a failing element throws a NullPointerException and the
+        // attempt fails instead of being judged.
         final List<StepRunner> runners = List.of(new JsonStep(), new StandInXsltStep());
         final RecordBoundary boundary = RecordBoundary.ofArray("events").atDepth(3);
         final List<LearnedStep> chain = List.of(
@@ -263,11 +256,11 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
                 .isNotEmpty();
     }
 
-    /// Audit finding W4-7: a serving run now reports what the **parser** made of the input, and a unit
-    /// test on the stand-in proves nothing about production unless the real pipeline counts the same
-    /// thing. A stream of six records of which two are in a shape the learned splitter no longer
-    /// matches: both runners must see four records read, two the parser could not, and content in the
-    /// stream.
+    /// Checks that both runners count the parser's view of the input in the same way. A serving run reports
+    /// how many records the parser read and how many it could not, and a unit test of the stand-in only
+    /// says something about production if the real pipeline counts the same. Of the six input lines, two
+    /// do not match the splitter, so both runners must report four records read, two errors, and a
+    /// non-empty stream.
     @Test
     void bothRunnersCountWhatTheParserMadeOfTheInputTheSameWay() {
         final List<InputRead> read = new ArrayList<>();
@@ -298,9 +291,9 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
         assertThat(read.get(1).empty()).isEqualTo(read.get(0).empty()).isFalse();
     }
 
-    /// @param runner   The runner.
-    /// @param fragment The fragment.
-    /// @return What it made of [#PART_DRIFTED].
+    /// @param runner   The fragment runner under test.
+    /// @param fragment The fragment to serve.
+    /// @return The runner's count of what the parser made of [#PART_DRIFTED].
     private static InputRead served(final FragmentRunner runner, final DocRef fragment) {
         return runner.serve(fragment, new ByteArrayInputStream(PART_DRIFTED.getBytes(StandardCharsets.UTF_8)),
                 null, (index, record, parsed) -> UNSCORED, null).input();
@@ -330,7 +323,8 @@ class TestFragmentRunnersAgree extends AbstractProcessIntegrationTest {
         return steps.get(steps.size() - 1).result().output();
     }
 
-    /// The events, not the spacing between them: the two runs serialise their joins differently.
+    /// Normalises the XML so that only the events are compared, because the two runners lay out the
+    /// whitespace between them differently.
     private static String canonical(final String xml) {
         return Scenarios.canonical(xml);
     }

@@ -27,8 +27,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Why a stream waits on the attempt that holds its learner's claim (supervisor visibility item 5): the
-/// reason is worded by what that attempt is doing, and sends a person to the tab where they can act.
+/// Tests the reason recorded for a stream waiting on the attempt that holds its learner's claim.
+///
+/// The reason is worded according to what that attempt is doing, and directs a person to the tab where they can
+/// act on it.
 class TestStage {
 
     @Test

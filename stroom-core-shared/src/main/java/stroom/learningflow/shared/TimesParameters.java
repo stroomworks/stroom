@@ -24,31 +24,31 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
-/// The window an event's time must fall in to be plausible: so long before the stream was received, and so
-/// long after it.
+/// Parameters for the event times check: the window an event's time must fall in to be plausible, as a number
+/// of days before and after the stream was received.
 ///
-/// A timestamp with no year is the fault this catches. Read without one it lands in the wrong year — most
-/// often the current one, which for a back-loaded stream can be years out — and nothing else notices,
+/// The main fault this catches is a timestamp with no year. Read without one, it lands in the wrong year
+/// (most often the current one, which for a back-loaded stream can be years out), and nothing else notices,
 /// because an event dated three years early still validates, still carries real content and still obeys
 /// every business rule.
 ///
-/// **The window is wide on purpose.** A year before covers a stream being back-loaded, which is ordinary;
-/// a day after covers a clock that is a little ahead and a stream that arrives slowly. A whole-year error
-/// is the clear case and this catches it. A time-zone error is only hours out, and no window tight enough
-/// to catch that would survive back-loaded data — for zones the prompt's rule, and the `timeZone` property
-/// of decision N6, are the tools.
+/// **The window is wide on purpose.** A year before covers a stream being back-loaded, which is ordinary; a
+/// day after covers a clock that is a little ahead and a stream that arrives slowly. A whole-year error is
+/// the clear case and this catches it. A time-zone error is only hours out, and no window tight enough to
+/// catch that would cope with back-loaded data; time zones are handled by the prompt's rule and the Smart
+/// Pipeline element's `timeZone` property instead.
 ///
-/// **Which time is judged** is event-logging's `EventTime/TimeCreated` unless the Learning Flow names
-/// another (task 7): a schema that isn't event-logging keeps its time elsewhere, and where it names none
-/// the check doesn't run for that schema.
+/// **The time judged** is event-logging's `EventTime/TimeCreated` unless the Learning Flow document names
+/// another field. A schema that isn't event-logging keeps its time elsewhere, so where such a document names
+/// no field the check doesn't run.
 @JsonPropertyOrder({"beforeDays", "afterDays", "timeField"})
 @JsonInclude(Include.NON_NULL)
 public final class TimesParameters extends ScorerParameters {
 
-    /// A year: a stream being loaded from an archive is ordinary, and a translation should not be refused
-    /// for it.
+    /// A year, because a stream being loaded from an archive is ordinary, and a translation should not be
+    /// refused for it.
     private static final int DEFAULT_BEFORE_DAYS = 365;
-    /// A day: enough for a clock that is slightly ahead, or a stream that took a while to arrive.
+    /// A day, which is enough for a clock that is slightly ahead, or a stream that took a while to arrive.
     private static final int DEFAULT_AFTER_DAYS = 1;
 
     @JsonProperty
@@ -58,7 +58,7 @@ public final class TimesParameters extends ScorerParameters {
     @JsonProperty
     private final String timeField;
 
-    /// The window alone, judging event-logging's time.
+    /// Creates a window that judges event-logging's time field.
     ///
     /// @param beforeDays How long before the stream was received an event may be dated; the default is a
     ///                   year.

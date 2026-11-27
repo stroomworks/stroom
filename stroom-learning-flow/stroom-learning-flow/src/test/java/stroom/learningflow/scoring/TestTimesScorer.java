@@ -38,17 +38,16 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// The time plausibility check (Track 1 task 3, fix 3): whether an event is dated anywhere near the stream
-/// it came from.
+/// Tests the time plausibility check, which reports an event dated nowhere near the stream it came from.
 ///
-/// This is the fault the dev instance showed on 11 November: a syslog date with no year, read as a year
-/// the translation guessed, giving events dated three years before their stream — which validated, carried
-/// real content and obeyed every rule, and so scored 1.0 everywhere.
+/// The fault it catches: a syslog date has no year, the translation guesses one, and the events come out dated
+/// three years before their stream. Such events validate, carry real content and obey every rule, so without
+/// this check they would score 1.0 everywhere.
 class TestTimesScorer {
 
     private static final long RECEIVED = DateUtil.parseNormalDateTimeString("2026-11-11T09:18:19.000Z");
     private static final StreamFacts STREAM = new StreamFacts(1L, "NETFILTER", "Raw Events", RECEIVED, Map.of());
-    // A schema that keeps its time in When, not event-logging's EventTime/TimeCreated
+    // A schema that keeps its time in When, rather than event-logging's EventTime/TimeCreated
     private static final TargetSchema SIGHTINGS = new TargetSchema(
             new DocRef(XmlSchemaDoc.TYPE, "schema-1", "sightings v2.4"), "sightings v2.4",
             "urn:sightings:2", "file://sightings-v2.4.xsd", "2.4", "Sightings", null);
@@ -78,7 +77,7 @@ class TestTimesScorer {
 
     @Test
     void aBackLoadedStreamIsNotPunishedForBeingOld() {
-        // A stream loaded from an archive is ordinary: the default window reaches a year back
+        // Loading old data from an archive is normal, so the default window reaches a year back
         assertThat(score(events("2026-06-11T09:06:02.000Z")).value()).isEqualTo(1.0);
     }
 
@@ -97,8 +96,8 @@ class TestTimesScorer {
 
     @Test
     void onlyAFewRecordsAreNamedHoweverManyAreWrong() {
-        // A translation that gets the year wrong gets it wrong for every record; twenty copies of one
-        // fault teach the model nothing that three do not
+        // A translation that gets the year wrong gets it wrong for every record, and twenty copies of one
+        // fault tell the model nothing that three do not
         final String[] wrong = new String[20];
         java.util.Arrays.fill(wrong, "2023-10-19T09:06:02.000Z");
 
@@ -107,7 +106,8 @@ class TestTimesScorer {
 
     @Test
     void aRunThatDoesNotKnowItsStreamSaysNothing() {
-        // Rather than measuring against the clock, which would make judging and serving disagree (AS6)
+        // It says nothing rather than measuring against the current time, which would make the judgement
+        // while learning disagree with the judgement while serving
         assertThat(new TimesScorer().score(null, new Attempted("XSLTFilter", false, "<records/>",
                 new StepResult(events("2023-10-19T09:06:02.000Z"), List.of()), (RecordBoundary) null, null,
                 StreamFacts.none()), null)).isEmpty();
@@ -115,7 +115,7 @@ class TestTimesScorer {
 
     @Test
     void aParsersRecordsAreNotJudgedOnTheirTimes() {
-        // A parser's records are the input's shape, not the target's
+        // A parser's records are shaped like the input, not like the target
         assertThat(new TimesScorer().score(null, new Attempted("DSParser", true, "in",
                 new StepResult(events("2023-10-19T09:06:02.000Z"), List.of()), (RecordBoundary) null, null,
                 STREAM), null)).isEmpty();
@@ -123,8 +123,8 @@ class TestTimesScorer {
 
     @Test
     void itIsAdviceUntilAFlowMakesItAGate() {
-        // Stage 0b group 4: it shows beside a draft and goes back to the model, but does not refuse a
-        // candidate until it has run on real feeds without crying wolf
+        // As advice it is shown beside a draft and sent back to the model, but it does not refuse a candidate
+        // until it has run on real feeds without false failures
         assertThat(setting(CheckPreset.STANDARD).getState()).isEqualTo(CheckState.ADVICE);
         assertThat(setting(CheckPreset.LENIENT).getState()).isEqualTo(CheckState.ADVICE);
         assertThat(setting(CheckPreset.STRICT).getState()).isEqualTo(CheckState.GATE);
@@ -136,8 +136,8 @@ class TestTimesScorer {
 
     @Test
     void anotherSchemaIsNotJudgedUntilTheLearningFlowNamesItsTime() {
-        // Task 7: EventTime/TimeCreated is event-logging's. A schema that keeps its time elsewhere is not
-        // judged on a path it doesn't have, and not refused for lacking it either
+        // EventTime/TimeCreated is event-logging's. A schema that keeps its time elsewhere is neither judged
+        // on a path it does not have nor refused for lacking it
         assertThat(new TimesScorer().score(null, attempted(sightings("2023-10-19T09:06:02.000Z")), SIGHTINGS))
                 .isEmpty();
     }

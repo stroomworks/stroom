@@ -81,7 +81,8 @@ class TestFlowWords {
         assertThat(FlowWords.usualExit(STEPS.get(1))).isEqualTo("stop learning");
         assertThat(FlowWords.usualExit(STEPS.get(2))).isEqualTo("pause for a person");
         assertThat(FlowWords.usualExit(FlowStep.of(QuestionKind.SPLIT))).isEqualTo("pause for a person");
-        // A step over every element stops learning where it is the parser that runs out (A52, A54)
+        // A step that writes every element stops learning where it is the parser that runs out, since a
+        // stream that cannot be parsed is the one failure nothing can serve
         assertThat(FlowWords.usualExit(FlowStep.of(QuestionKind.CONFIGURE)))
                 .isEqualTo("stop learning if the parser can't be written, or else pause for a person");
     }

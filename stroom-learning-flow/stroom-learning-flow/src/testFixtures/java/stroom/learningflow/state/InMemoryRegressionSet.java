@@ -25,8 +25,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/// The corpus as a map of lists: what scenarios run over — node-local and gone on restart. Every method
-/// is synchronised: one node's tasks share it.
+/// An in-memory [RegressionSet] (the corpus of records each binding must not do worse on), held as a map
+/// of lists, for scenarios. It is local to one node and lost on restart. Every method is synchronised,
+/// because one node's tasks share it.
 public final class InMemoryRegressionSet implements RegressionSet {
 
     private final Map<String, List<Accepted>> accepted = new HashMap<>();
@@ -45,7 +46,8 @@ public final class InMemoryRegressionSet implements RegressionSet {
                                     final String type,
                                     final List<Accepted> entries,
                                     final int cap) {
-        // As a node's store has it: a copy kept on no feed is not kept at all.
+        // As in a node's store, where the corpus is kept as a stream on a feed: without a feed, it could
+        // not be kept at all.
         Objects.requireNonNull(feed, "The feed to keep binding " + bindingUuid + "'s records on");
         append(bindingUuid, entries, cap);
         feeds.put(bindingUuid, feed);
@@ -70,7 +72,8 @@ public final class InMemoryRegressionSet implements RegressionSet {
         final String movingFeed = feeds.remove(fromBindingUuid);
         if (moving != null) {
             append(toBindingUuid, moving, cap);
-            // Appended after what the binding held, so they are its newest.
+            // The moved entries are appended after what the binding held, so they are its newest, and the
+            // feed they came from becomes the binding's.
             if (movingFeed != null) {
                 feeds.put(toBindingUuid, movingFeed);
             }
@@ -80,7 +83,7 @@ public final class InMemoryRegressionSet implements RegressionSet {
     private void append(final String bindingUuid, final List<Accepted> entries, final int cap) {
         final List<Accepted> kept = accepted.computeIfAbsent(bindingUuid, k -> new ArrayList<>());
         kept.addAll(entries);
-        // The cap keeps the most recent; the oldest accepted records are the first to go.
+        // The cap keeps the most recent entries; the oldest accepted records are removed first.
         while (kept.size() > cap) {
             kept.remove(0);
         }

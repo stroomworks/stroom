@@ -29,9 +29,12 @@ import java.util.Map;
 
 import static stroom.learningflow.impl.db.jooq.tables.LearningFlowSpend.LEARNING_FLOW_SPEND;
 
-/// The spend of A44 as a row per document: a token bucket every node adds to, so that a budget is the
-/// cluster's and not each node's share of a guess. The count is folded inside a transaction on the row,
-/// as the rolling score is, or two nodes finishing at once would each add to the same old total.
+/// The database implementation of [Spend], which counts the tokens and model calls each document has used
+/// in the current time window, so that spending limits apply across the whole cluster rather than per node.
+///
+/// There is one row per document, which every node adds to. The window restarts once it is older than the
+/// window length. Each addition is made in a transaction with the row locked, so that two nodes adding at
+/// once do not both add to the same old total.
 @Singleton
 public class SpendDao implements Spend {
 
@@ -102,8 +105,8 @@ public class SpendDao implements Spend {
     @Override
     public Spent spentAll(final long windowMs) {
         final long now = System.currentTimeMillis();
-        // Rows whose window has run out are left out rather than reset: resetting is `record`'s to do,
-        // under its lock, and a read must not write
+        // Rows whose window has expired are left out rather than reset. Resetting is done by `record`,
+        // under its lock, and a read must not write.
         return JooqUtil.contextResult(connProvider, context -> {
             final Record3<Long, BigDecimal, BigDecimal> row = context
                     .select(DSL.min(LEARNING_FLOW_SPEND.WINDOW_START_MS),

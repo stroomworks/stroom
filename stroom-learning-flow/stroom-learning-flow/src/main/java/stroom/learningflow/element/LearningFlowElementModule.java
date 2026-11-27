@@ -36,32 +36,31 @@ import com.google.inject.Scopes;
 import com.google.inject.multibindings.OptionalBinder;
 import jakarta.inject.Inject;
 
-/**
- * The supervisor element and what it runs over. The advisors are an optional binding whose default asks
- * the model each document names through {@code stroom-ai}; a test node sets it to a script. The runtime
- * state of A26 is bound to the in-memory implementations until the module of §12 item 8 replaces them; a
- * reprocess request is real already, a reprocess filter on the pipeline.
- */
+/// Guice module for the Smart Pipeline element, the internal elements used to run fragments, the
+/// node-side implementations of the services learning uses, and the two Learning Flow scheduled jobs.
+///
+/// [Advisors] is an optional binding. Its default asks the model each Learning Flow document names,
+/// through `stroom-ai`; a test node can override it with a scripted advisor.
 public class LearningFlowElementModule extends PipelineElementModule {
 
     @Override
     protected void configure() {
         super.configure();
         OptionalBinder.newOptionalBinder(binder(), Advisors.class).setDefault().to(ModelAdvisors.class);
-        // The corpus is streams on the source feed with an index the impl-db module binds (design 04 §4.1).
+        // The regression corpus is stored as streams on the source feed, with an index that the impl-db
+        // module binds.
         bind(RegressionSet.class).to(StoredRegressionSet.class).in(Scopes.SINGLETON);
-        // A promotion wakes the deferred tasks of its learner's pipeline (design 04 §5.3, design 06 §4.3).
+        // A promotion wakes the deferred tasks of its learner's pipeline.
         bind(Wake.class).to(TaskWake.class).in(Scopes.SINGLETON);
-        // What a learner learns goes where its element says, read from its pipeline (A113).
+        // Learned content is written to the folder and name set on the learner's element in its pipeline.
         bind(Places.class).to(PipelinePlaces.class);
-        // What the worker needs and a processing task is handed: the document an attempt
-        // names, and the stream it was raised on (A5, A28).
+        // How the background worker reads the Learning Flow document an attempt names, and the stream the
+        // attempt was opened on.
         bind(Documents.class).to(StoreDocuments.class).in(Scopes.SINGLETON);
         bind(Inputs.class).to(StreamInputs.class).in(Scopes.SINGLETON);
-        // Task 7: the one schema a document's translations must write, read from Stroom's XMLSchema
-        // documents
+        // The schema a document's translations must conform to, read from Stroom's XMLSchema documents.
         bind(TargetSchemas.class).to(XmlSchemaTargetSchemas.class).in(Scopes.SINGLETON);
-        // A pipeline's deletion marks its learning deleted, and lets go of what waits on it (A134, A135).
+        // Deleting a pipeline marks its learning deleted and releases the streams waiting on it.
         GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
                 .addBinding(PipelineDeletions.class);
 
@@ -83,9 +82,9 @@ public class LearningFlowElementModule extends PipelineElementModule {
 
     @Override
     protected void configureElements() {
-        // The two shapes a supervised stage takes (§12 item 4): the parser is the extraction stage,
-        // given a stream; the filter is the transformation stage, given records. The pipeline editor
-        // refuses a parser under a parser, so the second could not be drawn without the second shape.
+        // The Smart Pipeline element itself, which sits in the parser position, plus the two internal
+        // elements that the fragment runner adds when it runs a fragment: the output filter at the end
+        // of the chain and the tap below the parser.
         bindElement(LearningFlowParser.class);
         bindElement(FragmentOutputFilter.class);
         bindElement(FragmentTapFilter.class);

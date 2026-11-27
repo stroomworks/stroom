@@ -27,14 +27,15 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import jakarta.validation.constraints.Min;
 
-/// What a node is told about Learning Flow as a whole, as against what one document says about itself:
-/// where its runtime state (A26) is kept, the caches that keep the hot path off those tables, how much
-/// deferred learning one pass of the worker does (A5), and how long an attempt's record is kept (A28).
+/// Node configuration for Learning Flow as a whole, as opposed to the settings on each Learning Flow
+/// document: the database holding its runtime state, the caches that keep stream processing off those
+/// tables, how many sessions one pass of the deferred learning job resumes, how long session records are
+/// kept, the session lease, and the cluster-wide spend ceilings.
 public class LearningFlowConfig extends AbstractConfig implements IsStroomConfig, HasDbConfig {
 
-    // A backstop against a runaway, not a budget: high enough that no honest cluster meets it, low
-    // enough that a loop cannot spend without limit. One feed learned from scratch cost about 550,000
-    // tokens over thirteen calls on the development instance, so this is roughly eighteen whole
+    // A backstop against runaway spending, not a budget: high enough that normal use never reaches it,
+    // low enough that a loop cannot spend without limit. Learning one feed from scratch cost about 550,000
+    // tokens over thirteen calls on the development instance, so this allows roughly eighteen complete
     // learnings an hour across every document on the cluster.
     private static final long DEFAULT_SPEND_TOKENS_PER_HOUR = 10_000_000L;
     private static final int DEFAULT_SPEND_CALLS_PER_HOUR = 1_000;
@@ -50,14 +51,13 @@ public class LearningFlowConfig extends AbstractConfig implements IsStroomConfig
 
     public LearningFlowConfig() {
         dbConfig = new LearningFlowDbConfig();
-        // Read for every stream of every learner and written only when something is learned, so it is
-        // invalidated by what writes it rather than by time; the expiry is a backstop.
+        // Read for every stream of every learner and written only when something is learned, so entries
+        // are invalidated by the code that writes them rather than by time; the expiry is a backstop.
         //
-        // `expireAfterWrite` as well as `expireAfterAccess` (audit finding W7-1). Access alone never
-        // expires a **busy** learner — every stream touches it — so a node that missed the invalidation
-        // event goes on serving an old binding, or "no binding", for as long as the feed keeps arriving,
-        // which is exactly when it matters. The write expiry is the bound on how long a lost event can
-        // be wrong for.
+        // `expireAfterWrite` is set as well as `expireAfterAccess`, because access expiry alone never
+        // expires a **busy** learner, whose entry every stream touches. A node that missed the
+        // invalidation event would then go on serving an old binding, or no binding, for as long as the
+        // feed kept arriving. The write expiry limits how long a missed event can leave an entry wrong.
         bindingCache = CacheConfig.builder()
                 .maximumSize(1000L)
                 .expireAfterAccess(StroomDuration.ofMinutes(10))

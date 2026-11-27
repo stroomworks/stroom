@@ -38,9 +38,9 @@ import java.util.Optional;
 import java.util.TreeSet;
 import java.util.stream.IntStream;
 
-/// What the corpus is made of and held to (design 04 §4.1, A56, A66): the records a session learned for,
-/// each as the one document the transform is given, with the output the candidate made of it; and the
-/// gate that runs a later candidate over each and says whether it fell short.
+/// Builds regression corpus entries and checks candidates against them. An entry is a record a session
+/// learned for, held as the single-record document the transform is given, with the output the promoted
+/// candidate made of it. A later candidate is run over each entry and must do no worse on it.
 final class Corpus {
 
     private static final String UNKNOWN_DETAIL = "*[local-name() = 'EventDetail']/*[local-name() = 'Unknown']";
@@ -48,26 +48,26 @@ final class Corpus {
     private Corpus() {
     }
 
-    /// The chain from its first element that is not a parser: what an entry is run through. An entry is a
-    /// record the parser already cut, so the parser is not run again over it.
+    /// The chain from its first element that is not a parser, which is what an entry is run through. An
+    /// entry is a record the parser has already split out, so the parser is not run over it again.
     static List<LearnedStep> transforms(final List<LearnedStep> chain) {
         return chain.stream().dropWhile(step -> step.runner().parser()).toList();
     }
 
-    /// The entries a promotion appends: the records of `text` that were learned for, each with what the
-    /// candidate makes of it.
+    /// Builds the entries a promotion appends: the records of `text` that were learned for, each with what
+    /// the candidate makes of it.
     ///
     /// @param chain     The candidate's chain.
-    /// @param boundary  What one record is, as the candidate settled it; null where it did not.
+    /// @param boundary  What one record is, as the candidate settled it; null if it did not settle one.
     /// @param text      The stream, or the sample of it the model was shown.
     /// @param which     The indices of the records that were learned for, in the parser's order; null for
-    ///                  every record of the text, which is a first learning, where every record was.
-    /// @param targets   What the flow said each kind of record should become (A31), where it settled any.
+    ///                  every record of the text, as in a first learning, where every record was learned for.
+    /// @param targets   The target events the flow settled for each kind of record, if any.
     /// @param score     The candidate's score on the stream it was accepted from.
-    /// @param attemptId The attempt that accepted them, where one was open.
-    /// @param now       When.
-    /// @param atMost    The document's cap (A63): no more than this many, the first of them.
-    /// @return The entries, in the parser's order; none where the text has no records.
+    /// @param attemptId The session that accepted them, if one was open.
+    /// @param now       The time of acceptance.
+    /// @param atMost    The document's cap on corpus entries; only the first this many are returned.
+    /// @return The entries, in the parser's order; empty if the text has no records.
     static List<Accepted> entries(final List<LearnedStep> chain,
                                   final RecordBoundary boundary,
                                   final String text,
@@ -91,7 +91,7 @@ final class Corpus {
             parsed = result.output();
             spans = NullSafe.list(result.recordRanges());
         } else {
-            // A chain with no parser is given markup already (A35): the text is the parsed form.
+            // A chain with no parser is given markup already, so the text is already in parsed form.
             parsed = text;
             spans = List.of();
         }
@@ -99,9 +99,10 @@ final class Corpus {
                 ? 1
                 : boundary.splitDepth().orElse(1);
         final List<String> records = RecordSplit.split(parsed, depth);
-        // Where the parser said where each record began and ended, the record's own text is kept beside
-        // it, with what the stream wrapped its records in: enough to put the records back through the
-        // parser as a stream. A parser that does not say — the JSON and XML parsers — leaves them null.
+        // If the parser reported where each record began and ended, the record's raw text is kept beside
+        // it, along with the text before the first record and after the last. That is enough to put the
+        // records back through the parser as a stream. Parsers that don't report positions (the JSON and
+        // XML parsers) leave these null.
         final boolean located = !records.isEmpty()
                                 && spans.size() == records.size()
                                 && spans.stream().allMatch(Corpus::placed);
@@ -143,12 +144,13 @@ final class Corpus {
         return entries;
     }
 
-    /// The entries for the records a full pass kept (design 04 §4, A56): each as the parser cut it, with what
-    /// the candidate makes of it. These records lie beyond the text the session has — they were read from
-    /// the stream as the fragment ran over it — so no record carries its own text or what the stream
-    /// wrapped it in, and an improvement (A46) cannot be learned from them; a relearning from a stream can.
+    /// Builds entries for the records that fell short in a full pass over the held stream, each as the
+    /// parser split it, with what the candidate makes of it. These records may lie beyond the prefix the
+    /// session has in memory (they were read from the stream as the fragment ran over it), so no entry has
+    /// its raw text or the text around it, and an improvement session cannot be learned from them. A
+    /// relearning from a stream can.
     ///
-    /// @param held The records, each as one document of its own.
+    /// @param held The records, each as a single-record document.
     static List<Accepted> heldEntries(final List<LearnedStep> chain,
                                       final RecordBoundary boundary,
                                       final List<String> held,
@@ -170,22 +172,23 @@ final class Corpus {
         return entries;
     }
 
-    /// What a chain makes of one entry's record: its transform steps' output, or — for a chain that is a
-    /// parser alone, whose output is its records — the record itself, so that a parser-only binding is held
-    /// to what it emits and not to nothing.
+    /// Gets what a chain makes of one entry's record: the output of its transform steps. For a chain that
+    /// is only a parser, whose output is its records, it is the record itself, so that a parser-only binding
+    /// is held to what it emits rather than to nothing.
     static String outputFor(final List<LearnedStep> transforms, final String record, final RecordBoundary boundary) {
         return transforms.isEmpty()
                 ? record
                 : lastOutput(Judging.rerun(transforms, record, boundary));
     }
 
-    /// Whether a candidate fell short on an entry (A66): its output must clear the bar, a translated
-    /// record must not become an Unknown, and a record that yielded something must still yield something.
+    /// Checks whether a candidate did worse on an entry than the accepted output. Its output must clear the
+    /// bar, a record that was translated must not become an Unknown, and a record that yielded an event must
+    /// still yield one.
     ///
-    /// @param entry    The entry.
+    /// @param entry    The corpus entry.
     /// @param verdicts The candidate's verdicts over the entry's record.
-    /// @param output   What the candidate made of it.
-    /// @return Why it fell short, or empty where it did not.
+    /// @param output   What the candidate made of the record.
+    /// @return Why it fell short, or empty if it did not.
     static Optional<String> shortfall(final Accepted entry, final List<Verdict> verdicts, final String output) {
         final Kind now = kindOf(output);
         if (entry.kind() == Kind.TRANSLATION && now == Kind.UNKNOWN) {
@@ -206,7 +209,7 @@ final class Corpus {
         return Optional.empty();
     }
 
-    /// How an entry is named to a person: by its place in the corpus and the attempt that accepted it.
+    /// Describes an entry for a person, by its position in the corpus and the session that accepted it.
     static String name(final int ordinal, final int of, final Accepted entry) {
         return "record " + ordinal + " of " + of + " in the corpus"
                + (entry.attemptId() == null
@@ -214,9 +217,10 @@ final class Corpus {
                 : ", accepted by attempt " + entry.attemptId());
     }
 
-    /// The corpus put back together as a stream, for a session that has no stream of its own (A46):
-    /// what the stream wrapped its records in, then every record as it was received. Empty where any
-    /// entry's parser did not say where it cut, since such a record cannot be put back through one.
+    /// Reassembles the corpus as a stream, for an improvement session, which has no stream of its own: the
+    /// text before the first record, every record's raw text, then the text after the last (both taken
+    /// from the first entry). Empty if any entry lacks its raw text, since such a record cannot be put back
+    /// through a parser.
     static Optional<String> stream(final List<Accepted> entries) {
         if (entries.isEmpty() || !entries.stream().allMatch(Accepted::runnable)) {
             return Optional.empty();
@@ -231,7 +235,8 @@ final class Corpus {
         return Optional.of(stream.append(NullSafe.string(entries.get(0).postamble())).toString());
     }
 
-    /// What an output is: nothing, an admission, or a translation.
+    /// Classifies an output as no event, a marked Unknown (if any record's detail is `Unknown`), or a
+    /// translation.
     static Kind kindOf(final String output) {
         if (output == null || output.isBlank()) {
             return Kind.NONE;
@@ -251,9 +256,9 @@ final class Corpus {
                 : attempted.get(attempted.size() - 1).result().output();
     }
 
-    /// The target settled for this record's kind (A31): a target names a representative record as the
-    /// split yielded it — its text for a text format, its markup otherwise — and a record is of its kind
-    /// by the same skeleton the flow chose representatives by.
+    /// Finds the target event settled for this record's kind. A target names a representative record as the
+    /// split produced it (its text for a text format, otherwise its markup), and a record's kind is found by
+    /// the same skeleton the flow used to choose representatives.
     private static String targetFor(final List<Target> targets, final String record, final String text) {
         if (targets.isEmpty()) {
             return null;
@@ -277,7 +282,7 @@ final class Corpus {
         return offset(text, span.getFrom().getLineNo(), span.getFrom().getColNo() - 1);
     }
 
-    /// The offset just past a span's last character: the end column names the last character, so it is
+    /// The offset just past a span's last character. The end column is the last character, so it is
     /// included.
     static int end(final String text, final TextRange span) {
         return offset(text, span.getTo().getLineNo(), span.getTo().getColNo());

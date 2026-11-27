@@ -51,7 +51,7 @@ class TestLearnedParts {
     @Test
     void thePartsAreInTheOrderRecordsPassThroughThemWithTheirDocuments() {
         final List<Part> parts = LearnedParts.of(List.of(new PipelineLayer(FRAGMENT, new PipelineDataBuilder()
-                // Added in another order than they are linked, to show the links decide
+                // Added in a different order from their links, to show that the links decide the order
                 .addElement(element("xsltFilter", "XSLTFilter", "Transform"))
                 .addElement(element("Source", "Source", null))
                 .addElement(element("dsParser", "DSParser", null))

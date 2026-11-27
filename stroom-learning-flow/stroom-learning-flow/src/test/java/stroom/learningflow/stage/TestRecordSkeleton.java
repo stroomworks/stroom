@@ -59,12 +59,14 @@ class TestRecordSkeleton {
 
         final String prefix = LearningPrefix.learningPrefix(document.toString(), doc);
 
-        // Still a document — the root's start tag whole, whole children, the root closed — within the limit.
+        // The prefix is still a document within the limit: the root's whole start tag, whole children, and the
+        // root closed.
         assertThat(prefix).startsWith("<log xmlns=\"urn:x\" v=\"a>b\">").endsWith("</log>");
         assertThat(prefix.length()).isLessThanOrEqualTo(600 + "</log>".length());
         assertThat(OutputRecords.parse(prefix)).isPresent();
         assertThat(OutputRecords.parse(prefix).orElseThrow().records()).hasSizeBetween(1, 39);
-        // A document too small to cut is shown whole; one whose first child alone exceeds the limit still shows it.
+        // A document too small to cut is shown whole, and one whose first child alone exceeds the limit still
+        // shows that child.
         assertThat(LearningPrefix.learningPrefix("<a><b/></a>", doc)).isEqualTo("<a><b/></a>");
         assertThat(OutputRecords.parse(LearningPrefix.learningPrefix(document.toString(),
                 LearningFlowDoc.builder().uuid("d").sampleSizeLimit(10).build())).orElseThrow().records())
@@ -82,8 +84,8 @@ class TestRecordSkeleton {
 
     @Test
     void aRecordsKindIsItsFieldsNotItsValuesNorItsArrayLengths() {
-        // Named Data repeat among their siblings, so their Names are the fields and tell a logon from a
-        // process creation; a lone User's Name is a value and does not make every user a kind.
+        // Named Data elements repeat among their siblings, so their Name attributes are field names and tell a
+        // logon from a process creation. A lone User's Name is a value, so each user is not a separate kind.
         final String logon = "<Event><System><EventID>4624</EventID></System><EventData>"
                              + "<Data Name=\"TargetUserName\">alice</Data><Data Name=\"LogonType\">2</Data>"
                              + "</EventData><User Name=\"alice\"/></Event>";
@@ -96,7 +98,7 @@ class TestRecordSkeleton {
         assertThat(RecordSkeleton.recordSkeleton(logon))
                 .contains("<Data Name=TargetUserName>", "<User Name>")
                 .doesNotContain("alice");
-        // A JSON key always names a field; an array is one kind however many items it holds.
+        // A JSON key always names a field, and an array is one kind however many items it holds.
         final String twoRoles = "<map xmlns=\"http://www.w3.org/2013/XSL/json\"><string key=\"user\">a</string>"
                                 + "<array key=\"roles\"><string>x</string><string>y</string></array></map>";
         final String threeRoles = twoRoles.replace("<string>y</string>", "<string>y</string><string>z</string>");
@@ -119,7 +121,7 @@ class TestRecordSkeleton {
         assertThat(LearningPrefix.isJsonDocument(apache)).isFalse();
         assertThat(LearningPrefix.isJsonDocument("[1.2.3.4] up\n[1.2.3.5] down\n")).isFalse();
         assertThat(LearningPrefix.isJsonDocument("{\n\"a\": 1}\n{\"b\": 2}\n")).describedAs("two values").isFalse();
-        // A bracketed log is cut by lines and held out like any text, not learned whole.
+        // A bracketed log is cut by lines and has records held out like any text, rather than being shown whole.
         final LearningFlowDoc doc = LearningFlowDoc.builder().uuid("d").heldOutFraction(0.5).sampleSizeLimit(1000)
                 .build();
         assertThat(LearningPrefix.learningPrefix(apache, doc))
@@ -128,8 +130,9 @@ class TestRecordSkeleton {
 
     @Test
     void markupThatIsNotOneDocumentIsHeldOutLikeText() {
-        // One fragment per line and no root: markup by its first character, but not a document, so the
-        // held-out fraction applies as it does to any text — the model must not see what it is judged on.
+        // One fragment per line and no root: it looks like markup from its first character, but is not one
+        // document, so the held-out fraction applies as it does to any text. The model must not see the records
+        // it is judged on.
         final String fragments = "<Event id=\"1\"/>\n<Event id=\"2\"/>\n<Event id=\"3\"/>\n<Event id=\"4\"/>\n";
         final LearningFlowDoc doc = LearningFlowDoc.builder().uuid("d").heldOutFraction(0.5).sampleSizeLimit(1000)
                 .build();
@@ -141,8 +144,9 @@ class TestRecordSkeleton {
 
     @Test
     void aStreamBringsItsRecordsAsTheYieldScorerCountsThem() {
-        // A document brings its root's children; fragments with no root bring their lines, not zero, or the
-        // learner would be bound provisionally and stay so; a JSON document is one value; text is its lines.
+        // A document brings its root's children. Fragments with no root bring their lines, not zero, or the
+        // stream would be judged as having brought no records. A JSON document is one value, and text brings
+        // its non-blank lines.
         assertThat(LearningPrefix.recordsBrought(THREE_RECORDS)).isEqualTo(3);
         assertThat(LearningPrefix.recordsBrought("<Event id=\"1\"/>\n<Event id=\"2\"/>\n<Event id=\"3\"/>\n"))
                 .isEqualTo(3);
@@ -154,7 +158,7 @@ class TestRecordSkeleton {
 
     @Test
     void aByteOrderMarkIsNotContent() {
-        // Read as text, a BOM would make XML and JSON look like a line of text to every classification.
+        // If a BOM were treated as content, XML and JSON would look like plain text to every classification.
         assertThat(RecordSkeleton.isMarkup("\uFEFF<records/>")).isTrue();
         assertThat(RecordSkeleton.recordSkeleton(RecordSkeleton.withoutBom("\uFEFF" + ONE_RECORD)))
                 .isEqualTo(RecordSkeleton.recordSkeleton(ONE_RECORD));
@@ -165,8 +169,8 @@ class TestRecordSkeleton {
 
     @Test
     void aJsonDocumentOverTheSampleSizeLimitIsCutAtItsArraysItems() {
-        // Cut by lines it would not parse, and the split question would abandon the attempt on a sample the
-        // parser cannot read — which is every JSON feed over the limit.
+        // Cut by lines, the sample would not parse, and the split question would abandon the attempt on a
+        // sample the parser cannot read. That would happen for every JSON feed over the limit.
         final StringBuilder document = new StringBuilder("{\n  \"source\": \"api\",\n  \"events\": [\n");
         for (int i = 0; i < 40; i++) {
             document.append("    {\"time\": \"2026-09-22T09:00:0").append(i % 10)
@@ -181,9 +185,9 @@ class TestRecordSkeleton {
                 .sampleSizeLimit(10_000).heldOutFraction(0.0).build()))
                 .describedAs("within the limit and nothing held out, whole").isEqualTo(whole);
 
-        // Audit finding S5: a document within the limit used to be shown whole whatever the Learning
-        // Flow's held-out fraction said, so for every JSON feed that fitted, promotion was judged on
-        // exactly what the model had been shown and A14 did not hold.
+        // A document within the limit still has its held-out fraction withheld. Otherwise, for every JSON feed
+        // that fitted, promotion would be judged on exactly what the model had been shown, rather than on
+        // records it never saw.
         final String held = LearningPrefix.learningPrefix(whole, LearningFlowDoc.builder().uuid("d")
                 .sampleSizeLimit(10_000).heldOutFraction(0.2).build());
 

@@ -19,36 +19,38 @@ package stroom.learningflow.stage;
 import java.util.Collection;
 import java.util.Set;
 
-/// The learning of pipelines that have been deleted (design 06 A120, A134–A136). A pipeline's deletion is
-/// every one of its elements' at once, so the mark is the pipeline's: its learners' rows stay, to be read
-/// in the Supervisor under a filter, until the retention job forgets them once the mark is older than
-/// attempts are kept. In memory in scenarios; the `learning_flow_deleted_pipeline` table in a node, where
-/// the retention job's side of it is [stroom.learningflow.element.KeptLearning].
+/// Records which pipelines with learning have been deleted. Deleting a pipeline deletes all its elements at
+/// once, so the mark is per pipeline. Its learners' rows are kept, viewable in the Supervisor under a
+/// filter, until the retention job removes them once the mark is older than the session retention period.
+///
+/// Tests keep the marks in memory; a node uses the `learning_flow_deleted_pipeline` table, and the retention
+/// job's side of it is [stroom.learningflow.element.KeptLearning].
 public interface DeletedPipelines {
 
-    /// Mark a pipeline's learning deleted, where any is kept: the time of a mark already made stands, so
-    /// that every node hearing the same delete, and the retention job finding it later, age it from when
-    /// it was first heard.
+    /// Marks a pipeline's learning as deleted, if it has any. If the pipeline is already marked, the
+    /// original time is kept, so that every node handling the same delete event, and the retention job
+    /// finding it later, age it from when the deletion was first seen.
     ///
-    /// @param pipelineUuid The pipeline.
-    /// @param timeMs       When it was found deleted.
-    /// @return Whether this marked it: false where it was marked already, or kept nothing to mark.
+    /// @param pipelineUuid The UUID of the deleted pipeline.
+    /// @param timeMs       When it was found to be deleted.
+    /// @return Whether this call marked it: false if it was already marked, or had no learning to mark.
     boolean deleted(String pipelineUuid, long timeMs);
 
-    /// A pipeline marked deleted is there again — imported from an export of it, which keeps its uuid —
-    /// and its learning is its own again: no longer marked, so not hidden, refused or aged out.
+    /// Removes the mark from a pipeline that exists again, e.g. because it was imported from an export,
+    /// which keeps its UUID. Its learning is then no longer hidden, read-only or due to age out.
     ///
-    /// @param pipelineUuid The pipeline.
+    /// @param pipelineUuid The UUID of the pipeline.
     /// @return Whether it was marked.
     boolean restored(String pipelineUuid);
 
-    /// @param pipelineUuid The pipeline.
-    /// @return Whether its learning is marked deleted.
+    /// @param pipelineUuid The UUID of the pipeline.
+    /// @return Whether its learning is marked as deleted.
     boolean isDeleted(String pipelineUuid);
 
-    /// Which of these pipelines are marked deleted, for a page of the Supervisor's rows at once.
+    /// Finds which of these pipelines are marked as deleted, so that a page of the Supervisor's rows can be
+    /// checked in one call.
     ///
-    /// @param pipelineUuids The pipelines.
-    /// @return Those marked.
+    /// @param pipelineUuids The UUIDs of the pipelines.
+    /// @return The UUIDs of those marked.
     Set<String> deletedOf(Collection<String> pipelineUuids);
 }

@@ -19,31 +19,31 @@ package stroom.learningflow.transformation;
 import java.util.Map;
 import java.util.Set;
 
-/// The allow-list as this release has it (decision N1, option C, first stage). Everything here computes its
-/// answer from its arguments, the record being translated, or the stream's own metadata; nothing reads
-/// another feed, reaches off the node, writes anything, drops a record, or gives a different answer on a
-/// second run over the same input.
+/// The allow-list of XSLT instructions and functions built into this release, returned by
+/// [AiXsltAllowList#hardCoded()].
 ///
-/// The second of those matters as much as the first: judging and serving must agree, or a candidate is
-/// promoted on a score the serving run cannot reproduce. That is why `current-dateTime()` and
-/// `stroom:random()` are absent though neither leaves the node.
+/// Everything on it computes its answer from its arguments, the record being translated, or the stream's own
+/// metadata. Nothing on it reads another feed, reaches off the node, writes anything, drops a record, or
+/// gives a different answer on a second run over the same input.
 ///
-/// Track 2 step 6 moves this onto the Egress Policy screen, where a site can add a function it has checked
-/// without waiting for a release. Until then, changing the list means a release.
+/// Giving the same answer matters as much as staying on the node: judging and serving must agree, or a
+/// candidate is promoted on a score the serving run cannot reproduce. That is why `current-dateTime()` and
+/// `stroom:random()` are absent, although neither leaves the node.
+///
+/// Because the list is in code, changing it needs a new release.
 final class HardCodedXsltAllowList implements AiXsltAllowList {
 
     static final AiXsltAllowList INSTANCE = new HardCodedXsltAllowList();
 
-    /// The XSLT elements a translation needs: match a record, choose between shapes, pull out values and
+    /// The XSLT elements a translation needs: to match a record, choose between shapes, pull out values and
     /// write the result.
     ///
-    /// Not here, and refused: `result-document` (writes files), `include`, `import` and `import-schema`
-    /// (read them), `evaluate` (runs an XPath built at run time, which no static check can see),
-    /// `message` (`terminate="yes"` abandons the transform, and an unwrapped message is logged as an
-    /// `ERROR`, which drops records from the output — the declared-skips design settled on a marker in the
-    /// output instead, so this entry stands, ruling A148), `namespace-alias`, `output` and
-    /// `character-map` (change serialisation
-    /// under the writer), and `script` and `use-package`.
+    /// Not here, and so refused: `result-document` (writes files); `include`, `import` and `import-schema`
+    /// (read files); `evaluate` (runs an XPath built at run time, which no static check can see); `message`
+    /// (`terminate="yes"` abandons the transform, and a message not wrapped in a severity element is logged
+    /// as an `ERROR`, which drops records from the output; a translation marks a record it deliberately
+    /// skips with a `Skipped` element in the output instead); `namespace-alias`, `output` and
+    /// `character-map` (change serialisation underneath the writer); and `script` and `use-package`.
     private static final Set<String> INSTRUCTIONS = Set.of(
             "stylesheet", "transform", "template", "apply-templates", "call-template", "apply-imports",
             "next-match", "param", "with-param", "variable", "value-of", "copy", "copy-of", "sequence",
@@ -58,7 +58,7 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
     /// The standard XPath and XSLT functions a translation needs: strings, numbers, dates, sequences, nodes
     /// and regular expressions.
     ///
-    /// Not here, and refused: `unparsed-text`, `unparsed-text-lines`, `unparsed-text-available`, `document`,
+    /// Not here, and so refused: `unparsed-text`, `unparsed-text-lines`, `unparsed-text-available`, `document`,
     /// `doc`, `doc-available`, `collection`, `uri-collection` and `json-doc`, which read files and make
     /// outbound requests; `environment-variable` and `available-environment-variables`, which read secrets
     /// passed in the environment; `function-lookup`, `function-name` and `load-xquery-module`, which call a
@@ -94,7 +94,7 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
             // nodes
             "name", "local-name", "namespace-uri", "node-name", "root", "position", "last", "nilled",
             "data", "lang", "has-children", "innermost", "outermost", "path",
-            // maps and arrays, which XSLT 3.0 templates use to carry values about
+            // JSON conversion
             "parse-json", "json-to-xml", "xml-to-json",
             // types and errors
             "error", "trace", "nan", "parse-xml", "parse-xml-fragment", "serialize",
@@ -104,19 +104,18 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
             "namespace-uri-from-QName", "namespace-uri-for-prefix", "in-scope-prefixes");
 
     /// Stroom's own functions that compute their answer from their arguments or from the stream being
-    /// translated, which is the stream the candidate is judged on (decision N1's last group).
+    /// translated, which is the stream the candidate is judged on.
     ///
-    /// `format-date` is here on assumption AS6: it is pure provided the stream's metadata is set, which
-    /// Track 1 task 3 makes the worker do for each attempt. Without that, judging and serving would take
-    /// the missing year from different clocks.
+    /// `format-date` is allowed on the assumption that the stream's metadata, including when it was
+    /// received, is set for every attempt. It then takes a missing year from the stream rather than the
+    /// clock, so judging and serving give the same answer.
     ///
-    /// Not here, and refused: `http-call`, `fetch-json`, `send-email`, `ask-ai`, `host-name` and
+    /// Not here, and so refused: `http-call`, `fetch-json`, `send-email`, `ask-ai`, `host-name` and
     /// `host-address`, which leave the node; `lookup`, `bitmap-lookup`, `dictionary`, `manifest-for-id`,
     /// `meta-stream-for-id` and `parent-for-id`, which read beyond this stream with the processing user's
-    /// access; `log`, `add-meta`, `put` and `get`, which have side effects — an ERROR or FATAL from `log`
-    /// drops records from the output quietly, and a candidate that drops its awkward records can still
-    /// score well; and `current-time`, `current-unix-time`, `random` and `random-integer`, which do not
-    /// repeat.
+    /// access; `log`, `add-meta`, `put` and `get`, which have side effects (an ERROR or FATAL from `log`
+    /// quietly drops records from the output, and a candidate that drops its awkward records can still score
+    /// well); and `current-time`, `current-unix-time`, `random` and `random-integer`, which do not repeat.
     private static final Set<String> STROOM_FUNCTIONS = Set.of(
             // dates, strings and conversions: pure, given the stream's metadata for the missing year
             "format-date", "parse-date", "to-date", "to-dateTime", "hash", "hex-to-string",
@@ -127,8 +126,8 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
             "source", "source-id", "stream-id", "parent-id", "part-no", "record-no", "line-from", "line-to",
             "col-from", "col-to");
 
-    /// Why a refused name is refused, by group, so that the model is told what is wrong rather than only
-    /// that something is.
+    /// Why each refused name is refused, so that the model is told what is wrong rather than only that
+    /// something is.
     private static final Map<String, String> REASONS = Map.ofEntries(
             Map.entry("unparsed-text", "it reads files from the node"),
             Map.entry("unparsed-text-lines", "it reads files from the node"),
@@ -189,7 +188,8 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
             Map.entry("script", "it runs code that is not XSLT"),
             Map.entry("use-package", "it reads another stylesheet from the node"));
 
-    /// @return Every `stroom:` function on the list, for the harness to say which it has no stand-in for.
+    /// @return Every `stroom:` function on the list, so that the test harness can report which ones it has
+    ///         no stand-in for.
     static Set<String> stroomFunctions() {
         return STROOM_FUNCTIONS;
     }
@@ -208,7 +208,7 @@ final class HardCodedXsltAllowList implements AiXsltAllowList {
             return false;
         }
         return switch (namespaceUri) {
-            // A constructor such as xs:integer(…) only casts, and the schema namespace holds nothing else
+            // A constructor such as xs:integer(…) only casts, and the schema namespace has no other functions
             case SCHEMA_NAMESPACE -> true;
             case FUNCTIONS_NAMESPACE -> FUNCTIONS.contains(localName);
             case STROOM_NAMESPACE -> STROOM_FUNCTIONS.contains(localName);

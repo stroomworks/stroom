@@ -21,12 +21,10 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
-/**
- * What a scorer of design §8.4 needs to know beyond its weight and threshold. One class per scorer that
- * takes parameters; the compile gate, input coverage and schema conformance take none (conformance judges
- * against the Learning Flow's target schema, task 7). {@link #check()} says which
- * check a set of parameters belongs to, and {@link CheckSetting} refuses a mismatch.
- */
+/// The settings a scorer needs beyond its state and threshold. There is one subclass for each scorer that takes
+/// parameters; the others, such as the compile check, input coverage and schema conformance, take none (schema
+/// conformance judges against the Learning Flow's target schema, which is a document setting). [#check()] says
+/// which check a set of parameters belongs to, and [CheckSetting] refuses a mismatch.
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = YieldParameters.class, name = "yield"),
@@ -41,13 +39,11 @@ public abstract sealed class ScorerParameters
         BusinessRulesParameters,
         TimesParameters {
 
+    /// @return The check these parameters belong to.
     public abstract Check check();
 
-    /**
-     * The parameters a scorer starts with when it is added to a Learning Flow document, or null for a scorer that
-     * takes
-     * none.
-     */
+    /// @param check The check being added to a Learning Flow document.
+    /// @return The parameters the check starts with, or null for a check that takes none.
     public static ScorerParameters defaultsFor(final Check check) {
         return switch (check) {
             case YIELD -> new YieldParameters(null, null);

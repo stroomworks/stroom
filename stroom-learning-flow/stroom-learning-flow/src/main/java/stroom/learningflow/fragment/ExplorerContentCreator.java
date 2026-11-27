@@ -33,17 +33,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-/**
- * Creates learned content through the explorer, so it has a node in the tree and inherits the folder's
- * permissions. The folder path is made sure of on every create; the walk is cheap when it exists.
- */
+/// The [ContentCreator] used on a node. It creates learned content through the explorer, so that each
+/// document has a node in the tree and inherits the folder's permissions. The folder path is checked, and
+/// created if missing, on every create; the walk is cheap when the folder exists.
 @Singleton
 public class ExplorerContentCreator implements ContentCreator {
 
-    /// The folders this node has made sure of. A stage makes sure of a learner's folder each time it would
-    /// open a session, which for a learner nothing serves is each time one of its streams is tried; a
-    /// folder found once is not looked for again. Creating a document still makes sure of its folder, so a
-    /// folder a person deletes afterwards is made again when it is needed.
+    /// The folders this node has already ensured exist. A stage ensures a learner's folder exists each time
+    /// it would open a session, which for a learner that nothing serves is every time one of its streams
+    /// is tried, so a folder found once is not looked for again. Creating a document still ensures its
+    /// folder exists, so a folder that a person deletes later is created again when it is needed.
     private final Set<DocPath> ensured = ConcurrentHashMap.newKeySet();
     private final ExplorerService explorerService;
     private final ExplorerNodeService explorerNodeService;
@@ -74,7 +73,8 @@ public class ExplorerContentCreator implements ContentCreator {
         }
     }
 
-    /// Made sure of, as a create would make sure of it: a name is asked for only to create under it.
+    /// Creates the folder if it is missing, as [#create] would, since names are only asked for in order to
+    /// create something in the folder.
     @Override
     public Set<String> names(final DocPath folder) {
         return explorerNodeService.getChildren(folder(folder).getDocRef()).stream()
@@ -82,15 +82,17 @@ public class ExplorerContentCreator implements ContentCreator {
                 .collect(Collectors.toSet());
     }
 
-    /// The folder, found or made a part at a time from the top of the tree. Not the explorer's own walk,
-    /// which fails for good once a folder has a twin of the same name: a folder has no unique name, and
-    /// the tasks trying a new learner's streams side by side, on this node or another, each make sure of
-    /// its folder before a session is opened, so two can each make it before either sees the other's. A
-    /// twin is harmless here, since the walk takes the one with the lowest uuid, as every node would; and
-    /// on one node the walk is made one at a time, so that twins are not made in the first place.
+    /// Finds the folder, creating any missing part, one path part at a time from the top of the tree.
+    ///
+    /// This does not use the explorer's own path walk, because that fails permanently once a folder has a
+    /// duplicate with the same name. Folder names are not unique, and the tasks processing a new learner's
+    /// streams in parallel, on this node or another, each ensure its folder exists before a session is
+    /// opened, so two can each create it before either sees the other's. A duplicate is harmless here,
+    /// because this walk always takes the one with the lowest UUID, as every node would. On one node the
+    /// method is synchronised, so that duplicates are not created in the first place.
     private synchronized ExplorerNode folder(final DocPath path) {
         ExplorerNode parent = explorerNodeService.getRoot();
-        // The empty path's parts are one null leaf: the top of the tree has none to walk.
+        // An empty path's parts are a single null leaf, so it is treated as having no parts to walk.
         final List<String> parts = path.isBlank()
                 ? List.of()
                 : path.getAllParts();
@@ -100,7 +102,7 @@ public class ExplorerContentCreator implements ContentCreator {
                     .stream()
                     .min(Comparator.comparing(ExplorerNode::getUuid))
                     .orElse(null);
-            // A part not there is made as the explorer makes it, one part below the folder found.
+            // A missing part is created by the explorer, one level below the folder found so far.
             parent = found != null
                     ? found
                     : explorerService.ensureFolderPath(DocPath.fromParts(false, part), parent,

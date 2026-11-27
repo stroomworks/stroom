@@ -19,36 +19,35 @@ package stroom.learningflow.stage;
 import stroom.learningflow.fragment.ServedStream;
 import stroom.learningflow.fragment.Shortfalls;
 
-/// The held stream run in full (design 04 §4), as both ends of it: what the bar made of each record,
-/// and what the parser made of the input.
+/// The result of running a candidate over the whole held stream: how each record fared against the bar,
+/// and how much of the input the parser accounted for.
 ///
-/// Both matter. A pass where every record cleared the bar is not a clear pass if the parser read
-/// only half the stream — that is the fault in
-/// `docs/learning-flow-parser-drift-not-detected.md` wearing the pass's own badge, and reading only
-/// the first half of this is what would have left the worker waking a stream the task then defers
-/// again (W4-4).
+/// Both matter. A pass where every record cleared the bar is not a clear pass if the parser read only half
+/// the stream (the fault described in `docs/learning-flow-parser-drift-not-detected.md`). If only the
+/// records were checked, the worker could promote and wake a stream that the task would then defer again.
 ///
-/// @param shortfalls What the bar made of each record.
+/// @param shortfalls How each record fared against the bar.
 /// @param served     What the run made of the input.
-/// @param lostInput What the stream's input did not account for, as the document's checks judge it;
-///                   null where it accounted for itself.
+/// @param lostInput  A description of the input the parser did not account for, as the document's checks
+///                   judge it; null if it accounted for all of it.
 record HeldPass(Shortfalls shortfalls, ServedStream served, String lostInput) {
 
-    /// Whether the stream came through whole: every record cleared the bar, **and** the input
-    /// accounted for itself.
+    /// Whether the stream came through whole: every record cleared the bar, **and** all of the input was
+    /// accounted for.
     boolean clear() {
         return shortfalls.clear() && lostInput == null;
     }
 
-    /// The pass as the session judges it: the records that fell short where any did, else what the
-    /// input lost.
+    /// The pass as the session judges it: the records that fell short if any did, otherwise the input
+    /// that was lost.
     Judged judged() {
         return shortfalls.clear()
                 ? Judged.lostFrom(served, lostInput)
                 : Judged.shortOf(shortfalls);
     }
 
-    /// Why the stream did not come through, for the next question and for the row.
+    /// Describes why the stream did not come through, for the next question to the model and for the
+    /// session's row.
     ///
     /// @param round Which round of the session this was.
     /// @return The reason.

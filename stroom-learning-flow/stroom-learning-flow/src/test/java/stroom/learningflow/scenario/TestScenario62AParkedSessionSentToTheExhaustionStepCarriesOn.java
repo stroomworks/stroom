@@ -44,16 +44,16 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Design 02 §5, scenario 62: **a parked session sent to the exhaustion step carries on** (A65, A76;
-/// design 04 §4 and §6).
+/// Tests a person sending a parked session straight to the flow's exhaustion step.
 ///
-/// A session out of its token budget parks for a person with records of the held stream still short. A
-/// person sends it to the exhaustion step: the worker carries it on from the turns already recorded, puts
-/// no further transform question to the model, and takes the flow's spent transition instead — to the
-/// `ADMIT` step, where what the stream still cannot translate is admitted as marked Unknown events. A
-/// sending stands on the row until the attempt closes — through the park on the way for the budget the
-/// exhaustion step's own question needs, and the grant that reopens it. A flow with nowhere to send it to
-/// parks the session again, saying so. A sending to anything but a parked attempt is refused.
+/// A session that runs out of its token budget with records of the held stream still short is parked for a
+/// person. The person sends it to the exhaustion step: the worker resumes it from the turns already recorded,
+/// asks the model no further transform question, and follows the transform step's "when spent" transition
+/// instead, to the `ADMIT` step, where what the stream still cannot translate is admitted as marked Unknown
+/// events. The request stays recorded on the attempt until the attempt closes, including through a further
+/// park for the budget the exhaustion step's own question needs and the grant that reopens it. If the flow
+/// has no such transition, the session is parked again with a reason. Sending an attempt that is not parked
+/// is refused.
 class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
 
     private static final String DOC = "doc-1";
@@ -69,8 +69,9 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
     @Test
     void theWorkerSkipsTheTransformsQuestionAndAdmitsAtTheExhaustionStep() {
         final Scenarios scenarios = new Scenarios();
-        // Four tokens at a token a question, the budget being the attempt's across its rounds (A5): round
-        // one's three questions and round two's chain, and the parser's second question is over it.
+        // Four tokens at one token per question, the budget covering all of the attempt's rounds: enough for
+        // round one's three questions and round two's chain question, so round two's parser question goes
+        // over it.
         final LearningFlowDoc doc = doc(FlowStep.builder(QuestionKind.CONFIGURE)
                 .role(ConfigureRole.TRANSFORM)
                 .candidates(1)
@@ -98,8 +99,8 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThat(parked.report().getDetails()).first().asString().startsWith("A run may spend 4 tokens;");
         assertThat(parked.exhaustNext()).isFalse();
 
-        // Sent to the exhaustion step: the row says so, and the attempt is opened again for the worker.
-        // A sending to an attempt that is not parked is refused.
+        // Sent to the exhaustion step, the attempt records the request and is reopened for the worker.
+        // Sending an attempt that is not parked is refused.
         scenarios.supervisorActions().exhaust(doc, parked.id());
         final Recorded sent = scenarios.attempts.byId(parked.id()).orElseThrow();
         assertThat(sent.status()).isEqualTo(AttemptStatus.AWAITING_MODEL);
@@ -107,8 +108,8 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThatThrownBy(() -> scenarios.supervisorActions().exhaust(doc, parked.id()))
                 .describedAs("not parked any more").isInstanceOf(IllegalStateException.class);
 
-        // Carried on: the budget is spent before the first question, replayed or not, so the session
-        // parks again at once — with the sending standing, since nothing has taken it yet.
+        // When resumed, the budget is already spent before the first question, replayed or not, so the
+        // session parks again at once. The request still stands, since nothing has acted on it yet.
         final Script stillOver = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L);
         assertThat(scenarios.worker(stillOver).advance(10)).isEqualTo(1);
         assertThat(stillOver.asked()).isEmpty();
@@ -116,11 +117,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThat(parkedAgain.status()).isEqualTo(AttemptStatus.PARKED);
         assertThat(parkedAgain.exhaustNext()).describedAs("stands through the park").isTrue();
 
-        // Granted enough to finish, the sending stands through that too: the recorded turns — round
-        // one, and round two's chain and parser, whose answers were recorded before the budget refused
-        // them — are replayed for nothing, the transform's question is not put, and the flow goes to the
-        // exhaustion step, which asks for the admitted form and gets it. The sending is taken, and the
-        // closed row no longer carries it.
+        // Granted enough to finish, the request still stands. The recorded turns (round one, and round two's
+        // chain and parser, whose answers were recorded before the budget stopped the session) are replayed at
+        // no cost, the transform question is not asked, and the flow goes to the exhaustion step, which asks
+        // for the admitted form and gets it. The request is then used up, and the closed attempt no longer
+        // carries it.
         scenarios.supervisorActions().grant(doc, parked.id(), 10L, 0L);
         assertThat(scenarios.attempts.byId(parked.id()).orElseThrow().exhaustNext())
                 .describedAs("stands through the grant").isTrue();
@@ -164,7 +165,7 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         final Recorded parked = scenarios.attempts.forDocument(DOC, 10).get(0);
         assertThat(parked.status()).isEqualTo(AttemptStatus.PARKED);
 
-        // Sent, and parked again for the budget on the way; then granted enough to go on.
+        // Sent to the exhaustion step, parked again for the budget, then granted enough to carry on.
         scenarios.supervisorActions().exhaust(doc, parked.id());
         final Script stillOver = scenarios.script(CSV.configuration(), LOGON_ONLY).charging(1L);
         assertThat(scenarios.worker(stillOver).advance(10)).isEqualTo(1);
@@ -186,11 +187,11 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
 
     @Test
     void aSendingCutsTheTransformsCandidatesShortWhereverTheSessionParkedAmongThem() {
-        // Two candidates for the transform, and a budget of two tokens: the first candidate's answer is
-        // recorded before the budget refuses it, so the session parks with the transform's first
-        // question answered and its second never put. A sending is taken at the second — not before the
-        // step, where a replayed first would hide it — and the exhaustion step admits what the first
-        // candidate, which does not compile, could not.
+        // Two candidates for the transform, and a budget of two tokens. The first candidate's answer is
+        // recorded before the budget stops the session, so it parks with the transform's first question
+        // answered and its second never asked. The request to go to the exhaustion step is acted on at the
+        // second question, not before the transform step, where the replayed first answer would hide it. The
+        // exhaustion step then admits what the first candidate, which does not compile, could not translate.
         final Scenarios scenarios = new Scenarios();
         final LearningFlowDoc doc = doc(FlowStep.builder(QuestionKind.CONFIGURE)
                 .role(ConfigureRole.TRANSFORM)
@@ -230,7 +231,7 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         assertThat(finished.turns()).extracting(Turn::kind).contains(QuestionKind.ADMIT);
     }
 
-    /// The demo document under a flow whose transform step is as given, and whose sample holds the header
+    /// Builds the demo document with a flow using the given transform step, and a sample holding the header
     /// and a few logons.
     private static LearningFlowDoc doc(final FlowStep transform) {
         return DemoDocument.configure(Scenarios.document()).uuid(DOC).name("door")
@@ -255,7 +256,8 @@ class TestScenario62AParkedSessionSentToTheExhaustionStepCarriesOn {
         return text.toString();
     }
 
-    /// The stream as a task has it: the logons as the prefix, the whole to be read as a fragment runs.
+    /// Builds the stream as a task has it: the header and logons as the prefix, and a supplier that opens the
+    /// whole stream for a fragment to run over.
     private static Input streamed(final long id) {
         final int prefix = STREAM.indexOf("logoff") - "2020-06-17T08:08:00.000Z,user8,office,".length();
         return Input.streamed(id, FEED, "Raw Events", Map.of(), STREAM.substring(0, prefix), "pipeline-1",

@@ -29,10 +29,12 @@ import org.jooq.Record;
 import java.util.List;
 import java.util.Optional;
 
-/// The deferral rows of design 04 §6 as a table, one row per stream and document. A stream put back a
-/// second time is the same row brought up to date — the unique key on document and meta id makes the
-/// insert an update — and the time it first waited is what the row was inserted with, so that a new
-/// reason does not make it newly late.
+/// The database implementation of [Deferrals], which records the streams that are waiting (deferred)
+/// because nothing can translate them yet, and why.
+///
+/// There is one row per learner and stream. When a stream is deferred again, the unique key on the learner
+/// and meta id turns the insert into an update of the same row. The time it was first deferred is kept from
+/// the original insert, so that deferring it again for a new reason does not reset how long it has waited.
 @Singleton
 public class DeferralsDao implements Deferrals {
 
@@ -67,8 +69,9 @@ public class DeferralsDao implements Deferrals {
                 .set(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FIRST_DEFERRED_MS, now)
                 .set(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.UPDATE_TIME_MS, now)
                 .set(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ATTEMPTS, 1)
-                // Tried again and put back again: everything but when it first waited moves, the document
-                // too, since the learner may have been pointed at another.
+                // The stream was retried and deferred again. Everything except the time it was first
+                // deferred is updated, including the document, since the learner may now use a different
+                // one.
                 .onDuplicateKeyUpdate()
                 .set(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.DOC_UUID, docUuid)
                 .set(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST, failedAgainst)
@@ -129,10 +132,10 @@ public class DeferralsDao implements Deferrals {
                         LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ELEMENT_ID,
                         LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.FAILED_AGAINST)
                 .from(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL)
-                // Rows with no stamp are included (audit finding W7-4). A stream deferred for a *first*
-                // learning has nothing to have failed against, and used to be left out of this sweep
-                // entirely — so a deferral written just after the promotion's wake waited the full
-                // five-minute retry for a translation that already existed.
+                // Rows with no stamp (no binding they failed against) are included. A stream deferred while
+                // its learner had nothing serving it has no stamp. If such rows were left out of this
+                // sweep, a stream deferred just after a promotion had woken the others would wait the full
+                // retry delay for a translation that already exists.
                 .fetch(row -> new Stamp(
                         new Learner(row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.PIPELINE_UUID),
                                 row.get(LearningFlowDeferral.LEARNING_FLOW_DEFERRAL.ELEMENT_ID)),

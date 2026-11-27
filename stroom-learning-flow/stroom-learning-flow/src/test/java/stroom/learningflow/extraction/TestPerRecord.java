@@ -31,19 +31,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Running a step the way the fragment will run it (§12 item 25): one record at a time, compiled once for
- * the candidate, and reporting what fell short once rather than once per record.
- */
+/// Tests `PerRecord`, which runs a learning step the way the learned fragment will run it in production.
+///
+/// The candidate configuration is compiled once and run over one record at a time, and a shortfall shared by
+/// every record is reported once rather than once per record.
 class TestPerRecord {
 
     private static final String TWO_RECORDS = "<records><record>a</record><record>b</record></records>";
 
     @Test
     void theConfigurationIsPreparedOnceAndRunOncePerRecord() {
-        // The cost of compiling a candidate does not depend on the input, so it is paid for the candidate
-        // and not for every record of the stream it is judged on: a stylesheet compiled per record is a
-        // stylesheet compiled ten thousand times for a stream of ten thousand records.
+        // Compiling a candidate costs the same whatever the input, so it is done once per candidate, not once
+        // per record. Otherwise a stream of ten thousand records would compile the stylesheet ten thousand
+        // times.
         final Counting runner = new Counting(input -> new StepResult("<out>" + input + "</out>", List.of()));
 
         PerRecord.run(runner, "configuration", TWO_RECORDS, List.of("<record>a</record>", "<record>b</record>"));
@@ -68,9 +68,9 @@ class TestPerRecord {
 
     @Test
     void aShortfallEveryRecordSharesIsToldOnce() {
-        // A stylesheet that raises the same error for every record of a stream raises it ten thousand
-        // times, and ten thousand copies of one sentence is a re-ask that says no more than one copy and
-        // costs a budget (A44) to send.
+        // A stylesheet that raises the same error for every record of a ten-thousand-record stream raises it
+        // ten thousand times. Sending all those copies back to the model would tell it no more than one copy
+        // does, and would cost tokens to send.
         final Counting runner = new Counting(input -> new StepResult(null, List.of(error("no EventTime"))));
 
         final StepResult result = PerRecord.run(runner, "configuration", TWO_RECORDS,
@@ -81,10 +81,10 @@ class TestPerRecord {
 
     @Test
     void aStreamCarryingOneRecordIsRunAsTheOneRecordItIs() {
-        // "One record" and "no records" must not be the same answer. A stream whose array holds a single
-        // item still has its SplitFilter written, so a candidate judged against the whole envelope would
-        // be judged against something the pipeline will never hand it — and a stylesheet that reached
-        // into the envelope would pass here and name nobody in production.
+        // "One record" and "no records" must be treated differently. A stream whose array holds a single item
+        // still has a SplitFilter in its fragment, so the pipeline hands the transform one record, never the
+        // whole envelope. Judging a candidate against the envelope would let a stylesheet that reached into the
+        // envelope pass here and then produce nothing useful in production.
         final Counting runner = new Counting(input -> new StepResult("<out/>", List.of()));
 
         PerRecord.run(runner, "configuration", "<records><record>a</record></records>",
@@ -96,11 +96,10 @@ class TestPerRecord {
 
     @Test
     void aRunThatWroteNothingReadableSaysSoRatherThanFailingInSilence() {
-        // Found by the live run of 2026-09-22: a stylesheet told to read records:2 over input that is in
-        // no namespace matches nothing and writes the input's text with no elements. Saxon raises
-        // nothing — it is a successful transform of a document into text — so joining it fails, the step
-        // produces nothing, and the re-ask that follows carries no shortfall at all. Four of the five
-        // attempts that run spent on the row were blind.
+        // A stylesheet that matches records:2 elements over input in no namespace matches nothing, and writes
+        // the input's text with no elements. Saxon raises no error, because that is a successful transform into
+        // text, so joining the outputs fails and the step produces nothing. Without a diagnostic, the next
+        // question to the model would carry no reason at all. This was seen in a live run with a real model.
         final Counting runner = new Counting(input -> new StepResult("just some text", List.of()));
 
         final StepResult result = PerRecord.run(runner, "configuration", TWO_RECORDS,
@@ -126,8 +125,8 @@ class TestPerRecord {
 
     @Test
     void aStepWithNoRecordsToRunOverIsRunOverTheWholeDocument() {
-        // The only case in which there is nothing to run per record: the depth names no records at all.
-        // A stream carrying a single record is run as the one record it is.
+        // When no records were found at the record depth, there is nothing to run per record, so the step is
+        // run once over the whole document. (A stream with a single record is still run per record.)
         final Counting runner = new Counting(input -> new StepResult("<out/>", List.of()));
 
         PerRecord.run(runner, "configuration", TWO_RECORDS, List.of());
@@ -144,8 +143,8 @@ class TestPerRecord {
     // --------------------------------------------------------------------------------
 
 
-    /// A runner that counts what was asked of it: how often a configuration was prepared, how often a
-    /// prepared one was run, and how often the whole document went through the unprepared path.
+    /// A step runner that counts how often a configuration was prepared, how often a prepared one was run, and
+    /// how often the whole document went through the unprepared path.
     private static final class Counting implements StepRunner {
 
         private final AtomicInteger prepared = new AtomicInteger();

@@ -67,8 +67,8 @@ class TestPlainWords {
 
     @Test
     void everyCheckHasAPlainWordsNameOfItsOwn() {
-        // The names the list of checks shows: a check missing here has fallen through to the default,
-        // which once said "(not built)" of the built Permitted check
+        // The names the list of checks shows. A check missing here falls through to the default name, which
+        // could show the wrong text, as it once did for the Permitted check
         final Map<Check, String> expected = new EnumMap<>(Check.class);
         expected.put(Check.COMPILE, "Compiles");
         expected.put(Check.COVERAGE, "Reads all the input");

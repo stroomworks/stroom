@@ -34,9 +34,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Task 7, decision D2 option G: a schema that is not event-logging describes itself to the model from
-/// its own XSD, so that any target schema is usable rather than only the one the guidance was written
-/// for.
+/// Tests `TargetStructure`, which describes a target schema that is not event-logging to the model from its
+/// own XSD.
+///
+/// The hand-written guidance only covers event-logging, so generating a summary from the XSD is what makes any
+/// other target schema usable.
 class TestTargetStructure {
 
     private static final TargetSchema SIGHTINGS = schema("urn:sightings:2", "file://sightings-v2.4.xsd",
@@ -70,12 +72,12 @@ class TestTargetStructure {
 
     @Test
     void aRealSchemaIsDescribedWithinItsBudget() {
-        // Stroom's own Data Splitter schema: a real one, bigger than the fixture, and not event-logging.
-        // A large schema described in full would crowd out the sample and the feedback, which are what a
-        // candidate is actually judged on.
+        // Stroom's own Data Splitter schema is a real schema, bigger than the fixture, and not event-logging.
+        // A large schema described in full would crowd out the sample and the feedback, which matter more to
+        // the answer.
         //
-        // One fixture throughout: each has an in-memory store of its own, so a reference taken from one
-        // does not resolve in another.
+        // One fixture is used throughout, because each has its own in-memory store, so a reference taken from
+        // one does not resolve in another.
         final NodeFixture node = new NodeFixture();
         final TargetSchema dataSplitter = node.targetSchemas()
                 .resolve(node.schemaRef("data-splitter:3"))
@@ -93,8 +95,8 @@ class TestTargetStructure {
 
     @Test
     void aSchemaThatSaysNothingUsefulSaysSoRatherThanNothing() {
-        // A hand-written XSD with no root element, and one whose root holds no elements. Neither may
-        // leave the model with a dangling sentence where its instructions should be.
+        // A hand-written XSD with no root element, and one whose root holds no elements. Neither may leave
+        // the model with an unfinished sentence where its instructions should be.
         assertThat(TargetStructure.of(schema("urn:bare:1", "file://bare.xsd", "1.0", null, "<xs:schema/>")))
                 .contains("declares no root element")
                 .contains("file://bare.xsd");
@@ -104,8 +106,8 @@ class TestTargetStructure {
 
     @Test
     void theGeneratedSummaryIsWhatTheQuestionCarries() {
-        // The point of the whole thing: a document targeting another schema is told that schema's shape
-        // where a document targeting event-logging is told event-logging's.
+        // This is the purpose of the class: a document targeting another schema is told that schema's
+        // structure, just as a document targeting event-logging is told event-logging's.
         final LearningFlowDoc doc = LearningFlowDoc.builder().uuid("d").name("sightings").build();
 
         final String text = QuestionText.of(doc, SIGHTINGS).render(new Question.Configuration(
@@ -122,8 +124,8 @@ class TestTargetStructure {
 
     @Test
     void aFlowThatSaysWhatItsSchemaHoldsIsBelievedOverBoth() {
-        // A template override is how a Learning Flow says what the built-in text cannot: it wins for a
-        // generated summary exactly as it wins for event-logging's hand-written one.
+        // A template override is how a Learning Flow says what the built-in text cannot, so it replaces a
+        // generated summary just as it replaces event-logging's hand-written one.
         final LearningFlowDoc doc = LearningFlowDoc.builder().uuid("d").name("sightings")
                 .flow(new LearningFlow(List.of(), Map.of(Template.TARGET_STRUCTURE,
                         "holding one <Sighting> per record, and read the ringing scheme's note first."), null))

@@ -52,11 +52,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Design 02 §5, scenarios 41 and 42 (ruling A37): the flow is a graph. A flow that starts direct asks for a
- * target only when the transform stays short; a shortfall the transform cannot fix — a value its input
- * lacks — goes back to the parser by the transition the flow declares, and a transition is taken once.
- */
+/// Tests that the learning flow is a graph of steps whose transitions decide where each outcome goes.
+///
+/// The escalating flow starts direct and asks for a target only when the transform stays short. A shortfall
+/// the transform cannot fix, such as a value missing from its input, goes back to the parser by a transition
+/// the flow declares, and each transition is followed at most once.
 class TestScenariosFlow {
 
     private static final String FOUR_FIELDS = Scenarios.resource("csv-fields.ds3.xml");
@@ -94,11 +94,10 @@ class TestScenariosFlow {
                 .build();
     }
 
-    /// [#doc(LearningFlow)] with one check switched off. A step used to name the checks that judged it, so
-    /// a flow could leave preservation to the transform; the one model of checks took that away, and whether
-    /// a check judges at all is the document's to say.
+    /// Builds [#doc(LearningFlow)] with one check switched off. Whether a check judges at all is set on the
+    /// document, not on a flow step.
     ///
-    /// @param flow  The flow.
+    /// @param flow  The learning flow the document uses.
     /// @param off   The check to switch off.
     /// @return The document.
     private static LearningFlowDoc without(final LearningFlow flow, final Check off) {
@@ -136,7 +135,8 @@ class TestScenariosFlow {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // Direct's cost plus the split (A39): four questions, no target.
+        // The direct flow's questions plus the split, which is asked for every input: four questions and no
+        // target.
         assertThat(script.asked()).hasSize(4);
         assertThat(script.asked()).noneMatch(TargetFor.class::isInstance);
         assertThat(script.asked().get(1)).isInstanceOf(Split.class);
@@ -154,8 +154,9 @@ class TestScenariosFlow {
                 .reply(Scenarios.fenced(DEGENERATE))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withFeedbackMentioning("Extraction quality scored"))
                 .reply(Scenarios.fenced(DEGENERATE))
-                // The transform's two candidates are spent: its rule for that fires, a target is proposed
-                // per kind (the structure answers), and the parser is asked again, now against the targets.
+                // The transform's two candidates are spent, so its "when spent" rule applies: a target is
+                // proposed per kind of record (answered automatically by the script), and the parser is asked
+                // again, now against the targets.
                 .expect(QuestionMatcher.configuration("DSParser").withTargets(1)).reply(Scenarios.fenced(FOUR_FIELDS))
                 .expect(QuestionMatcher.configuration("XSLTFilter").withTargets(1)).reply(Scenarios.fenced(XSLT));
 
@@ -176,8 +177,8 @@ class TestScenariosFlow {
 
     @Test
     void aSplitThatEmitsNoRecordsIsRefusedWhateverChecksTheStepNames() {
-        // A splitter that consumes every line and emits nothing passes coverage and is no split at all: it is
-        // refused as a reply, not judged short on a check the step left out.
+        // A splitter that consumes every line and emits nothing passes coverage but is not a split at all. It
+        // is refused as a reply, rather than being judged short on some check.
         final String consumesAll = Structure.LINE_SPLIT.replace("<data name=\"record\" value=\"$1\"/>", "");
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
@@ -201,11 +202,9 @@ class TestScenariosFlow {
         assertThat(run.transcript().get(1).outcome()).isEqualTo(StepOutcome.REFUSED);
     }
 
-    /**
-     * Target-first, with the transform sent back to the parser when preservation falls short. The callers
-     * switch preservation off on the document ({@link #without}), so that the stream-level scorers do not
-     * fail the parser first on the fields it cannot find.
-     */
+    /// Builds a target-first flow in which a preservation shortfall at the transform goes back to the parser.
+    /// The callers switch preservation off on the document ([#without]), so that the stream-level scorers do
+    /// not fail the parser first on the fields it cannot find.
     private static LearningFlow preservationAtTheTransform() {
         return FlowExamples.flow(FlowExample.TARGET_FIRST).withSteps(List.of(
                 FlowStep.of(QuestionKind.CHAIN),
@@ -235,8 +234,8 @@ class TestScenariosFlow {
 
         script.verifyExhausted();
         assertThat(run.decision()).isInstanceOf(Promoted.class);
-        // The parser passed its own checks; the transform's fidelity check found the value absent from its
-        // input and said so as the parser's shortfall, which the flow routed at once.
+        // The parser passed its own checks. The transform's fidelity check found the values missing from its
+        // input and reported a preservation shortfall, which the flow sent straight back to the parser.
         final List<Question> scripted = script.scripted();
         assertThat(scripted).hasSize(5);
         final List<Exchange> configured = run.transcript().stream()
@@ -262,7 +261,7 @@ class TestScenariosFlow {
                 stream(1, CsvLines.lines(6))).learned();
 
         script.verifyExhausted();
-        // The transform's step leaves the flow by its default exit, park (A83).
+        // The transform step leaves the flow by its default exit, which is to park.
         assertThat(run.decision()).isInstanceOf(Parked.class);
         assertThat(((Parked) run.decision()).reason())
                 .isEqualTo("The learning steps went round in a loop.");
@@ -273,14 +272,12 @@ class TestScenariosFlow {
 
     @Test
     void feedbackCarriedByATransitionReachesTheNextQuestionAskedWhenTheStepItNamesIsSkipped() {
-        // 'goto split' over raw text where the split step is guarded 'when xml': the step is skipped, and the
-        // preservation shortfall the jump carried reaches the parser, which is what is asked next. The targets
-        // are asked before the split so that the parser is the first question after it.
+        // A 'goto split' over raw text, where the split step is guarded 'when xml': the split step is skipped,
+        // and the preservation shortfall carried by the jump reaches the parser, which is asked next. The
+        // targets are asked for before the split so that the parser is the first question after it.
         //
-        // The rule is on the parser, not the transform. It used to be on the transform, which named fidelity
-        // as its only check so that preservation fell to it alone; the one model of checks ended that, since
-        // every check that can measure a step now judges it, and the parser is measured by preservation
-        // first. What the test is about — feedback surviving a jump to a step that is skipped — is unchanged.
+        // The rule is on the parser step because every check that can measure a step judges it, and
+        // preservation measures the parser first.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -307,8 +304,8 @@ class TestScenariosFlow {
 
     @Test
     void onPassedGoesWhereTheStepSaysOnceTheWholeStepHasPassed() {
-        // A CONFIGURE over the whole chain passes when every element has, not at its first; a pass may also
-        // abandon, where the flow says so.
+        // A CONFIGURE step over the whole chain passes when every element has passed, not at the first. A
+        // pass may also stop learning, where the flow says so.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -326,8 +323,8 @@ class TestScenariosFlow {
         assertThat(run.decision()).isInstanceOf(Promoted.class);
         assertThat(steps(run)).containsExactly("chain", "configure", "configure");
 
-        // Its own scenarios: bindings are rows now (A41) and outlive a stage, so a second run against the same
-        // feed would bind what the first promoted instead of learning.
+        // A new `Scenarios`, because bindings are stored rows that outlive a stage: a second run for the same
+        // learner would use what the first promoted instead of learning.
         final Scenarios afresh = new Scenarios();
         final Script refused = afresh.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")
@@ -347,8 +344,8 @@ class TestScenariosFlow {
         assertThat(((GivenUp) abandoned.decision()).report().getDetails())
                 .containsExactly("The rule says to stop learning when it passes.");
 
-        // An at-once abandon names the outcome and the step, not candidates that were never spent. A fresh
-        // stage: the learner above was given up, and a given-up learner asks nothing (scenario 11).
+        // Stopping at once names the outcome and the step, not candidates that were never spent. This needs a
+        // new `Scenarios`, because the learner above was given up, and a given-up learner asks nothing.
         final Scenarios fresh = new Scenarios();
         final Script prose = fresh.script(FOUR_FIELDS, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")

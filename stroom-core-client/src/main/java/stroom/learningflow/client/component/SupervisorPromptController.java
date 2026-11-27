@@ -27,24 +27,24 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.function.Consumer;
 
-/// Asks for something in a dialog ([SupervisorPrompt]) before the Supervisor acts: the reason a draft is
-/// rejected, a learner given up or a binding taken back, what should be better about a binding, or what a
-/// learner should know.
+/// Shows a dialog ([SupervisorPrompt]) that asks a person for some text before an action on a learner is
+/// taken, such as the reason a draft is rejected, a learner is given up or a binding is withdrawn, what
+/// should be improved about a binding, or guidance for a learner.
 ///
-/// OK and Cancel are told apart, and the difference matters: OK with nothing typed is an answer (to
-/// improve a binding from what it already does), where Cancel is no answer at all, and a person who
-/// changed their mind must not have started anything. Whether an empty answer is enough is the asker's
-/// to decide.
+/// OK and Cancel are handled differently. OK with nothing typed is still an answer (for example, asking for a
+/// binding to be improved without saying how), whereas Cancel means the person changed their mind, so nothing
+/// must be started. Whether an empty answer is acceptable is up to the caller.
 ///
-/// Modal: what it asks about is the row selected behind it, which must not change under it.
+/// The dialog is modal because the question is about the row selected behind it, and that selection must not
+/// change while the dialog is open.
 public class SupervisorPromptController extends Controller {
 
     private final SupervisorPrompt view;
 
-    /// Made by GIN, with its prompt.
+    /// Made by GIN.
     ///
     /// @param eventBus The application's event bus.
-    /// @param view     Its component.
+    /// @param view     The dialog's content.
     @Inject
     public SupervisorPromptController(final EventBus eventBus, final SupervisorPrompt view) {
         super(eventBus);
@@ -54,10 +54,11 @@ public class SupervisorPromptController extends Controller {
 
     /// Shows the prompt as a dialog, owned by `opener` until it is closed.
     ///
-    /// @param opener  What shows it.
+    /// @param opener  The controller that opens the dialog and owns it while it is shown.
     /// @param caption The dialog's caption.
-    /// @param message What is being asked, and what the answer is used for.
-    /// @param onOk    Given the answer as typed, perhaps empty, when OK is pressed; not called on Cancel.
+    /// @param message The question being asked, and what the answer will be used for.
+    /// @param onOk    Called with the answer as typed, which may be empty, when OK is pressed. It is not
+    ///                called on Cancel.
     public void ask(final HasControllerNode opener,
                     final String caption,
                     final String message,

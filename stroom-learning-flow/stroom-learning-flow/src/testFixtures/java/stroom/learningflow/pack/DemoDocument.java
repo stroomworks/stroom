@@ -30,28 +30,27 @@ import stroom.learningflow.shared.YieldParameters;
 
 import java.util.List;
 
-/// The configuration of the demo document: one Learning Flow stage meant to be pointed at a feed
-/// nobody has looked at yet, and to learn it.
+/// The settings of the demo Learning Flow document, which is meant to be pointed at a feed nobody has
+/// looked at yet and learn to translate it.
 ///
-/// It lives here, in one place, because two things must be the same configuration and not merely a
-/// similar one: design 02 §5 scenario 51, which proves the settings learn four unrelated formats, and
-/// the demo content pack, which ships them. A pack whose settings had drifted from the scenario that
-/// proved them would be a plausible arrangement rather than a tested one.
+/// The settings are defined in one place because two things must use exactly the same configuration:
+/// `TestScenario51AnyFormatFromAnyFeed`, which shows that these settings learn four unrelated formats, and
+/// [DemoContentPack], which ships them. If the pack's settings drifted from the scenario's, the pack would
+/// no longer be tested.
 ///
-/// What is *not* here is anything a demo would have to guess at. There are no template overrides
-/// (A33): the built-in question text is what the model sees, so the pack cannot pin today's wording
-/// into a document and go stale against it. The model reference and the feeds belong to the pack,
-/// since the scenario has neither.
+/// There are no template overrides: the model sees the built-in question text, so the pack does not fix
+/// today's wording into a document that would then go out of date. The model document and the feeds are
+/// defined by the pack, since the scenario needs neither.
 public final class DemoDocument {
 
-    /// Every parser the stage knows how to write a configuration for. Narrowing this list is what every
-    /// format scenario before 51 did, and it is exactly what a person setting up an unknown feed cannot
-    /// do — so the demo allows them all and lets the chain question choose (A21).
+    /// Every parser the Smart Pipeline element knows how to write a configuration for. A person setting up
+    /// an unknown feed cannot know which to narrow this list to, so the demo allows them all and lets the
+    /// model choose when it is asked for the chain.
     public static final List<String> ALLOWED_ELEMENTS =
             List.of("DSParser", "JSONParser", "XMLFragmentParser", "XSLTFilter");
 
-    /// Prepended to the prompt contract of design 01 §10. It says what the built-in text cannot know:
-    /// which schema this installation translates to, and the house style of the events it wants.
+    /// Instructions added before the built-in question text. They say what the built-in text cannot know:
+    /// which schema this installation translates to, and the style of the events it wants.
     public static final String INSTRUCTIONS = """
             You are configuring a Stroom pipeline stage that turns raw machine-generated records into \
             Stroom event-logging XML.
@@ -76,11 +75,11 @@ public final class DemoDocument {
     private DemoDocument() {
     }
 
-    /// The checks one document uses for every format it meets. Compile and schema conformance gate —
-    /// a candidate that does not compile, or whose output is not an event, is not a candidate — and
-    /// extraction quality gates too, because the failure this feature exists to avoid is a transform
-    /// that validates while saying nothing (design 01 §8.3, A16). The checks with no scorer gate, and
-    /// coverage and the business rules are off, as the scorers this list replaced had them.
+    /// Returns the checks the document uses for every format. Compile and schema conformance are gates,
+    /// since a candidate that does not compile, or whose output is not valid events, is of no use.
+    /// Extraction quality is a gate too, because the failure this feature exists to avoid is a translation
+    /// that validates while saying nothing useful. Yield, times and literals are advice only; coverage and
+    /// the business rules are off; the remaining checks are gates.
     public static List<CheckSetting> checks() {
         return List.of(
                 new CheckSetting(Check.COMPILE, CheckState.GATE, 1.0, null),
@@ -100,24 +99,23 @@ public final class DemoDocument {
                 CheckSetting.of(Check.REGRESSION, CheckState.GATE));
     }
 
-    /// The settings themselves, applied to a builder the caller has already given a uuid and a name.
+    /// Applies the demo settings to a builder that the caller has already given a UUID and a name.
     ///
-    /// The flow is the escalating one (A37): direct for a feed that gives its meaning up easily, and a
-    /// target only where the transform falls short — which is what makes a single flow reasonable for
-    /// formats nobody has seen yet. `minRecordsToLearn` is five rather than the default ten so that
-    /// the small demo files are judged rather than left as a draft for a person (SIM-3 option E), and
-    /// the floor is 0.85 rather than 0.9 so that a good first attempt on an awkward format is promoted
-    /// rather than retried.
+    /// The flow is the escalating one: it settles how the input splits into records, asks for the
+    /// configurations directly, and only asks for target events where the translation falls short. That
+    /// makes a single flow reasonable for formats nobody has seen yet. `minRecordsToLearn` is five rather
+    /// than the default ten, so that the small demo files are enough to promote automatically; below that
+    /// minimum, a result is left as a draft for a person to approve.
     ///
     /// @param builder A builder to apply the demo's settings to.
     /// @return The same builder, for chaining.
     public static LearningFlowDoc.Builder configure(final LearningFlowDoc.Builder builder) {
         return builder
                 .learningMode(LearningMode.AUTOMATIC)
-                // Deliberately automatic, where a new Learning Flow is review (SIM-1): the demo is meant
-                // to learn a feed end to end while somebody watches it do so, and stopping at a draft
-                // would make that a two-step exercise. Importing it needs
-                // `APPROVE_SMART_PIPELINES_AUTOMATICALLY`, which an administrator has.
+                // Deliberately automatic, whereas a new Learning Flow defaults to review: the demo is meant
+                // to learn a feed from start to finish while somebody watches, and stopping at a draft
+                // would add a step. Importing it needs the `APPROVE_SMART_PIPELINES_AUTOMATICALLY`
+                // permission, which an administrator has.
                 .promotionMode(PromotionMode.AUTOMATIC)
                 .flow(FlowExamples.flow(FlowExample.ESCALATING))
                 .allowedElements(ALLOWED_ELEMENTS)

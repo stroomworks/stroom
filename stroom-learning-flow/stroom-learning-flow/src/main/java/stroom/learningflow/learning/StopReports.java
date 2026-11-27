@@ -46,15 +46,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/// Why a learning run stopped, as a [StopReport]: an error line, the details and the suggestions, in the
-/// words the screens use ([FlowWords]). Every stop a run can come to is worded here, and only here, so that
-/// the Feeds tab, the Monitoring Supervisor and the Error streams say the same, and each can be tested.
+/// Builds the [StopReport] that explains to a person why a learning run stopped: an error line, the
+/// details and the suggestions, in the same terms the screens use ([FlowWords]). Every reason a run can stop
+/// is worded here and only here, so that the Feeds tab, the Monitoring Supervisor and the error streams all
+/// say the same thing, and the wording can be tested.
 ///
-/// What a person reads is kept short: one line for the error, a few for the details, and suggestions
-/// that each say one thing to do. A reply from the model is quoted, cut to [#QUOTE] characters.
+/// What a person reads is kept short: one line for the error, a few for the details, and suggestions that
+/// each say one thing to do. A reply from the model is quoted, cut to [#QUOTE] characters.
 public final class StopReports {
 
-    /// The most of a reply or a message quoted in a detail, in characters.
+    /// The maximum number of characters of a reply or a message quoted in a detail.
     static final int QUOTE = 200;
 
     private StopReports() {
@@ -63,7 +64,8 @@ public final class StopReports {
 
     // ---- A step ----
 
-    /// A step that stopped the run: out of tries, by its own rule, or because its element failed.
+    /// Reports a step that stopped the run: because it ran out of candidates, because one of its rules sent
+    /// the run to an exit, or because its element failed.
     ///
     /// @param cause      Which of those it was: [StopCause#STEP_SPENT], [StopCause#STEP_RULE],
     ///                   [StopCause#STEP_FAILED] or [StopCause#FALLBACK_MISSING].
@@ -73,7 +75,7 @@ public final class StopReports {
     ///                   what failed for a step whose element failed; null for nothing.
     /// @param feedback   What the last answer fell short on.
     /// @param transcript The run's turns so far.
-    /// @param exit       Where the run leaves to.
+    /// @param exit       Where the run exits the flow.
     /// @return The report.
     public static StopReport ofStep(final StopCause cause,
                                     final List<FlowStep> steps,
@@ -85,7 +87,7 @@ public final class StopReports {
         return ofStep(cause, steps, index, about, feedback, transcript, exit, null);
     }
 
-    /// The same, saying what the model was shown of the stream where it was not shown all of it.
+    /// The same, adding how much of the stream the model was shown, where it was not shown all of it.
     ///
     /// @param cause      Why it stopped.
     /// @param steps      The flow's steps.
@@ -93,10 +95,10 @@ public final class StopReports {
     /// @param about      More to say about the step; null for nothing.
     /// @param feedback   What the last answer fell short on.
     /// @param transcript The run's turns so far.
-    /// @param exit       Where the run leaves to.
-    /// @param sample     The sample the step judged, or null where there was none: a person told
-    ///                   "couldn't write the parser" is owed the fact that the model saw eight kilobytes
-    ///                   of a two-megabyte stream (supervisor visibility item 3).
+    /// @param exit       Where the run exits the flow.
+    /// @param sample     The sample the step judged, or null where there was none. A person told
+    ///                   "couldn't write the parser" needs to know if the model saw, say, eight kilobytes
+    ///                   of a two-megabyte stream.
     /// @return The report.
     public static StopReport ofStep(final StopCause cause,
                                     final List<FlowStep> steps,
@@ -111,7 +113,7 @@ public final class StopReports {
         final List<Exchange> answers = answers(step, transcript);
         return switch (cause) {
             // A rule firing is the flow doing what it was told, and a missing fallback is a fault in the
-            // flow: neither is a question of what the model was shown, so neither carries that line.
+            // flow. Neither depends on what the model was shown, so neither gets the line about the sample.
             case STEP_RULE -> byRule(step, name, answers, feedback, exit);
             case FALLBACK_MISSING -> fallbackMissing(step, name);
             case STEP_FAILED -> withSample(failed(step, name, about, feedback, exit), sample);
@@ -119,11 +121,7 @@ public final class StopReports {
         };
     }
 
-    /// The report with a line about what the model was shown, where it was shown less than was read.
-    ///
-    /// @param report The report.
-    /// @param sample The sample, or null.
-    /// @return The report, with the line where there is one to add.
+    // Adds a line to the report about what the model was shown, where it was shown less than was read.
     private static StopReport withSample(final StopReport report, final Sample sample) {
         if (sample == null || sample.notShown() == 0) {
             return report;
@@ -159,7 +157,7 @@ public final class StopReports {
         } else {
             firstMessage(feedback).ifPresent(message -> details.add("The last answer fell short on: " + message));
             // A reply refused for its form often says in words what is wrong ("no single element name fits"),
-            // so the latest one is quoted even when the model tried again after it.
+            // so the latest such reply is quoted even when the model tried again after it.
             lastRefusal(answers).ifPresent(reply -> details.add(
                     "An earlier answer was refused, as not in the reply format: \"" + quote(reply) + "\""));
         }
@@ -233,9 +231,9 @@ public final class StopReports {
                         new Suggestion("Or answer this step yourself.", SuggestionAction.ANSWER)));
     }
 
-    /// A run that reached the fallback for a target schema that isn't event-logging (task 7, W1-3). The
-    /// fallback writes event-logging's marked `Unknown`, which no other schema has, so it doesn't apply: the
-    /// run stops for a person, as it does where the fallback is off.
+    /// Reports a run that reached the fallback (exhaustion) step for a target schema that isn't
+    /// event-logging. The fallback writes event-logging's marked `Unknown` events, which no other schema has,
+    /// so it doesn't apply, and the run stops for a person, as it does where the fallback is off.
     ///
     /// @param step     The fallback step.
     /// @param target   The target schema, not event-logging.
@@ -258,11 +256,11 @@ public final class StopReports {
 
     // ---- The run's limits ----
 
-    /// A run that took longer than its time for each run.
+    /// Reports a run that took longer than its time budget for each run.
     ///
     /// @param step      The step it was at.
     /// @param question  The number of the question it was at.
-    /// @param allowedMs How long it may take, a person's grant included.
+    /// @param allowedMs How long it may take, including any grant from a person.
     /// @param elapsedMs How long it had taken.
     /// @return The report.
     public static StopReport outOfTime(final FlowStep step,
@@ -279,11 +277,11 @@ public final class StopReports {
                                 SuggestionAction.CHANGE_LIMITS)));
     }
 
-    /// A run that spent more tokens than it may.
+    /// Reports a run that spent more tokens than its budget allows.
     ///
     /// @param step     The step it was at.
     /// @param question The number of the question it was at.
-    /// @param allowed  How many it may spend, a person's grant included.
+    /// @param allowed  How many it may spend, including any grant from a person.
     /// @param spent    How many it had spent.
     /// @return The report.
     public static StopReport outOfTokens(final FlowStep step,
@@ -302,7 +300,7 @@ public final class StopReports {
 
     // ---- The document's setup ----
 
-    /// A document none of whose element types this node can learn with.
+    /// Reports a document that allows no element type this node can learn with.
     ///
     /// @param allowed The element types it allows.
     /// @return The report.
@@ -313,7 +311,7 @@ public final class StopReports {
                 + "first learning step on the Setup tab.");
     }
 
-    /// A document whose learning steps can't be followed.
+    /// Reports a document whose learning steps can't be followed.
     ///
     /// @param problems What is wrong with them, a sentence each.
     /// @return The report.
@@ -326,9 +324,10 @@ public final class StopReports {
                 "Put the learning steps right on the Setup tab.");
     }
 
-    /// A translation refused at promotion for using something a learned translation may not (decision N1).
-    /// It is checked when a candidate is judged and again here, so this is a translation that reached
-    /// promotion by a route that judged no stylesheet, or one whose pipeline was edited by hand since.
+    /// Reports a translation refused at promotion because it uses a function or instruction that is not on
+    /// the Smart Pipelines allow-list. Stylesheets are checked when a candidate is judged and again at
+    /// promotion, so this is a translation that reached promotion by a route that did not judge its
+    /// stylesheet, or one whose pipeline was edited by hand since.
     ///
     /// @param refusals What it uses that it may not, one sentence each.
     /// @return The report.
@@ -343,18 +342,13 @@ public final class StopReports {
                 + "was edited by hand, take out what the list doesn't allow; otherwise let it learn again.");
     }
 
-    /// A run that went round a loop of rules.
+    /// Reports a stream that is a single XML or JSON document larger than the prefix read as text.
     ///
-    /// @param rule The rule, as [FlowWords#rule] says it.
-    /// @param step The step it is on, as [FlowWords#step] says it.
-    /// @return The report.
-    /// A stream that is one XML or JSON document larger than the prefix read as text (N2 option E).
-    ///
-    /// A prefix of a document is not a document: cut at 64 KiB it does not parse, so there is nothing to
-    /// settle a record boundary over and no sample to put to the model. Reading the whole of a stream of
-    /// any size into memory to learn from is the thing the prefix exists to prevent, so the answer is to
-    /// say what is wrong and what would make it learnable, rather than to fail quietly as it did before
-    /// — the split step passed with no boundary, and everything after it was judged on nothing.
+    /// Part of a document is not a document: cut at 64 KiB it does not parse, so there is nothing to find a
+    /// record boundary in and no sample to show the model. Reading a whole stream of any size into memory is
+    /// what the prefix exists to prevent, so instead the report says what is wrong and what would make the
+    /// stream learnable, rather than letting the split step pass with no boundary and everything after it
+    /// be judged on nothing.
     ///
     /// @param kind  What the stream is, for the message: "XML" or "JSON".
     /// @param bytes How much of it was read.
@@ -375,6 +369,11 @@ public final class StopReports {
                                 SuggestionAction.LEAVE_NOTE)));
     }
 
+    /// Reports a run that went round a loop of rules.
+    ///
+    /// @param rule The rule, as [FlowWords#rule] says it.
+    /// @param step The step it is on, as [FlowWords#step] says it.
+    /// @return The report.
     public static StopReport loop(final String rule, final String step) {
         return setup("The learning steps went round in a loop.",
                 List.of("The rule \"" + rule + "\" on " + step + " would be followed a second time, and each rule "
@@ -382,7 +381,7 @@ public final class StopReports {
                 "Change the rule on the Setup tab, so that the steps don't go back round.");
     }
 
-    /// A run whose steps ended without writing one of its elements.
+    /// Reports a run whose steps ended without writing one of its elements.
     ///
     /// @param element The element type nothing wrote.
     /// @return The report.
@@ -399,8 +398,9 @@ public final class StopReports {
 
     // ---- A failure ----
 
-    /// A run that failed: the model couldn't be asked or didn't answer, or something else went wrong. What
-    /// kind of failure it was is told from the exception and its causes, never from its words.
+    /// Reports a run that failed: the model couldn't be asked or didn't answer, or something else went
+    /// wrong. The kind of failure is worked out from the types of the exception and its causes, never from
+    /// their messages.
     ///
     /// @param failure What was thrown.
     /// @param model   The name of the model the document asks, or null.
@@ -466,8 +466,12 @@ public final class StopReports {
 
     // ---- Helpers ----
 
-    /// The answers to a step since it was last entered: the turns at the end of the transcript that it
-    /// asked and that were judged.
+    /// Returns the answers to a step since it was last entered: the turns at the end of the transcript that
+    /// it asked and that were judged.
+    ///
+    /// @param step       The step.
+    /// @param transcript The run's turns so far.
+    /// @return The judged answers, oldest first.
     static List<Exchange> answers(final FlowStep step, final List<Exchange> transcript) {
         final List<Exchange> answers = new ArrayList<>();
         for (int i = transcript.size() - 1; i >= 0; i--) {
@@ -482,7 +486,7 @@ public final class StopReports {
         return answers;
     }
 
-    /// How many answers fell short each way, in the order the ways first came up.
+    // Counts how many answers fell short in each way, in the order each way first came up.
     private static Map<StepOutcome, Integer> tally(final List<Exchange> answers) {
         final Map<StepOutcome, Integer> tally = new LinkedHashMap<>();
         for (final Exchange answer : answers) {
@@ -493,8 +497,8 @@ public final class StopReports {
         return tally;
     }
 
-    /// The closest any answer came, by the check that decided it, e.g. "The closest scored 41%; 90% was
-    /// needed."
+    // Says how close the best failing answer came, by the check that decided it, e.g. "The closest scored
+    // 41%; 90% was needed."
     private static Optional<String> best(final List<Exchange> answers) {
         TurnScore best = null;
         for (final Exchange answer : answers) {
@@ -510,8 +514,8 @@ public final class StopReports {
                                         + percent(best.getThreshold()) + " was needed.");
     }
 
-    /// What a step does, to follow "Couldn't", e.g. "find what one record is".
-    // The reply of the latest answer refused for its form that says something; empty where there is none
+    // Returns the reply of the latest answer refused for its form that says something; empty where there is
+    // none
     private static Optional<String> lastRefusal(final List<Exchange> answers) {
         for (int i = answers.size() - 1; i >= 0; i--) {
             final Exchange answer = answers.get(i);
@@ -522,6 +526,7 @@ public final class StopReports {
         return Optional.empty();
     }
 
+    // Says what a step does, to follow "Couldn't", e.g. "find what one record is"
     private static String doing(final FlowStep step, final String name) {
         return step.getKind() == QuestionKind.ADMIT
                 ? "translate what's left as marked Unknowns"

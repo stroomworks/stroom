@@ -34,16 +34,19 @@ import java.util.Objects;
 import java.util.Optional;
 
 
-/// What each binding produced, as rows (design 01 §7.3 rule 3, A26): retracting a binding means finding the
-/// inputs whose outputs it produced, and the node that retracts is rarely the node that produced them.
+/// The database implementation of [Outputs], which records which binding and snapshot produced the output
+/// for each input stream.
 ///
-/// The bindings are on the output stream's attributes too, where a person reads them; a custom stream
-/// attribute is not a field stroom can query, so what a retraction must find is kept here as well.
+/// When a binding is retracted, the streams it produced output for must be found so that they can be
+/// reprocessed, and the node that retracts is rarely the node that produced them. The binding is also
+/// written to the output stream's attributes for a person to read, but Stroom cannot query a custom stream
+/// attribute, so it is kept here as well. The snapshot recorded here also lets a stream be reprocessed
+/// exactly as it was first processed.
 @Singleton
 public class OutputsDao implements Outputs {
 
-    /// How many rows one pass removes: a delete of every old row at once would hold locks across the
-    /// table, and the job runs again.
+    /// The most rows one call to [#prune] removes. Deleting every old row at once would hold locks across
+    /// the table; the job that prunes runs again, so the rest are removed later.
     private static final int PRUNE_BATCH = 1000;
 
     private final LearningFlowDbConnProvider connProvider;
@@ -90,10 +93,9 @@ public class OutputsDao implements Outputs {
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SCORE, produced.score())
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.RECORD_COUNT, records)
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SKIP_COUNT, skipped)
-                // A stream processed twice by one pipeline under one binding is one thing to replay; the
-                // later run is what its output is, so the row says the later one — including when it
-                // was produced, since the row keeps the id it was inserted with and the id cannot then
-                // say which row was written last.
+                // A stream processed twice by one pipeline under one binding has one row, which records
+                // the later run, since that produced its current output. This includes the produce time:
+                // the row keeps the id it was inserted with, so the id cannot show which run was last.
                 .onDuplicateKeyUpdate()
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PRODUCE_TIME_MS, now)
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SNAPSHOT_ID, produced.snapshotId())
@@ -108,7 +110,7 @@ public class OutputsDao implements Outputs {
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_DEPTH, NullSafe.get(boundary,
                         RecordBoundary::getDepth))
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SCORE, produced.score())
-                // A replay that can't count its records keeps what was counted
+                // A replay that cannot count its records keeps the counts already recorded.
                 .set(LearningFlowOutput.LEARNING_FLOW_OUTPUT.RECORD_COUNT, records == null
                         ? LearningFlowOutput.LEARNING_FLOW_OUTPUT.RECORD_COUNT
                         : DSL.val(records))
@@ -118,8 +120,8 @@ public class OutputsDao implements Outputs {
                 .execute());
     }
 
-    /// An output of no pipeline is of no pipeline rather than of any: the empty string says so, and a
-    /// unique key can hold it where it cannot hold a NULL.
+    /// Stores "no pipeline" as an empty string rather than null, because the unique key treats nulls as
+    /// distinct and so would not stop duplicate rows.
     private static String ofPipeline(final String pipeline) {
         return pipeline == null
                 ? ""
@@ -139,8 +141,7 @@ public class OutputsDao implements Outputs {
                 .orderBy(LearningFlowOutput.LEARNING_FLOW_OUTPUT.ID)
                 .fetch(row -> new Replayable(
                         row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.INPUT_META_ID),
-                        // Back to null: the seam says null where no pipeline is known, and the empty
-                        // string is only how a unique key holds that.
+                        // Converted back to null, which is how the interface represents "no pipeline".
                         namedPipeline(row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PIPELINE_UUID)))));
     }
 
@@ -158,13 +159,13 @@ public class OutputsDao implements Outputs {
                                 LearningFlowOutput.LEARNING_FLOW_OUTPUT.SNAPSHOT_ID)
                         .from(LearningFlowOutput.LEARNING_FLOW_OUTPUT)
                         .where(LearningFlowOutput.LEARNING_FLOW_OUTPUT.INPUT_META_ID.eq(inputId))
-                        // This document's stage, since a pipeline may hold two of them (design 01 §3)
-                        // and each records what it made of the same input.
+                        // Only this document's row, since a pipeline may contain two Smart Pipeline
+                        // elements, each recording its own output for the same input.
                         .and(LearningFlowOutput.LEARNING_FLOW_OUTPUT.DOC_UUID.eq(docUuid))
                         .and(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PIPELINE_UUID.eq(ofPipeline(pipeline)))
-                        // What was produced last is what its output is: a stream served again under the
-                        // same binding updates its row in place and keeps the id it was inserted with, so
-                        // the id is the order rows were first written and not the order they were run.
+                        // The most recently produced row is the stream's current output. A stream served
+                        // again under the same binding updates its row in place and keeps its original id,
+                        // so the id gives the order rows were first written, not the order they were run.
                         .orderBy(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PRODUCE_TIME_MS.desc(),
                                 LearningFlowOutput.LEARNING_FLOW_OUTPUT.ID.desc())
                         .limit(1)
@@ -180,33 +181,32 @@ public class OutputsDao implements Outputs {
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_CHILDREN),
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_ARRAY),
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.BOUNDARY_DEPTH)),
-                        // A row written before the score was recorded scores nothing rather than
-                        // failing the reprocess it was read for.
+                        // A row written before scores were recorded reads as a score of zero, rather
+                        // than failing the reprocessing it was read for.
                         Objects.requireNonNullElse(
                                 row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SCORE), 0.0),
                         row.get(LearningFlowOutput.LEARNING_FLOW_OUTPUT.SNAPSHOT_ID)));
     }
 
-    /// The pipeline a row names, or null where it names none: the inverse of [#ofPipeline(String)].
+    /// Returns the pipeline a row records, or null if it records none: the inverse of [#ofPipeline(String)].
     private static String namedPipeline(final String pipeline) {
         return pipeline == null || pipeline.isEmpty()
                 ? null
                 : pipeline;
     }
 
-    /// In batches, like the attempts': a delete of every old row at once would hold locks across the
-    /// table, and the job runs again until there is nothing left to forget.
+    /// Deletes up to [#PRUNE_BATCH] rows last produced before the given time. Deleting every old row at
+    /// once would hold locks across the table; the job runs again until nothing is left to delete.
     @Override
     public int prune(final long producedBeforeMs) {
         return JooqUtil.contextResult(connProvider, context -> {
             final List<Long> old = context
                     .select(LearningFlowOutput.LEARNING_FLOW_OUTPUT.ID)
                     .from(LearningFlowOutput.LEARNING_FLOW_OUTPUT)
-                    // By when the row was last *produced*, not when it was first inserted. A stream
-                    // served again updates the row in place, which is why the row keeps that time:
-                    // pruning on the insert time would delete a stream processed sixty days ago
-                    // and reprocessed this morning, and with it the bindings that make
-                    // it reprocessable at all.
+                    // Pruned by when the row was last produced, not when it was first inserted. A stream
+                    // served again updates its row in place. Pruning by insert time would delete the row
+                    // of a stream first processed sixty days ago and reprocessed this morning, and with
+                    // it the record that lets the stream be reprocessed exactly.
                     .where(LearningFlowOutput.LEARNING_FLOW_OUTPUT.PRODUCE_TIME_MS.lt(producedBeforeMs))
                     .limit(PRUNE_BATCH)
                     .fetch(LearningFlowOutput.LEARNING_FLOW_OUTPUT.ID);

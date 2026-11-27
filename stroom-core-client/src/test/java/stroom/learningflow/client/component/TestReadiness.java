@@ -40,10 +40,10 @@ class TestReadiness {
 
     @Test
     void aNewDocumentIsNotReadyAndSaysHowToFixIt() {
-        // What a new document has: learning off, no model, no checks, the direct flow
+        // A new document has learning off, no model, the Standard checks and the Direct flow
         final Readiness readiness = Readiness.of(
                 LearningFlowDoc.builder().uuid("new").name("New")
-                        // The steps the store gives a new document (Track 2 step 1c).
+                        // The steps the store gives a new document
                         .flow(new LearningFlow(FlowExampleFixtures.steps(FlowExample.DIRECT), null, null))
                         .build(),
                 FlowExampleFixtures.all());

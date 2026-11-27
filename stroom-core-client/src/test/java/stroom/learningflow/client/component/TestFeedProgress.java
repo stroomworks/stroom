@@ -40,7 +40,8 @@ class TestFeedProgress {
 
     @Test
     void aRunThatWentBackSaysWhyAndWhereItIsNow() {
-        // The Supervisor story's session: the chain, a parser short of the input, the chain again, the parser
+        // The same session as the Supervisor workbench story: the chain, a parser that didn't read all the
+        // input, the chain again, then the parser again
         final FeedProgress progress = FeedProgress.of(DIRECT, run(AttemptStatus.PARKED, List.of(
                 turn(1, "chain", QuestionKind.CHAIN, StepOutcome.PASSED),
                 turn(2, "parser", QuestionKind.CONFIGURE, StepOutcome.COVERAGE_SHORT),

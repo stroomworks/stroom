@@ -44,12 +44,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Design 02 §5, scenario 44 (design 03 §3): Linux audit records, where one event is the run of consecutive
-/// lines sharing a serial and nothing else marks the boundary. A split of one record per line consumes every
-/// character and is caught by yield against the input's own structure — the document says a record is
-/// several lines — before any target is proposed; the split that joins by serial passes; targets are proposed
-/// for whole events; and a parser that drops the EXECVE's quoted arguments is caught by preservation, the
-/// target having the command and its arguments.
+/// Tests learning Linux audit records, where one event is a run of consecutive lines sharing a serial number
+/// and nothing else marks the record boundary.
+///
+/// A split of one record per line consumes every character, so coverage cannot catch it. It is caught by the
+/// yield check instead, because the document states an expected yield of fewer than one event per line, and
+/// it is refused before any target is proposed. The split that joins lines by serial passes, and targets are
+/// proposed for whole events. A parser that drops the EXECVE record's quoted arguments is then caught by the
+/// preservation check, because the target event has the command and its arguments.
 class TestScenario44Auditd {
 
     private static final String BY_EVENT = Scenarios.resource("auditd.ds3.xml");
@@ -114,14 +116,15 @@ class TestScenario44Auditd {
         assertThat(run.decision()).describedAs(run.decision().toString()).isInstanceOf(Promoted.class);
         script.verifyExhausted();
         assertThat(run.output()).isEqualTo(EVENTS);
-        // The line split consumed everything and was refused on yield alone, before any target was asked.
+        // The line split consumed everything and was refused on yield alone, before any target was asked for.
         final List<Exchange> turns = run.transcript();
         assertThat(turns.get(1).question()).isInstanceOf(Split.class);
         assertThat(turns.get(1).outcome()).isEqualTo(StepOutcome.YIELD_SHORT);
         assertThat(turns.get(1).question().feedback()).isEmpty();
         assertThat(turns.get(2).outcome()).isEqualTo(StepOutcome.PASSED);
-        // Design 06 A144: each turn carries the score of the check that decided it — the yield that fell
-        // short, and on the pass the check that passed by the least — and a chain chosen carries none.
+        // Each turn carries the score of the check that decided it: for the refused split, the yield that fell
+        // short, and for the split that passed, the check that passed by the smallest margin. The chain turn
+        // carries no score.
         assertThat(turns.get(0).score()).isNull();
         assertThat(turns.get(1).score()).satisfies(score -> {
             assertThat(score.getCheck()).isEqualTo(Check.YIELD);
@@ -134,13 +137,13 @@ class TestScenario44Auditd {
                 .isEqualTo(turns.get(1).score());
         assertThat(turns.stream().filter(turn -> turn.question() instanceof TargetFor).findFirst().orElseThrow()
                 .question()).isInstanceOf(TargetFor.class);
-        // Targets were proposed for whole events: the first kind's record spans lines that share a serial.
+        // Targets were proposed for whole events: the first kind's record spans several lines sharing a serial.
         final TargetFor target = (TargetFor) script.asked().stream().filter(TargetFor.class::isInstance).findFirst()
                 .orElseThrow();
         assertThat(target.record().lines().count()).isGreaterThan(1);
         assertThat(target.record().lines().map(line -> line.replaceAll(".*msg=audit\\([^:]+:(\\d+)\\).*", "$1"))
                 .distinct()).hasSize(1);
-        // The parser dropping the arguments was caught by preservation: coverage was full.
+        // The parser that dropped the arguments was caught by preservation, since its coverage was full.
         final Exchange parserAgain = turns.stream()
                 .filter(turn -> turn.question() instanceof Configuration && turn.candidate() == 2)
                 .findFirst().orElseThrow();
@@ -152,10 +155,10 @@ class TestScenario44Auditd {
 
     @Test
     void underTheEscalatingFlowAParserThatCutsPerLineGoesBackToTheSplit() {
-        // Run 7 (design 02 §6.3): with no split step the escalating flow's parser had to cut and extract at
-        // once and gave up. Now the split is asked first (A39), and a parser refused on yield — one record
-        // per line against the 0.35 the document states — goes back to the split rather than being re-asked
-        // blind (A40); the split holds, and the parser asked again is held to it.
+        // In the escalating flow the split is asked for before the parser, so the parser does not have to find
+        // the record boundary and extract fields at the same time. A parser refused on yield (one record per
+        // line against the 0.35 per line the document states) goes back to the split step rather than being
+        // asked again without guidance. The split is confirmed, and the parser asked again is held to it.
         final Scenarios scenarios = new Scenarios();
         final Script script = scenarios.script(BY_EVENT, XSLT)
                 .expect(QuestionMatcher.chain()).reply("DSParser -> XSLTFilter")

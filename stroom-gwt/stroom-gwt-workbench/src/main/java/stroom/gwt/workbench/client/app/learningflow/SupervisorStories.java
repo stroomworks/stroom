@@ -35,11 +35,11 @@ import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
 
 /// The `App/Main/LearningFlowSupervisor` stories, showing Stroom's real [SupervisorController] (the Smart
-/// Pipelines screen, a monitoring tab) with fake REST replies: every Smart Pipeline of every Learning Flow, each
-/// naming its Learning Flow, saying where it stands, and opening its pipeline at its Learning Status tab, where
-/// its learning is acted on. Opened as `LearningFlowSupervisorPlugin` opens it, and refreshed as the content
-/// pane does; the refresh stories refresh it again, as the content pane's timer does, with a pipeline moved on
-/// since it was first read.
+/// Pipelines monitoring tab) with fake REST replies. The screen lists every Smart Pipeline of every Learning
+/// Flow, each naming its Learning Flow and status, with a button that opens the pipeline at its Learning
+/// Status tab, where its learning is acted on. The screen is opened as `LearningFlowSupervisorPlugin` opens
+/// it and refreshed as the content pane does. The refresh stories refresh it again, as the content pane's
+/// timer does, after one pipeline's status has changed.
 ///
 /// Its dialog is the filter of which pipelines to show ([FeedFilterEditorController]).
 ///
@@ -50,10 +50,10 @@ public final class SupervisorStories {
 
     private static final String FILTER = "Which pipelines to show";
     private static final String FILTERED = "Pipelines are being filtered; click to change or clear";
-    /// The spy told the uuid of each document the screen asks Stroom to open.
+    /// The name of the spy that records the UUID of each document the screen asks Stroom to open.
     private static final String OPENED = "openedDocument";
 
-    // A second Learning Flow's pipeline, stopped, so that the list is of more than one Learning Flow's
+    // A given-up pipeline of a second Learning Flow, so that the list covers more than one Learning Flow.
     private static final String AUDIT_LEARNER = """
             {"learner": {"pipelineUuid": "p-4", "elementId": "learningFlow"},
               "doc": {"type": "LearningFlow", "uuid": "ss-2", "name": "Audit logs"},
@@ -61,7 +61,7 @@ public final class SupervisorStories {
               "state": "Given up", "givenUpReason": "No passing configuration for the parser after 5 attempts",
               "waiting": 0, "records": 0, "guidance": 0, "raised": false, "belowThreshold": false,
               "pipelineDeleted": false, "lastSessionMs": 1761500000000}""";
-    // A pipeline since deleted, listed only when deleted pipelines are asked for
+    // A deleted pipeline, listed only when deleted pipelines are requested.
     private static final String DELETED_LEARNER = """
             {"learner": {"pipelineUuid": "p-2", "elementId": "learningFlow"},
               "doc": {"type": "LearningFlow", "uuid": "ss-1", "name": "Firewall logs"},
@@ -72,12 +72,12 @@ public final class SupervisorStories {
             LearningFlowFixtures.PROXY_LEARNER, AUDIT_LEARNER);
     private static final String WITH_DELETED = page(LearningFlowFixtures.FIREWALL_LEARNER,
             LearningFlowFixtures.PROXY_LEARNER, AUDIT_LEARNER, DELETED_LEARNER);
-    // Read again after the firewall's pipeline has learned its translation
+    // The list as read again after the firewall pipeline has learned its translation.
     private static final String MOVED_ON = page(LearningFlowFixtures.FIREWALL_TRANSLATING,
             LearningFlowFixtures.PROXY_LEARNER, AUDIT_LEARNER);
 
-    // The screen the story shows: its play can't reach its render's locals, so the story being shown sets it,
-    // and the refresh stories refresh it as the content pane's timer does
+    // The screen the story shows. A play can't reach its render's locals, so the render sets this field, and
+    // the refresh stories use it to refresh the screen as the content pane's timer does.
     private static SupervisorController supervisor;
 
     private SupervisorStories() {
@@ -90,8 +90,8 @@ public final class SupervisorStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Main/LearningFlowSupervisor", SupervisorStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // Every Learning Flow's pipelines, each naming its Learning Flow, where it stands and why, with a
-                // button that opens it; nothing here acts on a pipeline's learning
+                // The pipelines of every Learning Flow, each with its Learning Flow, its status and the reason
+                // for it, and a button that opens it. Nothing on this screen acts on a pipeline's learning.
                 .story("Default", SupervisorStories::render)
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -111,7 +111,8 @@ public final class SupervisorStories {
                     play.expect(play.getByRole("button", "Filter Pipelines")).toBeInTheDocument();
                     expectNoProblems(play);
                 })
-                // The quick filter lists the pipelines whose own name, or whose Learning Flow's, has its text
+                // The quick filter shows the pipelines whose own name, or whose Learning Flow's name, contains
+                // its text.
                 .story("QuickFilterByLearningFlow", SupervisorStories::render)
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -122,8 +123,8 @@ public final class SupervisorStories {
                     play.expect(grid.queryByText("Proxy pipeline")).toBeNull();
                     expectNoProblems(play);
                 })
-                // The filter button's dialog, with deleted pipelines asked for: OK lists them too and says the
-                // list is filtered
+                // When deleted pipelines are requested in the filter dialog, OK lists them too and the button
+                // says the list is filtered.
                 .story("FilterDialogOk", SupervisorStories::render)
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -140,7 +141,7 @@ public final class SupervisorStories {
                     play.expect(play.getByRole("button", FILTERED)).toBeInTheDocument();
                     expectNoProblems(play);
                 })
-                // The filter button's dialog, cancelled: nothing more is asked for, and the list is unfiltered
+                // Cancelling the filter dialog requests nothing more and leaves the list unfiltered.
                 .story("FilterDialogCancel", SupervisorStories::render)
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -157,7 +158,7 @@ public final class SupervisorStories {
                     play.expect(play.getByRole("button", "Filter Pipelines")).toBeInTheDocument();
                     expectNoProblems(play);
                 })
-                // A row's button asks Stroom to open its pipeline, where its learning is followed and acted on
+                // A row's button asks Stroom to open its pipeline, where its learning is followed and acted on.
                 .story("OpenPipeline", SupervisorStories::render)
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -165,7 +166,7 @@ public final class SupervisorStories {
                     play.waitFor(() -> play.expect(play.spy(OPENED)).toHaveBeenCalledWith("p-4"));
                     expectNoProblems(play);
                 })
-                // Refreshed as the content pane's timer does: where each pipeline stands is read again
+                // A refresh, as the content pane's timer does it, reads each pipeline's status again.
                 .story("Refresh", SupervisorStories::renderMovingOn)
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -175,7 +176,8 @@ public final class SupervisorStories {
                     play.expect(grid.getAllByText("Translating")).toHaveLength(2);
                     expectNoProblems(play);
                 })
-                // Auto refresh off, a refresh reads nothing; on again, the pipelines are read at once
+                // With auto refresh off, a refresh reads nothing. When it is switched on again, the pipelines
+                // are read straight away.
                 .story("AutoRefreshOff", SupervisorStories::renderMovingOn)
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -208,7 +210,8 @@ public final class SupervisorStories {
                 .post("/learningFlowSupervisor/v1/learners", RestReply.json(LEARNERS)));
     }
 
-    // The refresh stories': the pipelines as first read, then with the firewall's pipeline moved on
+    // Renders the screen for the refresh stories, replying first with the pipelines as first read, then with
+    // the firewall pipeline's status changed.
     private static Widget renderMovingOn(final StoryContext context) {
         return render(context, RestFixtures.builder()
                 .post("/learningFlowSupervisor/v1/learners", RestReply.json(LEARNERS), RestReply.json(MOVED_ON)));
@@ -223,7 +226,7 @@ public final class SupervisorStories {
         harness.fn(OPENED);
         harness.getEventBus().addHandler(OpenDocumentEvent.getType(), event ->
                 harness.spy(OPENED, event.getDocRef().getUuid()));
-        // Opened once Stroom has started, as the plugin opens it, and refreshed as the content pane does
+        // Once Stroom has started, open the screen as the plugin does and refresh it as the content pane does.
         harness.afterStartUp(() -> {
             supervisor = injector.getSupervisorController();
             harness.show(supervisor).refresh();

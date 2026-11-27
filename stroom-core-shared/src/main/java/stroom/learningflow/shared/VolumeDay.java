@@ -72,8 +72,8 @@ public class VolumeDay {
     }
 
     /// @return How many of those records the translation declared it deliberately skipped rather than
-    ///         translated (ruling A148). There is no cap on the skip rate, so this is what a person is
-    ///         given to judge it by.
+    ///         translated. There is no limit on how many records may be skipped, so this count is shown for a
+    ///         person to judge whether the rate is reasonable.
     public long getSkips() {
         return skips;
     }

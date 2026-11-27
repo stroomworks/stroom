@@ -60,13 +60,16 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/// One Smart Pipeline's learning on its Learning Status tab ([FeedDetail]): reads its learning runs and the one
-/// shown, with its turns, says where the feed stands ([FeedSituation]) and how far the run has got
-/// ([FeedProgress]), and does what a person asks: every action the Supervisor offers on a learner, its
-/// translation and its learning run, together, through the `SupervisorResource` calls and dialogs (A28, A115,
-/// A141). It is the one place a pipeline's learning is acted on; the Smart Pipelines screen in Monitoring only
-/// lists the pipelines and opens them here. Its Learning history opens of its own accord when it comes to be
-/// needed ([FeedSituation#needsHistory]), and is otherwise left as the user put it.
+/// Wires the view of one Smart Pipeline's learning ([FeedDetail]) on the pipeline's Learning Status tab.
+///
+/// It fetches the pipeline's learning runs and the chosen run with its turns, shows the feed's situation
+/// ([FeedSituation]) and how far the run has got ([FeedProgress]), and carries out the actions a person takes
+/// on the learner, its translation and its learning run, through `SupervisorResource` calls and dialogs. This
+/// is the only place a pipeline's learning is acted on; the Smart Pipelines screen in Monitoring only lists the
+/// pipelines and opens them here.
+///
+/// The Learning history section is expanded automatically when it becomes needed
+/// ([FeedSituation#needsHistory]); otherwise it is left as the user set it.
 public class FeedDetailController extends Controller {
 
     private static final SupervisorResource SUPERVISOR_RESOURCE = GWT.create(SupervisorResource.class);
@@ -83,17 +86,18 @@ public class FeedDetailController extends Controller {
     private FeedDetail view;
     private LearningFlowDoc doc;
     private SupervisorLearner learner;
-    /// Whether the feed's pipeline can't be edited here: then nothing is offered that would change its learning.
+    /// Whether the user can't edit the feed's pipeline, in which case nothing that would change its learning is
+    /// offered.
     private boolean readOnly;
     private List<SupervisorAttempt> runs = new ArrayList<>();
-    /// The run a person chose to look at, or null for the newest.
+    /// The id of the run a person chose to look at, or null for the newest.
     private Long chosen;
     /// The run shown, with its turns, or null for none.
     private SupervisorAttempt run;
-    /// Whether the feed's Learning history was wanted open as last shown, so that it opens of its own accord
-    /// only when it comes to be wanted, and is otherwise left as the user put it.
+    /// Whether the feed's Learning history needed to be expanded when it was last shown. It is expanded
+    /// automatically only when this changes from false to true, so that otherwise it is left as the user set it.
     private boolean historyWanted;
-    /// Which read is current, so that a slower earlier reply is ignored.
+    /// A counter identifying the latest request, so that a reply to an earlier, slower request is ignored.
     private int asked;
     private Runnable onActed = () -> {
     };
@@ -102,17 +106,17 @@ public class FeedDetailController extends Controller {
     private Consumer<SuggestionAction> onOpenSetup = action -> {
     };
 
-    /// Made by GIN; [#attach(FeedDetail)] gives it its view.
+    /// Created by GIN; [#attach(FeedDetail)] then gives it its view.
     ///
-    /// @param eventBus          The application's event bus.
-    /// @param restFactory       Makes REST requests.
-    /// @param dateTimeFormatter Says when each learning run started, as the user likes dates.
-    /// @param waitingList       The streams waiting for the feed.
-    /// @param grantProvider     Makes the dialog that gives a paused run more.
-    /// @param promptProvider    Makes the prompt that asks why, or what to improve.
-    /// @param guidanceProvider  Makes the dialog of the notes left for a feed.
-    /// @param answerProvider    Makes the dialog a question is answered in.
-    /// @param turnPromptProvider Makes the dialog that shows what a question was sent as (N9).
+    /// @param eventBus           The application's event bus.
+    /// @param restFactory        Creates REST requests.
+    /// @param dateTimeFormatter  Formats the time each learning run started in the user's preferred format.
+    /// @param waitingList        The controller for the list of streams waiting for the feed.
+    /// @param grantProvider      Creates the dialog that gives a paused run more tokens or time.
+    /// @param promptProvider     Creates the dialog that asks why (on reject, stop or remove) or what to improve.
+    /// @param guidanceProvider   Creates the dialog listing the notes left for a feed.
+    /// @param answerProvider     Creates the dialog in which a question is answered.
+    /// @param turnPromptProvider Creates the dialog that shows the prompt exactly as it was sent to the AI.
     @Inject
     public FeedDetailController(final EventBus eventBus,
                                 final RestFactory restFactory,
@@ -134,10 +138,10 @@ public class FeedDetailController extends Controller {
         this.turnPromptProvider = turnPromptProvider;
     }
 
-    /// Attaches this to its view, declared in its owner's template.
+    /// Attaches this controller to its view, which is declared in the owning screen's template.
     ///
     /// @param view The view.
-    /// @return This, for its owner to keep.
+    /// @return This controller, for the owner to keep.
     public FeedDetailController attach(final FeedDetail view) {
         this.view = Objects.requireNonNull(view, "view");
         initWidget(view);
@@ -166,7 +170,8 @@ public class FeedDetailController extends Controller {
             }
         });
         view.setOnWaitingShown(waitingList::refresh);
-        // Read only where the pipeline can't be edited: nothing is offered that the server would refuse
+        // Read only when the user can't edit the pipeline, so that nothing is offered that the server would
+        // refuse
         watch(Contexts.READ_ONLY, readOnly -> {
             this.readOnly = Boolean.TRUE.equals(readOnly);
             if (learner != null) {
@@ -176,29 +181,31 @@ public class FeedDetailController extends Controller {
         return this;
     }
 
-    /// @param doc The document the feeds run under: its flow, pass mark and budgets.
+    /// @param doc The Learning Flow document the feeds learn under, which supplies the flow's steps, the
+    ///            score below which a translation is flagged, and the budgets.
     public void setDocument(final LearningFlowDoc doc) {
         this.doc = doc;
     }
 
-    /// @param onActed Run after the user has done something to the feed, for the list to be read again, and
-    ///                with it this feed's row and run.
+    /// @param onActed Run after the user has acted on the feed, so that the list is fetched again, which in
+    ///                turn refreshes this feed's row and run.
     public void setOnActed(final Runnable onActed) {
         this.onActed = onActed;
     }
 
-    /// @param onOpenSettings Run when the user asks for the Setup tab, to switch learning on.
+    /// @param onOpenSettings Run when the user asks to go to the Setup tab, to switch learning on.
     public void setOnOpenSettings(final Runnable onOpenSettings) {
         this.onOpenSettings = onOpenSettings;
     }
 
-    /// @param onOpenSetup Told a suggestion that is followed on the Setup tab: to change the limits, the
-    ///                    learning steps or the model.
+    /// @param onOpenSetup Called with a suggestion the user follows that is acted on in the Setup tab: to
+    ///                    change the limits, the learning steps or the model.
     public void setOnOpenSetup(final Consumer<SuggestionAction> onOpenSetup) {
         this.onOpenSetup = onOpenSetup;
     }
 
-    /// Shows a feed, or none. The same feed read again keeps the run chosen and the questions open.
+    /// Shows a feed, or none. If it is the feed already shown, it is refreshed, keeping the chosen run and the
+    /// expanded questions.
     ///
     /// @param chosenLearner The feed's learner row, or null for none.
     public void setFeed(final SupervisorLearner chosenLearner) {
@@ -226,7 +233,7 @@ public class FeedDetailController extends Controller {
         readRuns(true);
     }
 
-    /// Reads the feed's runs and the run shown again, keeping what is chosen and open.
+    /// Fetches the feed's runs and the run shown again, keeping the chosen run and what is expanded.
     public void refresh() {
         if (learner != null) {
             readRuns(false);
@@ -256,7 +263,7 @@ public class FeedDetailController extends Controller {
                 .exec();
     }
 
-    // The run chosen, or the newest, with its turns
+    // Fetches the chosen run, or the newest if none is chosen, with its turns
     private void readRun(final boolean fresh) {
         final SupervisorAttempt row = runs.stream()
                 .filter(candidate -> chosen != null && candidate.getId() == chosen)
@@ -392,8 +399,8 @@ public class FeedDetailController extends Controller {
                 .fire(this);
     }
 
-    /// A suggestion followed: the feed's own action where it is one, the note box, the model's document, or
-    /// the Setup tab.
+    /// Follows a suggestion: by taking the matching feed action if there is one, or by focusing the note box,
+    /// opening the AI model's document, or going to the Setup tab.
     private void onSuggestion(final SuggestionAction action) {
         final FeedAction feedAction = FeedSituation.feedAction(action);
         if (feedAction != null) {
@@ -435,8 +442,8 @@ public class FeedDetailController extends Controller {
         }
     }
 
-    /// Puts a draft to use (A25): the promotion it waited for, and every stream that waited with it tried
-    /// again.
+    /// Approves a draft translation, after confirmation. The translation is put to use, and every stream that
+    /// waited for it is processed again.
     private void approve() {
         final SupervisorAttempt draft = run;
         ConfirmEvent.fire(this,
@@ -449,7 +456,8 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Rejects a draft (A25): it goes, and the feed stops learning with the reason, which is asked for.
+    /// Rejects a draft translation, asking for the reason. The draft is discarded, and the feed stops learning
+    /// with that reason.
     private void reject() {
         final SupervisorAttempt draft = run;
         promptProvider.get().ask(this,
@@ -463,15 +471,17 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Gives a paused run more to spend (A65, A77, A145), in the grant dialog.
+    /// Gives a paused run more tokens or time, using the grant dialog. A run pauses for a person when it runs
+    /// out of budget.
     private void grant() {
         final SupervisorAttempt paused = run;
         grantProvider.get().grant(this, paused, doc, granted ->
                 callThenReread(resource -> resource.grant(paused.getId(), granted)));
     }
 
-    /// Sends a paused run to the fallback (A65, A76): the AI is asked to admit what can't be translated as
-    /// marked Unknown events, and the stream is served with them.
+    /// Sends a paused run to the fallback step, after confirmation. Instead of another translation, the AI is
+    /// asked to write the records that still can't be translated as marked Unknown events, and the stream is
+    /// processed with them.
     private void exhaust() {
         final SupervisorAttempt paused = run;
         ConfirmEvent.fire(this,
@@ -485,8 +495,8 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Answers a question in place of the AI, or changes an answer (A28): nothing is run here; the run is
-    /// carried on from the answer by the learning job, and what came after it is asked again.
+    /// Answers a question in place of the AI, or changes an answer. Nothing is run here: the learning job resumes
+    /// the run from that answer, and the questions that came after it are asked again.
     private void answer(final int number) {
         final SupervisorAttempt shown = run;
         if (shown == null) {
@@ -508,8 +518,9 @@ public class FeedDetailController extends Controller {
                         resource.amend(shown.getId(), number, new AmendTurnRequest(answer))));
     }
 
-    /// Asks for the translation in use to be made better (A46). What is typed is kept as a note for the
-    /// feed, carried into every question after it; nothing typed asks again from what it already does.
+    /// Asks for the translation in use to be improved. Any text typed is kept as a note for the feed and
+    /// included in every later question; with no text, the AI is simply asked again, starting from the current
+    /// translation.
     private void improve() {
         final SupervisorLearner serving = learner;
         promptProvider.get().ask(this,
@@ -521,8 +532,8 @@ public class FeedDetailController extends Controller {
                         .method(resource -> resource.improve(serving.getDoc().getUuid(), serving.getBindingUuid(),
                                 new ImproveRequest(message)))
                         .onSuccess(outcome -> AlertEvent.fireInfo(this, outcome.getSaid(), this::acted))
-                        // The request only asks: the AI is asked by the worker, and what it comes to shows
-                        // on this tab (A46). So a failure here is a failure to ask, and nothing is running.
+                        // This request only queues the improvement: the background worker asks the AI, and the
+                        // result shows on this tab. So a failure here means nothing was queued or run.
                         .onFailure(error -> AlertEvent.fireError(this,
                                 "The improvement couldn't be asked for: " + error.getMessage(),
                                 "Nothing has been asked of the AI, so nothing has been spent. Try again.",
@@ -532,7 +543,8 @@ public class FeedDetailController extends Controller {
                         .exec());
     }
 
-    /// Learns afresh from the next stream (A28, A29); what is in use goes on translating until then.
+    /// Starts learning the feed again from scratch with its next stream, after confirmation. Any translation in
+    /// use carries on translating until then.
     private void relearn() {
         final SupervisorLearner whose = learner;
         ConfirmEvent.fire(this,
@@ -547,8 +559,8 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Stops learning (design 06 A115): streams that nothing translates error with the reason, which is
-    /// asked for; what is in use goes on translating.
+    /// Stops learning the feed, asking for the reason. Streams that nothing translates then fail with that
+    /// reason; any translation in use carries on translating.
     private void giveUp() {
         final SupervisorLearner whose = learner;
         promptProvider.get().ask(this,
@@ -563,8 +575,9 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Takes the translation back (A28): the feed is learned afresh from its next stream. What it made stands
-    /// as it made it, and the person is told how much, to reprocess if they want (A129).
+    /// Removes the translation in use, asking for the reason. The feed is learned again from its next stream.
+    /// The output the translation already produced is left as it is; the person is told how many streams it
+    /// produced, so that they can reprocess them if they want to.
     private void retract() {
         final SupervisorLearner serving = learner;
         promptProvider.get().ask(this,
@@ -593,7 +606,7 @@ public class FeedDetailController extends Controller {
                 });
     }
 
-    /// Leaves the AI a note about this feed (A46), carried into every question after it.
+    /// Leaves the AI a note about this feed, which is included in every later question.
     private void sendNote(final String message) {
         if (learner == null || NullSafe.isBlankString(message)) {
             return;
@@ -613,7 +626,7 @@ public class FeedDetailController extends Controller {
                 .exec();
     }
 
-    /// The notes left for this feed, to read and take back, in the guidance dialog.
+    /// Shows the notes left for this feed in the guidance dialog, where they can be read and withdrawn.
     private void showNotes() {
         if (learner != null) {
             guidanceProvider.get().show(this, learner.getDoc().getUuid(), learner.getLearner(),
@@ -621,7 +634,7 @@ public class FeedDetailController extends Controller {
         }
     }
 
-    // A call on the run or the learner shown, then everything read again
+    // Makes a call on the run or learner shown, then fetches everything again
     private <R> void callThenReread(final Function<SupervisorResource, R> call) {
         restFactory
                 .create(SUPERVISOR_RESOURCE)
@@ -632,7 +645,8 @@ public class FeedDetailController extends Controller {
                 .exec();
     }
 
-    // The list is read again, which gives this its fresh row and reads the run again
+    // Asks for the list to be fetched again, which gives this controller a fresh row and so fetches the run
+    // again
     private void acted() {
         onActed.run();
     }

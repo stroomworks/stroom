@@ -30,8 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/// The snapshots of A61 as a table: one row per promotion, keyed by the snapshot id, with the structure,
-/// the code and the versions as JSON text.
+/// The database implementation of [Snapshots], which keeps the immutable configuration a fragment had at
+/// each promotion, so that a stream can later be reprocessed exactly as it was first processed.
+///
+/// There is one row per promotion, keyed by the snapshot id. The code and the versions are stored as JSON
+/// text.
 @Singleton
 public class SnapshotsDao implements Snapshots {
 
@@ -105,7 +108,7 @@ public class SnapshotsDao implements Snapshots {
                 row.get(LearningFlowSnapshot.LEARNING_FLOW_SNAPSHOT.CREATE_TIME_MS));
     }
 
-    /// A JSON object of strings, as the row holds the code and the versions.
+    /// Reads a JSON object of strings, which is how the row holds the code and the versions.
     private static Map<String, String> strings(final String json) {
         if (json == null || json.isBlank()) {
             return Map.of();

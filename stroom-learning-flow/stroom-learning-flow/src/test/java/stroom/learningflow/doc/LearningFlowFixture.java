@@ -36,11 +36,11 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * What the document store tests share: a store over the real {@code StoreImpl} and in-memory persistence,
- * and a document with a model, a binding bound to a fragment and a binding with nothing promoted yet, so that
- * every kind of dependency the store must remap — and the absence of one — is present.
- */
+/// Shared set-up for the Learning Flow document store tests.
+///
+/// It builds a store over the real `StoreImpl` with in-memory persistence, and configures a document with a
+/// model, instructions and a full set of checks. `FRAGMENT` is a pipeline reference the document does not
+/// hold, so tests can show the store does not treat it as a dependency.
 final class LearningFlowFixture {
 
     static final DocRef MODEL = OpenAIModelDoc.buildDocRef().uuid("model-1").name("local-model").build();
@@ -70,10 +70,10 @@ final class LearningFlowFixture {
         return store(TargetSchemas.none());
     }
 
-    /// A store over its own in-memory persistence that reads target schemas from where it is told, so a
-    /// test can say what a new document should start with (task 7).
+    /// Creates a store over its own in-memory persistence that reads target schemas from the source given, so
+    /// a test can control which target schemas a new document starts with.
     ///
-    /// @param targetSchemas Where the target schemas come from.
+    /// @param targetSchemas The source of the target schemas offered to new documents.
     /// @return The store.
     static LearningFlowStoreImpl store(final TargetSchemas targetSchemas) {
         final MockSecurityContext securityContext = new MockSecurityContext();

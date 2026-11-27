@@ -50,11 +50,12 @@ import java.util.Map;
 /// Learning Flow document's tabs: Pipelines, Setup, Documentation and Permissions) with fake REST replies.
 ///
 /// As `LearningFlowPlugin` does, the story fetches the document and reads it into the editor
-/// ([DocEditors#open]). The Pipelines tab lists the document's feeds, each opening its pipeline, whose AI
-/// Translation tab has its own stories ([PipelineAiTranslationStories]), with a quick filter and a dialog of
-/// which feeds to show ([FeedFilterEditorController]). Its dialogs on the Setup tab: a check's
-/// ([CheckEditorController]) and a business rule's assertion within it
-/// ([XPathAssertionEditorController]), and loading a built-in text ([BuiltInTextController]).
+/// ([DocEditors#open]). The Pipelines tab lists the pipelines of the document's feeds, each with a button that
+/// opens the pipeline, whose AI Translation tab has its own stories ([PipelineAiTranslationStories]). The tab
+/// also has a quick filter and a dialog for choosing which feeds to show ([FeedFilterEditorController]). The
+/// Setup tab's dialogs are covered too: a check's dialog ([CheckEditorController]), the dialog for a business
+/// rule's assertion within it ([XPathAssertionEditorController]), and the dialog for loading a built-in text
+/// ([BuiltInTextController]).
 ///
 /// | Stroom endpoint | Used for |
 /// |---|---|
@@ -67,17 +68,17 @@ import java.util.Map;
 public final class LearningFlowEditorStories {
 
     private static final String SAVE_PATH = "/learningFlow/v1/ss-1";
-    // A FormGroup gives its control the group's identity as its id
+    // A FormGroup gives its control the group's identity as its id.
     private static final String THRESHOLD = "#checkThreshold";
     private static final String RULES = "Meets the business rules";
     private static final String TIMES = "Event times are plausible";
     private static final String TIME_FIELD = "#timesTimeField";
-    // The fixture's checks, every one, as a save sends them: the Standard set with business rules as advice
+    // All the fixture's checks, as a save sends them: the Standard set, with business rules as advice.
     private static final List<CheckSetting> DOC_CHECKS = CheckSettings.complete(List.of(
             CheckSetting.of(Check.COMPILE, CheckState.GATE),
             new CheckSetting(Check.RULES, CheckState.ADVICE, 0.9, null)));
     private static final String MAP = "Setup route map";
-    // The target schema's picker, by the identity its FormGroup gives it
+    // The target schema's picker, found by the id its FormGroup gives it.
     private static final String TARGET_SCHEMA = "#learningFlowTargetSchema";
     private static final String FALLBACK_ON = "Serve what it can, with the rest as marked Unknown events";
     private static final String NO_UNKNOWN = "has none, so a transform that can't be finished";
@@ -95,8 +96,9 @@ public final class LearningFlowEditorStories {
     public static void addTo(final StoryRegistry registry) {
         registry.component("App/Editors/LearningFlowEditor", LearningFlowEditorStories.class)
                 .layout(StoryLayout.FULLSCREEN)
-                // The Pipelines tab first: ready to learn, so with no banner; its feeds in a table, each with a
-                // button that opens its pipeline, where its learning is followed
+                // The Pipelines tab is shown first. The document is ready to learn, so there is no banner.
+                // The feeds' pipelines are listed in a table, each with a button that opens the pipeline,
+                // where its learning can be followed.
                 .story("Default", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     for (final String label : new String[]{"Pipelines", "Setup", "Documentation",
@@ -110,13 +112,13 @@ public final class LearningFlowEditorStories {
                     play.expect(grid.getByText("Translating")).toBeInTheDocument();
                     play.expect(grid.getByRole("button", "Open pipeline Firewall pipeline")).toBeInTheDocument();
                     play.expect(grid.getByRole("button", "Open pipeline Proxy pipeline")).toBeInTheDocument();
-                    // Where a feed stands in detail is on its pipeline, not here
+                    // A feed's detailed status is shown on its pipeline, not here.
                     play.expect(play.queryByRole("heading", "Firewall pipeline")).toBeNull();
                     play.expect(play.queryByText("This document won't learn anything yet")).toBeNull();
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // The quick filter above the table lists the feeds whose pipeline's name has its text
+                // The quick filter above the table shows only the feeds whose pipeline name contains its text.
                 .story("FeedsQuickFilter", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
@@ -126,8 +128,9 @@ public final class LearningFlowEditorStories {
                     play.expect(grid.getByText("Proxy pipeline")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The filter button's dialog: where feeds stand, each with how many, and deleted pipelines;
-                // OK lists only those, asks for the deleted ones too and says the list is filtered
+                // The filter button opens a dialog listing each learner state with its count, and an option to
+                // show deleted pipelines. OK lists only the chosen feeds, requests deleted pipelines too, and
+                // the button then says the list is filtered.
                 .story("FeedsFilterDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -149,7 +152,7 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", FEEDS_FILTERED)).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The filter button's dialog, cancelled: every feed stays listed, unfiltered
+                // Cancelling the filter dialog leaves every feed listed, unfiltered.
                 .story("FeedsFilterDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -166,12 +169,12 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", "Filter Pipelines")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // A new document won't learn: the banner says why, and each fix opens its tab and makes the
-                // change there, which the banner then counts, as not yet saved
+                // A new document won't learn, and the banner says why. Each fix opens its tab and makes the
+                // change there, and the banner then shows the change as not yet saved.
                 .story("NotReady", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
-                    // A new Learning Flow has the Standard checks, so they are not what stops it
+                    // A new Learning Flow has the Standard checks, so the checks are not what stops it.
                     play.expect(play.getByText("7 quality gates")).toBeInTheDocument();
                     play.click(play.getByRole("button", StroomDom.button("Switch on")));
                     play.expect(play.findByRole("radio", "On: learn new feeds automatically")).toBeChecked();
@@ -181,7 +184,8 @@ public final class LearningFlowEditorStories {
                             .toBeVisible();
                     save(play, "{\"learningMode\": \"AUTOMATIC\"}");
                 })
-                // Checks that are no gate but compile: the banner offers the Standard set, which is put in place
+                // When compile is the only check that is a gate, the banner offers the Standard set, and
+                // accepting it puts the set in place.
                 .story("NoGates", context -> render(context, false, LearningFlowFixtures.NO_GATES_DOC))
                 .withPlay(play -> {
                     play.expect(play.findByText("No quality check is a gate, so any answer that runs would pass."))
@@ -189,16 +193,16 @@ public final class LearningFlowEditorStories {
                     play.click(play.getByRole("button", StroomDom.button("Use the Standard checks")));
                     play.expect(play.findByRole("radio", "Standard")).toBeChecked();
                     openTab(play, "Pipelines");
-                    // The Standard set gates six checks besides compile, so nothing stops it learning any
-                    // longer and the banner goes, rather than counting the gates. Its words stay in the DOM,
-                    // since the tab hides the banner rather than emptying it, so this is about what is seen.
+                    // The Standard set has six gates besides compile, so nothing stops the document learning
+                    // and the banner is hidden. The tab hides the banner rather than emptying it, so its text
+                    // stays in the DOM, and the check is on visibility.
                     final Play grid = play.within(play.findByRole("grid", "Pipelines"));
                     play.expect(grid.findByText("Firewall pipeline")).toBeInTheDocument();
                     play.waitFor(() -> play.expect(play.getByText("This document won't learn anything yet"))
                             .not().toBeVisible());
                     save(play, checks(CheckPreset.STANDARD.settings(), Map.of()));
                 })
-                // Read only: the banner offers nothing that changes the document
+                // When read only, the banner offers nothing that changes the document.
                 .story("NotReadyReadOnly", context -> render(context, true, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     play.expect(play.findByText("This document won't learn anything yet")).toBeInTheDocument();
@@ -206,8 +210,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", StroomDom.button("Choose a model"))).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The Setup tab: learning, the model, what a run may spend and whether a person approves, saved
-                // as the document has them
+                // The Setup tab shows whether learning is on, the model, what a run may spend, and whether a
+                // person approves new translations, and changes to them are saved in the document.
                 .story("Setup", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -233,8 +237,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.findByRole("button", "Advanced options")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The target schema: the one the document names, shown beside the model, and kept as it is
-                // when something else on the tab is saved
+                // The target schema the document names is shown beside the model, and is kept unchanged when
+                // something else on the tab is saved.
                 .story("SetupTargetSchema", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -249,7 +253,7 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"instructions\": \"Prefer Network events.\", "
                                + "\"targetSchema\": {\"type\": \"XMLSchema\", \"uuid\": \"schema-1\"}}");
                 })
-                // Read only: the target schema is shown, but can't be changed
+                // When read only, the target schema is shown but can't be changed.
                 .story("SetupTargetSchemaReadOnly", context -> render(context, true, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -258,8 +262,9 @@ public final class LearningFlowEditorStories {
                     play.expect(play.querySelector(TARGET_SCHEMA_BUTTON)).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A root that may hold a header beside its records: every child of the root is read as a
-                // record, so the tab warns; event-logging's root holds only events, and nothing is said
+                // When the target schema's root may hold a header beside its records, the tab warns, because
+                // every child of the root is read as a record. Event-logging's root holds only events, so no
+                // warning is shown for it.
                 .story("SetupTargetSchemaRootHoldsSeveralKinds",
                         context -> render(context, false, LearningFlowFixtures.HEADED_SCHEMA_DOC))
                 .withPlay(play -> {
@@ -269,31 +274,35 @@ public final class LearningFlowEditorStories {
                             .toBeVisible());
                     DocEditors.expectNoProblems(play);
                 })
-                // Event-logging: the fallback applies, and nothing says otherwise
+                // With event-logging as the target schema, the fallback applies and no note is shown.
                 .story("SetupFallbackForEventLogging", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
-                    // The fixture's Advanced options are open already, as it is not as a new document has them
+                    // The fixture's advanced settings differ from a new document's, so Advanced options is
+                    // already open.
                     play.waitFor(() -> play.expect(play.getByRole("button", "Advanced options"))
                             .toHaveAttribute("aria-expanded", "true"));
                     play.expect(play.findByRole("radio", FALLBACK_ON)).toBeInTheDocument();
                     play.expect(play.queryByText(TextMatch.containing(NO_UNKNOWN))).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // Another schema has no marked Unknown, so the fallback doesn't apply: a note says so beside it
+                // Another schema has no marked Unknown, so the fallback doesn't apply, and a note beside it
+                // says so.
                 .story("SetupFallbackNotForOtherSchemas",
                         context -> render(context, false, LearningFlowFixtures.OTHER_SCHEMA_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
-                    // The fixture's Advanced options are open already, as it is not as a new document has them
+                    // The fixture's advanced settings differ from a new document's, so Advanced options is
+                    // already open.
                     play.waitFor(() -> play.expect(play.getByRole("button", "Advanced options"))
                             .toHaveAttribute("aria-expanded", "true"));
                     play.waitFor(() -> play.expect(play.getByText(TextMatch.containing(
                             "and sightings v2.4 has none"))).toBeVisible());
                     DocEditors.expectNoProblems(play);
                 })
-                // A document naming no target schema (one made before the setting existed) shows none, and is
-                // saved with none: it goes on being judged against its conformance check's schema group
+                // A document with no target schema, such as one made before the setting existed, shows none
+                // and is saved with none. It continues to be judged against its conformance check's schema
+                // group.
                 .story("SetupNoTargetSchema", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -302,8 +311,8 @@ public final class LearningFlowEditorStories {
                             .not().toHaveTextContent(TextMatch.containing("event-logging"));
                     DocEditors.expectNoProblems(play);
                 })
-                // The route map says what each section is set to; choosing a stop marks it and shows its part,
-                // alone
+                // The route map summarises each section's settings. Choosing a stop marks it as current and
+                // shows only that part of the tab.
                 .story("SetupRouteMap", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -327,20 +336,20 @@ public final class LearningFlowEditorStories {
                     play.expect(play.queryByRole("region", "AI model and instructions")).toBeNull();
                     play.expect(map.getByRole("button", TextMatch.startingWith("AI model and instructions:")))
                             .not().toHaveAttribute("aria-current");
-                    // A step shows its card alone, under its own heading
+                    // Choosing a step shows only its card, under its own heading.
                     play.click(map.getByRole("button", "Step 2: Write the parser"));
                     play.expect(play.findByRole("heading", "Step 2: Write the parser")).toBeVisible();
                     play.expect(play.queryByRole("heading", "Step 1: Choose the elements")).toBeNull();
                     play.expect(play.queryByRole("region", "Monitoring translations in use")).toBeNull();
-                    // A change is summed up at once
+                    // A change is summarised on the route map straight away.
                     openStop(play, "Approving new translations:");
                     play.click(play.findByRole("radio", "Wait for someone to approve them"));
                     play.expect(map.findByRole("button",
                             "Approving new translations: Approved first")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // The route map from the keyboard: only the stop chosen is in the tab order, the arrow keys move
-                // between stops and Enter chooses one, keeping the focus on it
+                // Using the route map from the keyboard. Only the current stop is in the tab order, the arrow
+                // keys move between stops, and Enter chooses one while keeping the focus on it.
                 .story("SetupRouteMapKeyboard", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openTab(play, "Setup");
@@ -365,7 +374,7 @@ public final class LearningFlowEditorStories {
                     play.expect(map.getByRole("button", TextMatch.startingWith("AI model and"))).toHaveFocus();
                     DocEditors.expectNoProblems(play);
                 })
-                // The quality checks: the document's own, in plain words
+                // The quality checks section lists the document's own checks in plain words.
                 .story("Quality", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Quality checks:");
@@ -373,7 +382,7 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByText("Compiles")).toBeInTheDocument();
                     play.expect(play.getByText("Records are whole")).toBeInTheDocument();
                     play.expect(play.getByText("These are this Learning Flow's own checks.")).toBeInTheDocument();
-                    // Every check has a row, so a check is edited, never added
+                    // Every check always has a row, so checks are edited, never added.
                     play.expect(play.queryByRole("button", "Add a check")).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
@@ -386,7 +395,7 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("radio", "Standard")).toBeDisabled();
                     DocEditors.expectNoProblems(play);
                 })
-                // A starting set replaces the document's own checks once it says yes
+                // Choosing a preset set of checks replaces the document's own checks once confirmed.
                 .story("QualityPresetConfirmOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -411,7 +420,7 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A check's dialog: a new threshold, OK and Save write it
+                // A new threshold entered in a check's dialog is written by OK and then Save.
                 .story("CheckDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -426,7 +435,7 @@ public final class LearningFlowEditorStories {
                     save(play, checks(DOC_CHECKS, Map.of(Check.RULES,
                             "{\"check\": \"RULES\", \"state\": \"ADVICE\", \"threshold\": 0.75}")));
                 })
-                // A check's dialog, cancelled: nothing changes
+                // Cancelling a check's dialog changes nothing.
                 .story("CheckDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -441,8 +450,9 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // Time plausibility's dialog: its window and the time it judges, which another target schema
-                // must name; OK and Save write all three
+                // The time plausibility check's dialog sets its time window and the field holding the time
+                // it judges, which must be named for a target schema other than event-logging. OK and Save
+                // write all three.
                 .story("TimesDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -467,7 +477,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A threshold that isn't a number it can be is refused, not changed: OK says why and stays open
+                // A threshold that is not a valid number is rejected rather than changed. OK says why and the
+                // dialog stays open.
                 .story("CheckDialogRefusesBadNumber", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -481,7 +492,7 @@ public final class LearningFlowEditorStories {
                     play.expect(threshold).toHaveValue("most");
                     DocEditors.expectNoProblems(play);
                 })
-                // A business rule's assertion, added in its own dialog within the check's
+                // A business rule's assertion is added in its own dialog, opened from the check's dialog.
                 .story("AssertionDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -501,7 +512,7 @@ public final class LearningFlowEditorStories {
                                + "\"parameters\": {\"assertions\": [{\"name\": \"users are named\"}, "
                                + "{\"name\": \"events have a time\", \"xpath\": \"EventTime/TimeCreated\"}]}}")));
                 })
-                // An assertion's dialog, cancelled: the check keeps its one assertion
+                // Cancelling an assertion's dialog leaves the check with its one existing assertion.
                 .story("AssertionDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -517,8 +528,8 @@ public final class LearningFlowEditorStories {
                     play.expect(screen.getByText("users are named")).toBeInTheDocument();
                     DocEditors.expectNoProblems(play);
                 })
-                // Learning steps: the starting points and limits; a step chosen on the route map, its card read as
-                // sentences, with its question text beneath
+                // The learning steps section shows the starting points and limits. A step chosen on the route
+                // map shows its card, which reads as sentences, with its question text beneath.
                 .story("Approach", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Learning steps:");
@@ -527,7 +538,7 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("group", "Time for each run")).toBeVisible();
                     openStop(play, "Step 1:");
                     play.expect(play.findByRole("heading", "Step 1: Choose the elements")).toBeVisible();
-                    // Add step, on the map under the step chosen
+                    // The Add step button appears on the map under the chosen step.
                     play.expect(play.getByRole("button", "Add a step after step 1")).toBeVisible();
                     play.expect(play.getByText("Question text of step 1: Choose the elements")).toBeVisible();
                     openStop(play, "Step 2:");
@@ -548,8 +559,8 @@ public final class LearningFlowEditorStories {
                             .toBeDisabled();
                     DocEditors.expectNoProblems(play);
                 })
-                // A default setup, from the menu of Load default setup, replaces the steps once confirmed, and
-                // is said to be in use
+                // A default setup chosen from the Load default setup menu replaces the steps once confirmed,
+                // and is then shown as in use.
                 .story("ApproachStartingPoint", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -567,8 +578,8 @@ public final class LearningFlowEditorStories {
                                + "{\"kind\": \"CONFIGURE\"}, {\"id\": \"first\"}, {\"kind\": \"TARGET\"}, "
                                + "{\"id\": \"again\"}, {\"kind\": \"CONFIGURE\"}, {\"kind\": \"ADMIT\"}]}}");
                 })
-                // A step added from the menu of Add step, on the route map under the step chosen, which is
-                // then the step chosen
+                // A step added from the Add step menu appears on the route map under the chosen step, and
+                // becomes the chosen step.
                 .story("ApproachAddStep", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -583,7 +594,7 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\"}, {\"kind\": \"SPLIT\"}, "
                                + "{\"kind\": \"CONFIGURE\"}]}}");
                 })
-                // A rule's destination chosen from its menu
+                // A rule's destination is chosen from its menu.
                 .story("ApproachRuleDestination", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -593,8 +604,8 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\"}, {\"kind\": \"CONFIGURE\", "
                                + "\"transitions\": [{\"on\": \"COVERAGE_SHORT\", \"goTo\": \"park\"}]}]}}");
                 })
-                // The fallback, chosen under Approving new translations: pausing for a person takes its step out
-                // of the flow, with the rule that went to it
+                // The fallback is chosen under Approving new translations. Choosing to pause for a person
+                // removes the fallback step from the flow, together with the rule that led to it.
                 .story("Fallback", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
@@ -609,7 +620,8 @@ public final class LearningFlowEditorStories {
                                + "{\"kind\": \"CONFIGURE\"}]}}");
                     play.expect(play.getByRole("navigation", MAP)).not().toHaveTextContent("Fallback");
                 })
-                // The fallback's question text, from Approving new translations: its stop on the route map
+                // The fallback's question text is opened from Approving new translations, which chooses the
+                // fallback's stop on the route map.
                 .story("FallbackText", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
@@ -623,8 +635,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("region", "Learning step")).toHaveFocus();
                     DocEditors.expectNoProblems(play);
                 })
-                // A new document's Setup: what an Admin rarely changes is folded under each section's Advanced
-                // options, and unfolds on request
+                // On a new document's Setup tab, settings an administrator rarely changes are folded under
+                // each section's Advanced options, and unfold on request.
                 .story("SetupAdvancedFolded", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Approving new translations:");
@@ -642,8 +654,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByLabelText("Records kept to check against later")).not().toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // A document whose rarely changed settings aren't as a new one has them: their Advanced options
-                // are open, so nothing changed is out of sight
+                // When a document's rarely changed settings differ from a new document's, their Advanced
+                // options are open, so that no changed setting is hidden.
                 .story("SetupAdvancedOpenWhereChanged",
                         context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
@@ -655,8 +667,9 @@ public final class LearningFlowEditorStories {
                     play.expect(play.findByRole("grid", "Quality checks")).toBeVisible();
                     DocEditors.expectNoProblems(play);
                 })
-                // A new document's steps are a starting point, so they are off the route map until the person
-                // asks to customise them; then they are on it, with Load default setup, and can be hidden again
+                // A new document's steps are only a starting point, so they are not on the route map until the
+                // person asks to customise them. They then appear on it, with Load default setup, and can be
+                // hidden again.
                 .story("SetupStepsCustomise", context -> render(context, false, LearningFlowFixtures.NEW_DOC))
                 .withPlay(play -> {
                     openStop(play, "Learning steps:");
@@ -667,7 +680,7 @@ public final class LearningFlowEditorStories {
                     play.waitFor(() -> play.expect(map.getByRole("button", TextMatch.startingWith("Step 1:")))
                             .toBeInTheDocument());
                     play.expect(play.getByRole("button", StroomDom.button("Load default setup"))).toBeVisible();
-                    // A step chosen shows its card in place of Learning steps' own part, hiding nothing
+                    // A chosen step's card replaces the learning steps section's own part.
                     openStop(play, "Step 1:");
                     play.expect(play.findByRole("heading", "Step 1: Choose the elements")).toBeVisible();
                     openStop(play, "Learning steps:");
@@ -679,9 +692,9 @@ public final class LearningFlowEditorStories {
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // A rule that fires when a check falls short, on a Learning Flow where that check is off:
-                // the step's card says the rule never fires, but the document can still be saved, since
-                // the user may be about to switch the check on
+                // A rule that fires when a check falls short, on a Learning Flow where that check is off. The
+                // step's card says the rule never fires, but the document can still be saved, since the user
+                // may be about to switch the check on.
                 .story("ApproachRuleOnCheckThatIsOff",
                         context -> render(context, false, LearningFlowFixtures.RULE_ON_OFF_CHECK_DOC))
                 .withPlay(play -> {
@@ -689,13 +702,13 @@ public final class LearningFlowEditorStories {
                     play.expect(play.findByRole("heading", "Step 2: Write the parser")).toBeVisible();
                     play.expect(play.findByText(TextMatch.containing("never fires"))).toBeVisible();
                     play.expect(play.getByText(TextMatch.containing("the coverage check is off"))).toBeVisible();
-                    // The warning doesn't mark the document changed: it is about the document as saved.
-                    // That a warning never stops a save is pinned by TestLearningFlow, since the store
-                    // refuses on problems() alone.
+                    // The warning doesn't mark the document as changed, because it is about the document as
+                    // saved. TestLearningFlow checks that a warning never stops a save, since the store only
+                    // refuses a save because of problems().
                     play.expect(play.getByRole("button", "Save")).toHaveAttribute("aria-disabled", "true");
                     DocEditors.expectNoProblems(play);
                 })
-                // The same rule where the check is a gate: nothing is said
+                // The same rule where the check is a gate shows no warning.
                 .story("ApproachRuleOnCheckThatIsOn", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Step 2:");
@@ -703,7 +716,8 @@ public final class LearningFlowEditorStories {
                     play.expect(play.queryByText(TextMatch.containing("never fires"))).toBeNull();
                     DocEditors.expectNoProblems(play);
                 })
-                // A step fine-tuned: its tries, out of sight until unfolded, and a tag on its heading for them
+                // A step's number of tries is hidden under Advanced options until unfolded, and a changed
+                // value is tagged on the step's heading.
                 .story("ApproachFineTune", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Step 2:");
@@ -717,11 +731,12 @@ public final class LearningFlowEditorStories {
                     play.expect(play.findByText("5 tries")).toBeInTheDocument();
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\"}, {\"kind\": \"CONFIGURE\", "
                                + "\"candidates\": 5}]}}");
-                    // Read back after the save, the step stays unfolded
+                    // After the save the document is read back, and the step stays unfolded.
                     play.waitFor(() -> play.expect(fineTune).toHaveAttribute("aria-expanded", "true"));
                 })
-                // The parsers and filters the AI may choose from, under the first step's "Advanced options":
-                // every one is ticked, and one unticked is saved on the step and tagged on its heading
+                // The parsers and filters the AI may choose from are under the first step's "Advanced
+                // options". Every one is ticked by default, and unticking one saves the list on the step and
+                // tags its heading.
                 .story("ApproachElementTypes", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     openStop(play, "Step 1:");
@@ -738,7 +753,7 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\", \"elements\": [\"DSParser\", "
                                + "\"JSONParser\", \"XMLFragmentParser\"]}, {\"kind\": \"CONFIGURE\"}]}}");
                 })
-                // The last parser or filter ticked stays ticked, and the group says why
+                // The last ticked parser or filter cannot be unticked, and the group says why.
                 .story("ApproachElementTypesLastOneStays",
                         context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
@@ -757,7 +772,7 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\", \"elements\": "
                                + "[\"XSLTFilter\"]}, {\"kind\": \"CONFIGURE\"}]}}");
                 })
-                // A step naming an element type the AI can't learn says so, and it can be removed
+                // A step naming an element type the AI can't learn shows a note, and the type can be removed.
                 .story("ApproachUnlearnableElements",
                         context -> render(context, false, LearningFlowFixtures.DOC_UNLEARNABLE))
                 .withPlay(play -> {
@@ -772,7 +787,7 @@ public final class LearningFlowEditorStories {
                     save(play, "{\"flow\": {\"steps\": [{\"kind\": \"CHAIN\", \"elements\": "
                                + "[\"XSLTFilter\"]}, {\"kind\": \"CONFIGURE\"}]}}");
                 })
-                // A built-in text loaded into one of the selected step's texts
+                // A built-in text is loaded into one of the selected step's texts.
                 .story("BuiltInTextDialogOk", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -785,7 +800,7 @@ public final class LearningFlowEditorStories {
                             StroomDom.DIALOG_TITLE)).toBeNull());
                     DocEditors.expectNoProblems(play);
                 })
-                // Loading a built-in text, cancelled: the document stays clean
+                // Cancelling the load of a built-in text leaves the document unchanged.
                 .story("BuiltInTextDialogCancel", context -> render(context, false, LearningFlowFixtures.DOC))
                 .withPlay(play -> {
                     final Play screen = play.screen();
@@ -801,20 +816,21 @@ public final class LearningFlowEditorStories {
                 });
     }
 
-    // Opens the dialog of which pipelines the Pipelines tab lists, from the filter button of its table's toolbar
+    // Opens the dialog for choosing which pipelines the Pipelines tab lists, using the filter button on the
+    // table's toolbar.
     private static void openFeedFilter(final Play play) {
         play.click(play.getByRole("button", "Filter Pipelines"));
         play.expect(play.screen().findByText(FEED_FILTER, StroomDom.DIALOG_TITLE)).toBeInTheDocument();
     }
 
-    // Opens one of the document's tabs once it is shown
+    // Opens one of the document's tabs once it is shown.
     private static void openTab(final Play play, final String label) {
         play.waitFor(() -> play.expect(DocEditors.tab(play, label)).toBeInTheDocument());
         play.click(DocEditors.tab(play, label));
     }
 
-    // Opens the Setup tab, and chooses a stop on its route map by the start of what its button is called: a
-    // section, e.g. "Quality checks:", or a step, e.g. "Step 2:"
+    // Opens the Setup tab and chooses a stop on its route map by the start of the stop's button label, which
+    // is a section, e.g. "Quality checks:", or a step, e.g. "Step 2:".
     private static void openStop(final Play play, final String stop) {
         openTab(play, "Setup");
         final Play map = play.within(play.findByRole("navigation", MAP));
@@ -823,14 +839,14 @@ public final class LearningFlowEditorStories {
         play.waitFor(() -> play.expect(button).toHaveAttribute("aria-current", "location"));
     }
 
-    // Unfolds the Advanced options of the Setup section shown
+    // Unfolds the Advanced options of the Setup section that is shown.
     private static void openAdvanced(final Play play) {
         final Query advanced = play.findByRole("button", "Advanced options");
         play.click(advanced);
         play.waitFor(() -> play.expect(advanced).toHaveAttribute("aria-expanded", "true"));
     }
 
-    // Selects a check's row on the Setup tab and opens its dialog with Edit
+    // Selects a check's row on the Setup tab and opens its dialog with Edit.
     private static void openCheckDialog(final Play play, final String check) {
         final Play screen = play.screen();
         openStop(play, "Quality checks:");
@@ -839,8 +855,8 @@ public final class LearningFlowEditorStories {
         play.expect(screen.findByText(check, StroomDom.DIALOG_TITLE)).toBeInTheDocument();
     }
 
-    // The checks a save sends, every one in order, as JSON the save is to contain: each check's state, or
-    // what is given instead for a check
+    // Builds the JSON a save is expected to contain for the checks: every check in order with its state, or
+    // the JSON given in `instead` for that check.
     private static String checks(final List<CheckSetting> settings, final Map<Check, String> instead) {
         final StringBuilder json = new StringBuilder("{\"checks\": [");
         for (int i = 0; i < settings.size(); i++) {
@@ -855,7 +871,7 @@ public final class LearningFlowEditorStories {
         return json.append("]}").toString();
     }
 
-    // Saves, and checks the document sent holds what is given
+    // Saves the document and checks that what was sent contains the expected JSON.
     private static void save(final Play play, final String expected) {
         final Query save = play.getByRole("button", "Save");
         play.waitFor(() -> play.expect(save).not().toHaveAttribute("aria-disabled"));

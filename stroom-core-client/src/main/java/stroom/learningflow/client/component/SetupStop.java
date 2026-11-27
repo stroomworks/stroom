@@ -18,9 +18,12 @@ package stroom.learningflow.client.component;
 
 import java.util.Objects;
 
-/// A stop on the Setup tab's route map ([RouteMap]), and so what the tab shows beside it: one of the tab's
-/// sections ([SetupSection]), or one step of the learning flow, by its index. Written into the map's
-/// markup ([#key()]) and read back from it ([#parse]) when a stop is chosen.
+/// Identifies one stop on the Setup tab's route map ([RouteMap]), and therefore what the tab shows beside the
+/// map. A stop is either one of the tab's sections ([SetupSection]) or one step of the learning flow,
+/// identified by its index.
+///
+/// A stop's key ([#key()]) is written into the map's markup, and is parsed back ([#parse]) when the user
+/// chooses a stop.
 public final class SetupStop {
 
     private static final String SECTION = "section:";
@@ -35,13 +38,13 @@ public final class SetupStop {
     }
 
     /// @param section A section of the tab.
-    /// @return Its stop.
+    /// @return The stop for that section.
     public static SetupStop of(final SetupSection section) {
         return new SetupStop(Objects.requireNonNull(section, "section"), -1);
     }
 
     /// @param index A step's index in the flow, counted from zero.
-    /// @return Its stop.
+    /// @return The stop for that step.
     public static SetupStop step(final int index) {
         if (index < 0) {
             throw new IllegalArgumentException("A step's index can't be negative: " + index);
@@ -49,10 +52,10 @@ public final class SetupStop {
         return new SetupStop(null, index);
     }
 
-    /// Reads a stop back from the map's markup.
+    /// Parses a stop from a key read from the map's markup.
     ///
-    /// @param key A stop's key ([#key()]).
-    /// @return The stop, or null where the key is none.
+    /// @param key A stop's key ([#key()]), or null.
+    /// @return The stop, or null if the key is null or not a valid stop key.
     public static SetupStop parse(final String key) {
         if (key == null) {
             return null;
@@ -65,28 +68,28 @@ public final class SetupStop {
                 return step(Integer.parseInt(key.substring(STEP.length())));
             }
         } catch (final IllegalArgumentException e) {
-            // Not a stop's key: NumberFormatException is one
+            // Not a valid key. This also catches NumberFormatException, which is a subclass.
             return null;
         }
         return null;
     }
 
-    /// @return Whether it is a step of the flow; else a section.
+    /// @return True if this stop is a step of the flow, false if it is a section.
     public boolean isStep() {
         return section == null;
     }
 
-    /// @return The section, or null where it is a step.
+    /// @return The section, or null if this stop is a step.
     public SetupSection getSection() {
         return section;
     }
 
-    /// @return The step's index, or -1 where it is a section.
+    /// @return The step's index, or -1 if this stop is a section.
     public int getStep() {
         return step;
     }
 
-    /// @return Its key in the map's markup, e.g. "section:QUALITY" or "step:2".
+    /// @return The stop's key in the map's markup, e.g. "section:QUALITY" or "step:2".
     public String key() {
         return section == null
                 ? STEP + step

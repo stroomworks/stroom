@@ -18,32 +18,33 @@ package stroom.learningflow.learning;
 
 import stroom.learningflow.shared.LearningFlowDoc;
 
-/**
- * Where a stage gets its {@link Advisor}: one per document, since the document names the model to ask
- * (design 01 §10) and the instructions every question carries. A node answers with the model the
- * document names; a scenario answers with its script whatever the document.
- */
+/// Supplies the [Advisor] a learning run asks its questions through. There is one per Learning Flow
+/// document, because the document names the model to ask and the instructions every question carries.
+///
+/// In a node the advisor talks to the model the document names; in tests it answers from a script,
+/// whatever the document says.
 public interface Advisors {
 
-    /// An advisor that asks in the document's words as they stand now: what a run opening for the first
-    /// time is asked with.
+    /// Returns an advisor that asks using the document's templates and instructions as they are now. This is
+    /// what a new run uses.
     ///
     /// @param doc The document.
-    /// @return How to ask the model.
+    /// @return The advisor.
     Advisor of(LearningFlowDoc doc);
 
-    /// An advisor that asks in the words a run was asked with (decision N9), for carrying a parked run
-    /// on. A session is a conversation: every turn before this one was put in the words of the templates
-    /// the run began with, and the model is shown its own history as it resumes. Rendering that history
-    /// from templates somebody has edited since — or from built-ins an upgrade has moved — would show
-    /// the model a conversation it never had.
+    /// Returns an advisor that asks using the templates and instructions a run was started with, for
+    /// resuming a parked run.
     ///
-    /// Falls back to the document's words where the run's were not recorded, which is every attempt
-    /// opened before they were kept.
+    /// When a run resumes, the model is shown the turns before it. Those turns were worded with the
+    /// templates the run began with, so rendering them from templates someone has edited since, or from
+    /// built-in templates an upgrade has changed, would show the model a conversation it never had.
+    ///
+    /// Where the run's wording was not recorded (attempts opened by a version that did not record it),
+    /// implementations fall back to the document's current wording. The default always does.
     ///
     /// @param doc       The document.
-    /// @param askedWith The words the run was asked with.
-    /// @return How to ask the model.
+    /// @param askedWith The templates and instructions the run was started with.
+    /// @return The advisor.
     default Advisor of(final LearningFlowDoc doc, final AskedWith askedWith) {
         return of(doc);
     }

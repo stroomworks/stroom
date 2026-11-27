@@ -32,8 +32,8 @@ import com.google.gwt.user.client.ui.Widget;
 
 import java.util.List;
 
-/// The assertions of a business rules scorer as a list: a row each, its name and XPath, with Add, Edit
-/// and Remove. A double click edits an assertion. When read only, the buttons are disabled and a
+/// Lists the business rules scorer's assertions, one row each showing its name and XPath, with Add, Edit and
+/// Remove buttons. Double-clicking an assertion edits it. When read-only, the buttons are disabled and a
 /// double click does nothing. [XPathAssertionListController] does the work.
 public class XPathAssertionList extends Component {
 
@@ -87,35 +87,35 @@ public class XPathAssertionList extends Component {
         enableButtons();
     }
 
-    /// @param assertions The assertions, in their order.
+    /// @param assertions The assertions to show, in order.
     public void setData(final List<XPathAssertion> assertions) {
         dataGrid.setRowData(0, assertions);
         dataGrid.setRowCount(assertions.size());
         enableButtons();
     }
 
-    /// @return The assertion selected, or null if none is.
+    /// @return The selected assertion, or null if none is selected.
     public XPathAssertion getSelected() {
         return selectionModel.getSelected();
     }
 
-    /// Selects nothing.
+    /// Clears the selection.
     public void clearSelection() {
         selectionModel.clear();
         enableButtons();
     }
 
-    /// @param onAdd Run when Add is pressed (not when read only).
+    /// @param onAdd Run when Add is pressed (never when read-only).
     public void setOnAdd(final Runnable onAdd) {
         this.onAdd = onAdd;
     }
 
-    /// @param onEdit Run when Edit is pressed, or an assertion is double clicked (not when read only).
+    /// @param onEdit Run when Edit is pressed or an assertion is double-clicked (never when read-only).
     public void setOnEdit(final Runnable onEdit) {
         this.onEdit = onEdit;
     }
 
-    /// @param onRemove Run when Remove is pressed (not when read only).
+    /// @param onRemove Run when Remove is pressed (never when read-only).
     public void setOnRemove(final Runnable onRemove) {
         this.onRemove = onRemove;
     }

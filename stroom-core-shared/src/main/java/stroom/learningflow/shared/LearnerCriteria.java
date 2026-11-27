@@ -27,9 +27,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/// Which learning pipelines the Supervisor lists (design 06 A142): every one the person may read by
-/// default, narrowed by document, by state, and to those whose pipeline still exists unless deleted ones
-/// are asked for (A137). Most waiting streams first, then the most recent session, a page at a time.
+/// Criteria for the Supervisor's list of learning pipelines. By default the list holds every learner the person
+/// may read whose pipeline still exists. It can be narrowed to one document and to chosen states, and can be
+/// widened to include deleted pipelines. Rows come a page at a time, those with the most waiting streams first,
+/// then those with the most recent session.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LearnerCriteria extends BaseCriteria {
 
@@ -58,17 +59,18 @@ public class LearnerCriteria extends BaseCriteria {
         this.showDeletedPipelines = Objects.requireNonNullElse(showDeletedPipelines, false);
     }
 
-    /// One document's learners, or those of every document the person may read when null.
+    /// @return The UUID of the document whose learners are listed, or null for every document the person may
+    /// read.
     public String getDocUuid() {
         return docUuid;
     }
 
-    /// The states asked for; empty for every state.
+    /// @return The learner states to list; empty for every state.
     public List<LearnerState> getStates() {
         return states;
     }
 
-    /// Whether the learning of pipelines since deleted is shown too (A137).
+    /// @return Whether learners whose pipelines have since been deleted are listed too.
     public boolean isShowDeletedPipelines() {
         return showDeletedPipelines;
     }

@@ -39,13 +39,11 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Ruling A46: **a supervisor may put a message of their own into the learning**, and every question
-/// asked after it carries it.
+/// Tests guidance: a message a person leaves for a learner, which every question asked after it carries.
 ///
-/// The message attaches to the learner rather than to a turn or an attempt, which is the whole of the
-/// ruling's first decision: what a person knows is about the feed, not about turn 7 of attempt 412. So
-/// nothing has to be timed, nothing is refused for arriving at the wrong moment, and a hint given
-/// before anything has been learned is carried by the first question asked.
+/// Guidance attaches to the learner rather than to a turn or an attempt, because what a person knows is
+/// about the feed, not about one particular turn. So nothing has to be timed, nothing is refused for arriving
+/// at the wrong moment, and a hint given before anything has been learned is carried by the first question.
 class TestSupervisorGuidance {
 
     private static final String FEED = "DOOR-ACCESS";
@@ -119,14 +117,14 @@ class TestSupervisorGuidance {
                 .allSatisfy(carried -> assertThat(carried).isEmpty());
     }
 
-    /// The case the direct walk does not cover, and the one the design advertises: **a deferred attempt**
-    /// (A5, A28). Every question is put by an advisor wrapping the record, so a hint reaches the model
-    /// only if the wrapper passes it on — and a turn replayed from the record must keep what it was
-    /// asked with then, not what stands now, or a re-walk (A45) rewrites its own history.
+    /// Covers an attempt resumed from its record, as the worker resumes one. Every question goes through an
+    /// advisor that wraps the record, so a hint reaches the model only if that wrapper passes it on. A turn
+    /// replayed from the record must keep the guidance it was originally asked with, not what stands now, or
+    /// replaying would rewrite the attempt's history.
     @Test
     void aResumedAttemptCarriesTheGuidanceStandingWhenItResumes() {
         final Scenarios scenarios = new Scenarios();
-        // The chain question is answered by the record, so the script begins where the model does.
+        // The chain question is answered from the record, so the script begins where the model is asked.
         final Script script = scenarios.script(CSV.configuration(), XSLT)
                 .expect(QuestionMatcher.configuration("DSParser")).reply(Scenarios.fenced(CSV.configuration()))
                 .expect(QuestionMatcher.configuration("XSLTFilter")).reply(Scenarios.fenced(XSLT));
@@ -134,8 +132,8 @@ class TestSupervisorGuidance {
         final long before = scenarios.guidance.given(Scenarios.LEARNER, "doc-1",
                 "Said before anything was asked.", "jo");
 
-        // One turn already answered, as a parked attempt has: the record answers it, the model is asked
-        // the rest.
+        // One turn is already answered, as for a waiting attempt: the record answers it, and the model is
+        // asked the rest.
         final Turn answered = new Turn(1, "chain", 1, QuestionKind.CHAIN,
                 "Chain: choose from [DSParser, XSLTFilter]", "DSParser -> XSLTFilter", "the model", null,
                 List.of(before));
@@ -187,8 +185,8 @@ class TestSupervisorGuidance {
     // --------------------------------------------------------------------------------
 
 
-    /// An advisor that remembers what each question was asked with. What a scripted advisor answers is
-    /// not the point here — what reaches it is.
+    /// An advisor that records the guidance each question was asked with. What the scripted advisor answers
+    /// does not matter here; what reaches it does.
     private static final class Carrying implements Advisor {
 
         private final List<List<Given>> carried = new ArrayList<>();

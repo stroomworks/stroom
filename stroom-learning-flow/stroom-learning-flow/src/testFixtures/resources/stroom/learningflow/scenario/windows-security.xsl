@@ -12,8 +12,8 @@
     </Events>
   </xsl:template>
 
-  <!-- One Windows security event is one Event: the EventID names what happened, the EventData's named
-       Data carry who, from where and what -->
+  <!-- One Windows security event becomes one Event. The EventID says what happened, and the named Data
+       items in EventData say who, from where and what. -->
   <xsl:template match="Event">
     <xsl:variable name="id" select="System/EventID"/>
     <xsl:variable name="data" select="EventData/Data"/>

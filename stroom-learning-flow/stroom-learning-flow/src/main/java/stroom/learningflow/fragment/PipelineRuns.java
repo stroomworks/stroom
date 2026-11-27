@@ -27,10 +27,10 @@ import stroom.util.shared.StoredError;
 import java.util.ArrayList;
 import java.util.List;
 
-/// What the module's pipeline runners share — [PipelineFragmentRunner], which runs a whole fragment, and
-/// [stroom.learningflow.element.PipelineStepRunner], which runs one element of a candidate chain: the
-/// element types they build their pipelines from, how much of a run a capture keeps, and how what the
-/// elements said about a run is gathered.
+/// Constants and helpers shared by the module's pipeline runners: [PipelineFragmentRunner], which runs a
+/// whole fragment, and `stroom.learningflow.element.PipelineStepRunner`, which runs one element of a
+/// candidate chain. It holds the element types they build pipelines from, how many records a capture
+/// keeps, and how the diagnostics the elements logged during a run are gathered.
 public final class PipelineRuns {
 
     /// The element type, and the id, of the element a pipeline's stream enters at.
@@ -40,26 +40,26 @@ public final class PipelineRuns {
     /// The element type of Stroom's split filter, which shapes a stream into records.
     public static final String SPLIT_FILTER = "SplitFilter";
 
-    /// How many records of a run a capture keeps. A judgement is made on a sample (§3), not on a
-    /// production stream, and the capture holds what it keeps in memory.
+    /// The maximum number of records of a run that a capture keeps. A judgement is made on a sample, not on
+    /// a whole production stream, and the capture holds what it keeps in memory.
     public static final int MOST_RECORDS = 10_000;
 
     private PipelineRuns() {
     }
 
-    /// What some elements of a run logged, once each: what each recorded against every record the
-    /// capture kept, and whatever it logged outside a record — a parser that failed before it produced
-    /// one, an element that refused before anything reached it, or a complaint on the way out. The
-    /// capture takes what it finds at each record boundary and clears it, so what the receiver still
-    /// holds is exactly what no record carried.
+    /// Gathers what some elements logged during a run, with duplicates removed. This includes what each
+    /// element logged against every record the capture kept, and anything it logged outside a record (a
+    /// parser that failed before it produced one, an element that failed before anything reached it, or
+    /// an error at the end of processing). The capture takes what it finds at each record boundary and
+    /// clears it, so what the receiver still holds is exactly what no record carried.
     ///
     /// @param capture    What the run kept, record by record.
-    /// @param elementIds The elements whose say is wanted, the first of them the one a failure is
-    ///                   reported against.
-    /// @param logging    What the elements logged outside a record.
-    /// @param failure    What the run failed with that nobody recorded, or null.
-    /// @return The diagnostics, de-duplicated as [PerRecord#told] does; the failure, as a fatal error,
-    /// only where nothing else was said.
+    /// @param elementIds The elements whose diagnostics are wanted; the first is the one an unreported
+    ///                   failure is attributed to.
+    /// @param logging    The receiver holding what the elements logged outside a record.
+    /// @param failure    The error the run failed with that no element reported, or null.
+    /// @return The diagnostics, de-duplicated and capped as [PerRecord#told] does; the failure is added as
+    /// a fatal error only where nothing else was reported.
     public static List<StoredError> diagnostics(final HeadlessCapture capture,
                                                 final List<String> elementIds,
                                                 final LoggingErrorReceiver logging,

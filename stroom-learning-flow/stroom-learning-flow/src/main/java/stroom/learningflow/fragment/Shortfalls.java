@@ -23,10 +23,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-/// A session's full pass over its held stream (design 04 §4, A64): the bar asked of every record, with
-/// the run going on past the ones that fall short and the first few of them kept — the record as the
-/// parser cut it, what the transform made of it, and the verdict — as the evidence the next question is
-/// built from. Bounded, since a stream of a million short records says nothing a handful does not.
+/// The [RecordJudge] for a learning session's full pass over its held stream. It applies the bar to every
+/// record and lets the run carry on past records that fall short. The first few that fall short are kept
+/// (the record as the parser produced it, what the transform made of it, and the verdict) as the evidence
+/// the next question to the model is built from. The number kept is bounded, since a million failing
+/// records say nothing that a handful do not.
 public final class Shortfalls implements RecordJudge {
 
     private final RecordJudge bar;
@@ -35,8 +36,8 @@ public final class Shortfalls implements RecordJudge {
     private int judged;
     private int fallenShort;
 
-    /// @param bar    The bar, record by record.
-    /// @param atMost How many short records to keep.
+    /// @param bar    The judge that applies the bar to each record.
+    /// @param atMost The maximum number of failing records to keep.
     public Shortfalls(final RecordJudge bar, final int atMost) {
         this.bar = bar;
         this.atMost = atMost;
@@ -65,12 +66,12 @@ public final class Shortfalls implements RecordJudge {
         return judged;
     }
 
-    /// How many fell short, kept or not.
+    /// How many records fell short, whether kept or not.
     public int shortCount() {
         return fallenShort;
     }
 
-    /// The records kept, in the order they fell short.
+    /// The failing records that were kept, in the order they fell short.
     public List<Shortfall> kept() {
         return List.copyOf(kept);
     }
@@ -84,9 +85,9 @@ public final class Shortfalls implements RecordJudge {
 
     /// One record that fell short.
     ///
-    /// @param index   Which record, from zero, in output order.
-    /// @param parsed  The record as the parser cut it, as a document of its own; null where the runner
-    ///                could not say.
+    /// @param index   The record's zero-based index, in output order.
+    /// @param parsed  The record as the parser produced it, as a document of its own; null where the runner
+    ///                could not provide it.
     /// @param output  What the transform made of it, as a document of its own.
     /// @param verdict The verdict that failed it.
     public record Shortfall(int index, String parsed, String output, Verdict verdict) {

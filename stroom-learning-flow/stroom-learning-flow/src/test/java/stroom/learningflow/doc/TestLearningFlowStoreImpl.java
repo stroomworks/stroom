@@ -48,10 +48,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * The document store end to end: the serialiser, the defaults and the dependency function as the store
- * actually wires them.
- */
+/// Tests the Learning Flow document store end to end: the serialiser, the defaults for a new document, the
+/// validation on save, the dependency function and the permission checks, as the store actually wires them.
 class TestLearningFlowStoreImpl {
 
     private final LearningFlowStoreImpl store = LearningFlowFixture.store();
@@ -78,8 +76,8 @@ class TestLearningFlowStoreImpl {
 
     @Test
     void createStartsFromTheLatestEventLoggingInstalled() {
-        // Task 7, decision D1: the latest installed version is settled when the document is made and
-        // saved on it, so that installing a newer one later does not change what this document writes.
+        // The latest installed event-logging schema is chosen when the document is created and saved on it,
+        // so that installing a newer version later does not change what this document's translations write.
         final DocRef latest = new DocRef(XmlSchemaDoc.TYPE, "schema-4", "event-logging v4.1.0");
         final LearningFlowStoreImpl store = LearningFlowFixture.store(new TargetSchemas() {
             @Override
@@ -117,8 +115,10 @@ class TestLearningFlowStoreImpl {
 
     @Test
     void saveRefusesAFlowTheStageCannotHoldAndStampsTheBuiltInVersion() {
-        // Scenarios 39 and 40 (A33): the binding and the variable are named where the editor cannot check them;
-        // a definition that holds is saved against the built-in text of the day.
+        // A flow can reach the store without passing through the editor (for example by import), so the store
+        // validates it on save: step order, repeated steps, duplicate ids, transitions to missing steps and
+        // unknown template variables. A valid flow is stamped with the version of the built-in question text
+        // it was saved against, and only its overridden templates are stored.
         final DocRef docRef = store.createDocument("syslog-ai");
         assertThatThrownBy(() -> store.writeDocument(store.readDocument(docRef).copy()
                 .flow(FlowExamples.flow(FlowExample.DIRECT).withSteps(List.of(
@@ -175,7 +175,7 @@ class TestLearningFlowStoreImpl {
 
     @Test
     void remapDependenciesRewritesTheStoredDoc() {
-        // Proves the function is reached through StoreImpl.remapDependencies, which is what import calls,
+        // Shows the function is reached through StoreImpl.remapDependencies, which is what import calls,
         // and not only that it works when called directly.
         final DocRef docRef = store.createDocument("syslog-ai");
         store.writeDocument(LearningFlowFixture.configured(store.readDocument(docRef)).build());
@@ -193,8 +193,8 @@ class TestLearningFlowStoreImpl {
 
     @Test
     void usingNewTranslationsAutomaticallyNeedsThePermission() {
-        // SIM-1: setting the mode approves every future translation, for every feed the Learning Flow
-        // serves, with nobody looking, so it is a wider act than editing the Learning Flow.
+        // Automatic promotion approves every future translation, for every feed the Learning Flow serves,
+        // without anyone looking at it, so it needs a wider permission than editing the Learning Flow.
         final Restricted restricted = LearningFlowFixture.restricted();
         final DocRef docRef = restricted.store().createDocument("syslog-ai");
         restricted.withhold(AppPermission.APPROVE_SMART_PIPELINES_AUTOMATICALLY);

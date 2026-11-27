@@ -18,10 +18,9 @@ package stroom.learningflow.shared;
 
 import stroom.docref.HasDisplayValue;
 
-/**
- * When a step of the flow is asked (design 01 §10.2): always; only where the input is raw text and the first
- * element is a parser with a configuration to write; or only where the input is already records.
- */
+/// The kind of input a step of the flow is asked for. A step guarded by `TEXT`, `XML` or `JSON` is skipped
+/// when the session's input is of another kind; `ALWAYS` asks it whatever the input. The guard applies only
+/// once the chain is known.
 public enum StepGuard implements HasDisplayValue {
     ALWAYS("always"),
     TEXT("text"),

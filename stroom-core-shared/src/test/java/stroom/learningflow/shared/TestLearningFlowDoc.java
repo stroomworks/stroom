@@ -68,16 +68,16 @@ class TestLearningFlowDoc {
                 .containsExactly("The flow has 2 'Find what one record is' steps; it may have only one");
         assertThat(flowOf(List.of()).problems())
                 .containsExactly("The flow has no steps");
-        // A transition out of CHAIN would leave the flow with no chain to run: refused at the door, not at a
-        // null chain in the interpreter.
+        // A transition out of CHAIN would leave the flow with no chain to run, so it is refused when the flow
+        // is checked rather than failing later on a null chain while a session runs.
         assertThat(flowOf(List.of(
                 FlowStep.builder(QuestionKind.CHAIN)
                         .goTo(StepOutcome.REFUSED, "end")
                         .build(), FlowStep.of(QuestionKind.CONFIGURE))).problems())
                 .containsExactly("'Choose the elements' can't have rules: nothing else can run until the elements "
                                  + "are chosen");
-        // Two transitions on one outcome, or two on spent, contradict each other: refused rather than the
-        // first silently winning.
+        // Two transitions on one outcome, or two for spent candidates, contradict each other, so they are
+        // refused rather than letting the first silently win.
         assertThat(flowOf(List.of(
                 FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
                         .whenSpentGoTo("end")
@@ -98,8 +98,8 @@ class TestLearningFlowDoc {
 
     @Test
     void aFlowNamesItsExitsByTheirEffect() {
-        // A83: park and give-up beside end; abandon is the step's own default and names no exit itself;
-        // none of the three may name a step.
+        // The exits park and give-up sit beside end; a transition that names no step takes the step's own
+        // default exit; and no step may use any of the three names.
         final FlowStep parks = FlowStep.builder(QuestionKind.CONFIGURE)
                 .role(ConfigureRole.PARSER)
                 .candidates(1)
@@ -137,8 +137,8 @@ class TestLearningFlowDoc {
 
     @Test
     void theChainStepNamesTheElementsTheChainQuestionChoosesFrom() {
-        // A95: elements are the Chain step's own; the document derives what it allows from them, every
-        // learnable one where the step names none; no other step may name any.
+        // Elements belong to the Chain step; the document derives its allowed elements from them, or uses
+        // every learnable one where the step names none; no other step may name any.
         final FlowStep chain = FlowStep.builder(QuestionKind.CHAIN)
                 .candidates(2)
                 .elements("DSParser", "XSLTFilter")
@@ -159,8 +159,8 @@ class TestLearningFlowDoc {
         assertThat(LearningFlowDoc.builder().uuid("d").name("n").build().getAllowedElements())
                 .isEqualTo(FlowStep.LEARNABLE_ELEMENTS);
         assertThat(LearningFlowDoc.builder().uuid("d").name("n")
-                // With steps, since a document built here has none of its own now (Track 2 step 1c) and
-                // the allowed elements go onto its Chain step.
+                // Give it steps, since a document built here has none of its own, and the allowed elements
+                // go onto its Chain step.
                 .flow(flowOf(FlowFixtures.direct()))
                 .allowedElements(List.of("XMLParser")).build()
                 .getFlow().getSteps().get(0).getElements()).containsExactly("XMLParser");
@@ -168,7 +168,7 @@ class TestLearningFlowDoc {
 
     @Test
     void aProblemNamesTheStepItIsAbout() {
-        // A88: the check says which step, where it is about one, so an editor can paint it.
+        // The check says which step a problem is about, where it is about one, so the editor can mark it.
         final List<FlowProblem> problems = flowOf(List.of(
                 FlowStep.builder(QuestionKind.CONFIGURE).goTo(StepOutcome.REFUSED, "nowhere").build(),
                 FlowStep.of(QuestionKind.SPLIT))).check();
@@ -182,8 +182,7 @@ class TestLearningFlowDoc {
 
     @Test
     void anIdIsAWordHoweverItArrives() {
-        // The line form checks the id; the JSON form must too, or a saved id the line form cannot read back
-        // breaks the round trip.
+        // An id read from JSON is checked in the constructor just as one set in code is.
         assertThatThrownBy(() -> new FlowStep("my step", QuestionKind.CONFIGURE, null, null, null, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'my step' is not a step id");
@@ -193,9 +192,9 @@ class TestLearningFlowDoc {
 
     @Test
     void aFlowIsAGraphOverTypedOutcomes() {
-        // A37: ids default to the kind or the role; a goto must name a step, once. What the built-in
-        // setups hold is no longer asserted here — they are JSON on the server now (Track 2 step 1c) and
-        // `TestFlowExamples` holds them to their shape, including that each is a flow the stage can hold.
+        // Ids default to the kind or the role, and a transition must go to a step that exists. The built-in
+        // example flows are JSON on the server, and `TestFlowExamples` checks their shape, including that
+        // each is a valid flow.
         final LearningFlow escalating = flowOf(List.of(
                 FlowStep.of(QuestionKind.CHAIN),
                 FlowStep.of(QuestionKind.SPLIT),
@@ -248,7 +247,8 @@ class TestLearningFlowDoc {
                 .problems())
                 .containsExactly("The rule 'if the answer isn't in the reply format' on step 2 (Write every "
                                  + "element) goes to 'nowhere', which isn't a step");
-        // A step's name is matched without regard to case, as the id and the names it is reached by are kept.
+        // A step's name is matched without regard to case, because ids and transition targets are kept in
+        // lower case.
         final FlowStep named = FlowStep.builder(QuestionKind.CONFIGURE)
                 .id("First")
                 .role(ConfigureRole.PARSER)
@@ -260,7 +260,7 @@ class TestLearningFlowDoc {
                 .problems()).isEmpty();
         assertThat(named.getId()).isEqualTo("first");
         assertThat(named.transitionOnSpent().getGoTo()).isEqualTo("target");
-        // An id given on purpose that shadows another step's default name is a collision too.
+        // An explicit id that matches another step's default name is a collision too.
         assertThat(flowOf(List.of(
                 FlowStep.of(QuestionKind.CHAIN), FlowStep.builder(QuestionKind.CONFIGURE)
                         .id("target")
@@ -299,8 +299,8 @@ class TestLearningFlowDoc {
 
     @Test
     void aStepsLimitsHoldHoweverItIsMade() {
-        // The flow language that checked these as it read a line is gone (Track 2 step 1c), so the step
-        // itself holds them: one built in code and one read from JSON go through the same constructor.
+        // The step's constructor enforces these limits, so a step built in code and one read from JSON are
+        // held to the same rules.
         assertThatThrownBy(() -> FlowStep.builder(QuestionKind.SPLIT).role(ConfigureRole.PARSER).build())
                 .hasMessageContaining("Only CONFIGURE takes a role");
         assertThatThrownBy(() -> FlowStep.builder(QuestionKind.CHAIN).id("1st").build())
@@ -326,8 +326,8 @@ class TestLearningFlowDoc {
 
     @Test
     void creatorAppliesDefaultsToNullArguments() {
-        // The creator sees nulls for every field a stored doc predates, so the defaults must come from it
-        // rather than only from the builder.
+        // The JSON creator sees null for every field that is newer than a stored document, so the defaults
+        // must be applied there rather than only in the builder.
         final LearningFlowDoc doc = new LearningFlowDoc(
                 "uuid", "name", "1", null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null);
@@ -370,7 +370,7 @@ class TestLearningFlowDoc {
         assertThat(built).isEqualTo(created);
     }
 
-    /// A document written before the learning key went (design 06 phase J slice 2a) still reads, the key
+    /// A document saved by an earlier version that had a learning key setting still reads, with the key
     /// dropped: a stored or imported document must not fail to open because of a setting that no longer
     /// exists.
     @Test
@@ -395,7 +395,8 @@ class TestLearningFlowDoc {
 
     @Test
     void aCheckTakesItsOwnDefaultsWhenParametersAreAbsent() {
-        // A doc written before a check had parameters, or a hand-written one, reads back with them.
+        // A document with a check that has no parameters, such as a hand-written one, reads back with the
+        // check's defaults.
         assertThat(new CheckSetting(Check.YIELD, CheckState.ADVICE, null, null).getParameters())
                 .isEqualTo(new YieldParameters(1.0, YieldBasis.RECORDS));
         assertThat(new CheckSetting(Check.COMPILE, CheckState.GATE, null, null).getParameters()).isNull();
@@ -412,8 +413,8 @@ class TestLearningFlowDoc {
 
     @Test
     void aBindingDefaultsToActiveWithNoUuid() {
-        // The store assigns the uuid on save and the supervisor on creation; the client never does, so a
-        // binding built without one is not yet identified, and is not a draft.
+        // The server assigns the uuid; the client never does, so a binding built without one is not yet
+        // identified, and is not a draft.
         final Binding binding = Binding.builder().build();
 
         assertThat(binding.getUuid()).isNull();
@@ -474,9 +475,8 @@ class TestLearningFlowDoc {
                 .build();
     }
 
-    /// A flow of the given steps, with no template overrides: what a test that is about the steps wants.
-    /// The built-in setups are the server's now (Track 2 step 1c), so a shared test builds the flow it
-    /// means rather than starting from one of them.
+    /// Builds a flow of the given steps, with no template overrides. The example flows are defined on the
+    /// server, so a test in this module builds the flow it means rather than starting from one of them.
     ///
     /// @param steps Its steps.
     /// @return The flow.

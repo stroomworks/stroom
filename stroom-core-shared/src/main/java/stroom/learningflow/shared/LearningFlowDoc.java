@@ -33,20 +33,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * The configuration of one supervised pipeline stage (design 01 §3, ruling A3): what it learns, which
- * model it may call and how, how many candidates an attempt gets, how candidates are scored, and when
- * one is promoted and whether a person looks first.
- * <p>
- * Every numeric default here is provisional in the sense of §2.1 — a configured default with a recorded
- * justification, to be revised once real feeds have been measured. Each field's javadoc names the section
- * or ruling it serves.
- * <p>
- * Runtime state deliberately does not live here: learner state, deferrals, regression records,
- * per-stream bindings, learning leases and error-mode state are rows (A26) or streams. So are the
- * learners' bindings, the one part the supervisor rewrites (§7.3 rule 2). The replay unit is not a setting either:
- * it is a property of a binding's fragment, fixed by the stage's position (A1 as revised).
- */
+/// The Learning Flow document: the settings learning runs under for the Smart Pipeline elements that point at
+/// it. It sets whether learning is on, which model may be called and with what instructions, the learning
+/// flow and its limits, the budgets, the checks that judge each candidate, and whether a person approves a
+/// translation before it goes live.
+///
+/// Every numeric default here is provisional: a configured default with a stated reason, to be revised once
+/// real feeds have been measured.
+///
+/// The document holds only what a person authors. Runtime state deliberately does not live here: learner
+/// state, bindings, deferred streams, the regression corpus and session claims are held in database tables
+/// or streams.
 @Description(
         "Configures one Learning Flow stage: what it learns, the model and instructions it may use, its " +
         "candidate and budget limits, the checks that judge each candidate, and the promotion gate.")
@@ -86,29 +83,24 @@ public class LearningFlowDoc extends AbstractDoc {
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.LEARNING_FLOW_DOCUMENT_TYPE;
 
     static final LearningMode DEFAULT_LEARNING_MODE = LearningMode.DISABLED;
-    /**
-     * Below the promotion floor, so that a binding promoted at the floor is not relearned at once.
-     */
+    /// Set below the usual passing thresholds, so that a binding that only just passed is not flagged at
+    /// once.
     static final double DEFAULT_RELEARN_THRESHOLD = 0.8;
-    /**
-     * Review, not automatic (SIM-1 and UM-6, decided 18 November 2026): a new Learning Flow waits for
-     * someone to approve what it learns, and using translations as soon as they pass is a deliberate act
-     * behind {@code APPROVE_SMART_PIPELINES_AUTOMATICALLY}.
-     * <p>
-     * A model nobody has calibrated should not change production content unwatched. NETFILTER was
-     * promoted automatically at a score of 1.0 although it had lost a line and hard-coded a year.
-     */
+    /// Review rather than automatic: a new Learning Flow waits for someone to approve what it learns, and
+    /// using translations as soon as they pass is a deliberate choice that needs the
+    /// `APPROVE_SMART_PIPELINES_AUTOMATICALLY` permission.
+    ///
+    /// A model nobody has calibrated should not change production content unwatched. In testing, a
+    /// translation of the NETFILTER feed was promoted automatically with a score of 1.0 although it had lost
+    /// a line and hard-coded a year.
     static final PromotionMode DEFAULT_PROMOTION_MODE = PromotionMode.REVIEW;
-    /**
-     * Five, not three: the first live run (design 02 §6.2) found three right for a simple feed and one short
-     * for a transform that needs a rarer schema branch; the attempt budget is the real bound (A5).
-     */
+    /// Five rather than three: the first live run found three enough for a simple feed but one too few for a
+    /// transform that needs a rarer schema branch. The time and token budgets are what really bound a
+    /// session.
     static final int DEFAULT_MAX_ATTEMPTS = 5;
-    /**
-     * No steps, and the built-in text. The built-in setups are the server's now (Track 2 step 1c), so a
-     * document built here cannot carry one: the store fills a new document's steps when it creates it,
-     * and until something does the flow says it has none rather than quietly being {@code Direct}.
-     */
+    /// No steps, and the built-in template text. The example flows are defined on the server, so a document
+    /// built here cannot carry one: the server fills in a new document's steps when it creates it, and until
+    /// then the flow reports that it has no steps rather than silently using the Direct example.
     static final LearningFlow DEFAULT_FLOW = new LearningFlow(List.of(), null, null);
     static final long DEFAULT_ATTEMPT_BUDGET_MS = 60_000L;
     static final long DEFAULT_MAX_DEFERRAL_AGE_MS = 24L * 60 * 60 * 1000;
@@ -119,108 +111,77 @@ public class LearningFlowDoc extends AbstractDoc {
 
     @JsonProperty
     private final String description;
-    /**
-     * Whether the model may be called at all. Off by default because §11 makes Learning Flow opt-in per
-     * document; off still serves what is bound and promotes what clears the floor.
-     */
+    /// Whether the model may be called at all. Off by default, because learning is opted into per document.
+    /// When it is off, bindings already in use go on serving.
     @JsonProperty
     private final LearningMode learningMode;
-    /**
-     * The OpenAI-compatible model document the stage calls (§10, A13).
-     */
+    /// The OpenAI-compatible model document that learning calls.
     @JsonProperty
     private final DocRef model;
-    /// The one schema version a translation this document learns must write (decision D1 option A): the
-    /// `XMLSchema` document, not its group, since a group such as `EVENTS` holds seven event-logging
-    /// versions. The prompts, the target checks and the conformance check all read it, so there is one
-    /// place a target is set. A new document is given the latest event-logging version installed, saved
-    /// here so that installing a newer one later does not change what this document writes.
+    /// The one schema version that translations learned under this document must write. It is the
+    /// `XMLSchema` document, not its schema group, since a group such as `EVENTS` holds several event-logging
+    /// versions. The prompts, the target checks and the conformance check all read it, so the target is set
+    /// in one place. A new document is given the latest event-logging version installed, saved here so that
+    /// installing a newer one later does not change what this document writes.
     @JsonProperty
     private final DocRef targetSchema;
-    /**
-     * The rolling per-record score below which a bound learner is marked for relearning (A29, §5), so that a
-     * new kind of record reaching a bound learner — which its binding goes on serving — is still learned.
-     */
+    /// The rolling per-record score below which a learner with a binding is flagged in the Supervisor. The
+    /// flag only draws a person's attention; it does not trigger relearning by itself.
     @JsonProperty
     private final double relearnThreshold;
-    /**
-     * Free-text instructions prepended to the prompt contract of §10.
-     */
+    /// Free-text instructions added to the system text of every prompt.
     @JsonProperty
     private final String instructions;
-    /**
-     * Candidates an attempt may try before the learner is given up on (§3, §7.4). The name predates the
-     * split of <em>attempt</em> from <em>candidate</em> in design 01 §3 and is kept for the stored form.
-     */
+    /// The number of candidates each step may try before its candidates are spent, unless the step sets its
+    /// own number. The field is named "attempts" for compatibility with stored documents, although it counts
+    /// candidates, not sessions.
     @JsonProperty
     private final int maxAttempts;
-    /**
-     * The learning flow an attempt follows (A33, A34, A37; design 01 §10.2).
-     */
+    /// The learning flow a session follows.
     @JsonProperty
     private final LearningFlow flow;
-    /**
-     * Wall-clock budget for one run of an attempt: each time it is carried on, it has the whole of it again
-     * (design 06 A145). Ruling A5 makes the budget mandatory; there is no unlimited value.
-     */
+    /// The wall-clock budget for one run of a session: each time the session is resumed, it has the whole
+    /// budget again. The budget is mandatory; there is no unlimited value.
     @JsonProperty
     private final long attemptBudgetMs;
-    /**
-     * Token budget for one attempt (§10); null is unlimited.
-     */
+    /// The token budget for one session over its whole life; null is unlimited.
     @JsonProperty
     private final Long tokenBudget;
-    /**
-     * The most tokens this Learning Flow may spend in an hour, across every session of every feed it
-     * serves (ruling A24); null or zero leaves it to the cluster's ceiling alone. A per-attempt budget
-     * bounds one attempt; this bounds a feed that keeps opening them.
-     */
+    /// The most tokens this Learning Flow may spend in an hour, across every session of every feed it serves;
+    /// null or zero leaves it to the cluster-wide ceiling alone. A session's token budget bounds one session;
+    /// this bounds a feed that keeps opening new ones.
     @JsonProperty
     private final Long spendTokensPerHour;
-    /**
-     * The most questions this Learning Flow may put to a model in an hour, across every session of every
-     * feed it serves; null or zero leaves it to the cluster's ceiling alone.
-     */
+    /// The most questions this Learning Flow may put to a model in an hour, across every session of every
+    /// feed it serves; null or zero leaves it to the cluster-wide ceiling alone.
     @JsonProperty
     private final Integer spendCallsPerHour;
-    /**
-     * How long a stream may wait on a session before it is raised (design 04 §8 scenario 8, A57, A78): past
-     * this it is flagged and counted in the Supervisor's backlog, and goes on waiting (A79).
-     */
+    /// How long a stream may wait for a translation before it is raised. Past this age it is flagged and
+    /// counted in the Supervisor's backlog, and goes on waiting.
     @JsonProperty
     private final long maxDeferralAgeMs;
-    /**
-     * Largest sample, in bytes, sent to the model: ruling A17's size cap, which is the half of A17 that
-     * is built. Redacting the values themselves waits on A38 and has no setting here until it does
-     * (design 01 §15.1).
-     */
+    /// The largest sample, in bytes, sent to the model. Samples are never redacted, so a feed should only be
+    /// pointed at a model its data may be sent to.
     @JsonProperty
     private final int sampleSizeLimit;
-    /**
-     * Whether a learned binding goes live on promotion or is appended as a draft for a person to approve (A25).
-     */
+    /// Whether a learned binding goes live as soon as it passes, or waits as a draft for a person to approve.
     @JsonProperty
     private final PromotionMode promotionMode;
-    /**
-     * Fraction of a learner's records withheld from the model and used only to judge promotion. Ruling A14.
-     */
+    /// The fraction of a stream's records withheld from the sample shown to the model, so that a candidate is
+    /// also judged on records the model never saw.
     @JsonProperty
     private final double heldOutFraction;
-    /**
-     * Records a learner must have accumulated before promotion is judged at all; below this a candidate
-     * that clears the floor is written as a draft for a person to approve, even on an automatic Learning
-     * Flow, since the system only approves on its own where it has the evidence to (SIM-3 option E).
-     * Ruling A14, A5.
-     */
+    /// The number of records a stream must bring for the system to trust what is learned from it. A first
+    /// translation learned from fewer is written as a draft for a person to approve, even under automatic
+    /// promotion, since the system approves on its own only when it has enough evidence. A served stream with
+    /// fewer records does not start a relearning.
     @JsonProperty
     private final int minRecordsToLearn;
-    /**
-     * Most previously-accepted records retained per binding for the regression check. Ruling A18.
-     */
+    /// The most previously accepted records kept per binding in its regression corpus.
     @JsonProperty
     private final int regressionCap;
-    /// Every check, each Off, Advice or Gate (the one model of checks), with any check not named at its
-    /// default; a new document has the defaults.
+    /// Every check, each Off, Advice or Gate, with any check not named at its default; a new document has
+    /// the defaults.
     @JsonProperty
     private final List<CheckSetting> checks;
 
@@ -259,7 +220,7 @@ public class LearningFlowDoc extends AbstractDoc {
         this.targetSchema = targetSchema;
         this.relearnThreshold = Objects.requireNonNullElse(relearnThreshold, DEFAULT_RELEARN_THRESHOLD);
         this.instructions = instructions;
-        // A document written before the flow was named so carried it as "plan" (A81): the store's
+        // A document saved by an earlier version stored the flow under the key "plan". The server's
         // serialiser reads that key as this one, since the client's codec cannot.
         this.flow = Objects.requireNonNullElse(flow, DEFAULT_FLOW);
         this.maxAttempts = Objects.requireNonNullElse(maxAttempts, DEFAULT_MAX_ATTEMPTS);
@@ -276,19 +237,15 @@ public class LearningFlowDoc extends AbstractDoc {
         this.checks = CheckSettings.complete(checks);
     }
 
-    /**
-     * Lists default to empty rather than null so that a doc written before a list existed and the same doc
-     * read back compare equal, and so that nothing walking them has to null-check.
-     */
+    // Lists default to empty rather than null, so that a document saved before a list existed compares equal
+    // to the same document read back, and so that nothing reading them has to check for null.
     private static <T> List<T> copyOrEmpty(final List<T> list) {
         return list == null
                 ? Collections.emptyList()
                 : List.copyOf(list);
     }
 
-    /**
-     * @return A new builder for creating a {@link DocRef} for this document's type.
-     */
+    /// @return A new builder for creating a [DocRef] for this document's type.
     public static DocRef.TypedBuilder buildDocRef() {
         return DocRef.builder(TYPE);
     }
@@ -314,9 +271,9 @@ public class LearningFlowDoc extends AbstractDoc {
         return relearnThreshold;
     }
 
-    /// Pipeline element type names the chain question may choose from (A21): the flow's Chain step's since
-    /// A95, A10's initial set where it names none. With exactly one the chain question is not asked. Not
-    /// a property of the document any more, so not written.
+    /// @return The pipeline element types the chain question may choose from: those named on the flow's Chain
+    /// step, or every learnable type where it names none. With exactly one, the chain question is not asked.
+    /// This is derived from the flow, so it is not serialised.
     @JsonIgnore
     public List<String> getAllowedElements() {
         return flow.allowedElements();
@@ -343,18 +300,18 @@ public class LearningFlowDoc extends AbstractDoc {
     }
 
     /// @return The most tokens this Learning Flow may spend in an hour across every session of every feed
-    ///         it serves (A24); null or zero leaves it to the cluster's ceiling alone.
+    ///         it serves; null or zero leaves it to the cluster-wide ceiling alone.
     public Long getSpendTokensPerHour() {
         return spendTokensPerHour;
     }
 
     /// @return The most questions this Learning Flow may put to a model in an hour; null or zero leaves
-    ///         it to the cluster's ceiling alone.
+    ///         it to the cluster-wide ceiling alone.
     public Integer getSpendCallsPerHour() {
         return spendCallsPerHour;
     }
 
-    /// @return How long a stream may wait on a session before it is raised (A78).
+    /// @return How long a stream may wait for a translation before it is raised.
     public long getMaxDeferralAgeMs() {
         return maxDeferralAgeMs;
     }
@@ -554,9 +511,12 @@ public class LearningFlowDoc extends AbstractDoc {
             return self();
         }
 
-        /// The elements the chain question chooses from, which are the flow's Chain step's (A95): named
-        /// here, they are put on that step. Kept for the store's reading of documents saved before A95, and
-        /// for the fixtures that set them.
+        /// Sets the elements the chain question chooses from, which are held on the flow's Chain step. It is
+        /// kept so that the server can read documents saved by an earlier version, which held these on the
+        /// document itself, and for the test fixtures that set them.
+        ///
+        /// @param allowedElements The element types to put on the Chain step.
+        /// @return This builder.
         public Builder allowedElements(final List<String> allowedElements) {
             this.flow = flow.withChainElements(allowedElements);
             return self();
@@ -582,7 +542,7 @@ public class LearningFlowDoc extends AbstractDoc {
             return self();
         }
 
-        /// The most tokens this Learning Flow may spend in an hour (A24).
+        /// Sets the most tokens this Learning Flow may spend in an hour.
         ///
         /// @param spendTokensPerHour The ceiling, or null for none of its own.
         /// @return This builder.
@@ -591,7 +551,7 @@ public class LearningFlowDoc extends AbstractDoc {
             return this;
         }
 
-        /// The most questions this Learning Flow may put to a model in an hour (A24).
+        /// Sets the most questions this Learning Flow may put to a model in an hour.
         ///
         /// @param spendCallsPerHour The ceiling, or null for none of its own.
         /// @return This builder.

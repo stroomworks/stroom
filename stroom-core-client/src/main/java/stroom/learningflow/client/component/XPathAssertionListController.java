@@ -31,9 +31,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/// The assertions of a business rules scorer as an editable list ([XPathAssertionList]): name and
-/// XPath, with add, edit and remove, unless read only ([Contexts#READ_ONLY]). An assertion's editor
-/// isn't modal, so an assertion edited is found again when its OK is pressed.
+/// Manages the editable list of the business rules scorer's assertions ([XPathAssertionList]), adding,
+/// editing and removing them unless the document is read-only ([Contexts#READ_ONLY]).
+///
+/// The assertion editor is not modal, so the list may change while an assertion is being edited. The edited
+/// assertion is therefore looked up again when OK is pressed, and the change is dropped with a warning if it
+/// has been removed in the meantime.
 public class XPathAssertionListController extends Controller {
 
     private final Provider<XPathAssertionEditorController> editorProvider;
@@ -41,10 +44,10 @@ public class XPathAssertionListController extends Controller {
     private XPathAssertionList view;
     private boolean readOnly = true;
 
-    /// Made by GIN; [#attach(XPathAssertionList)] gives it its list.
+    /// Made by GIN. Call [#attach(XPathAssertionList)] to give it the list to manage.
     ///
     /// @param eventBus       The application's event bus.
-    /// @param editorProvider Makes an assertion's editor.
+    /// @param editorProvider Makes the dialog for editing a single assertion.
     @Inject
     public XPathAssertionListController(final EventBus eventBus,
                                         final Provider<XPathAssertionEditorController> editorProvider) {
@@ -52,11 +55,11 @@ public class XPathAssertionListController extends Controller {
         this.editorProvider = editorProvider;
     }
 
-    /// Attaches this to a list, e.g. one a template declares. The list is then this controller's
-    /// widget.
+    /// Attaches this controller to a list, e.g. one declared in its owner's template. The list becomes this
+    /// controller's widget.
     ///
     /// @param view The list.
-    /// @return This, for its owner to keep.
+    /// @return This controller, for its owner to keep.
     public XPathAssertionListController attach(final XPathAssertionList view) {
         this.view = Objects.requireNonNull(view, "view");
         initWidget(view);
@@ -70,7 +73,7 @@ public class XPathAssertionListController extends Controller {
         return this;
     }
 
-    /// Shows assertions, none selected.
+    /// Shows the given assertions, with none selected.
     ///
     /// @param assertions The assertions, or null for none.
     public void read(final List<XPathAssertion> assertions) {
@@ -82,7 +85,7 @@ public class XPathAssertionListController extends Controller {
         update();
     }
 
-    /// @return A copy of the assertions shown, in their order.
+    /// @return A copy of the assertions shown, in order.
     public List<XPathAssertion> write() {
         return new ArrayList<>(assertions);
     }

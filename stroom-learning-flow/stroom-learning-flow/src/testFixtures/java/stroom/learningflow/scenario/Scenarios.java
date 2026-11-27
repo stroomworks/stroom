@@ -91,38 +91,35 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * What every scenario shares: the corpus, the reply resources, the step runners and scorers, the
- * in-memory stores and state, and a stage built over them under a fixed clock and seed (design 02 §7).
- * One instance per scenario; the stores and state are fresh each time.
- */
+/// The shared harness for the in-memory scenario tests: the corpus, the reply resources, the step runners
+/// and scorers, the in-memory stores and state, and a [Stage] built over them with a fixed clock.
+///
+/// Each scenario creates its own instance, so the stores and state are new each time.
 public final class Scenarios {
 
-    /**
-     * Every promotion in a scenario happens at this instant, so promotion times are assertable.
-     */
+    /// The fixed time of the scenario clock, so that promotion times can be asserted.
     public static final Instant NOW = Instant.parse("2026-09-17T09:00:00Z");
-    /// A node's lease on a session (design 04 §4), as a node's configuration defaults it.
+    /// How long a node's claim on a session lasts unless renewed, as a node's configuration defaults it.
     public static final Duration LEASE = Duration.ofMinutes(10);
-    /// What a scenario's stage learns as (A114): one pipeline's Learning Flow element. A scenario sends
-    /// every feed through the one stage, as a supervising pipeline did before design 06, and everything the
-    /// stage keeps is this learner's (design 06 phase J slice 2b). Its pipeline is the one a scenario's
-    /// streams name, since what a learner releases is put through again by its own pipeline.
+    /// The learner a scenario's stage learns as: one pipeline's Smart Pipeline element. A scenario sends
+    /// every feed through this one learner, so everything the stage keeps belongs to it. Its pipeline is
+    /// the one the scenario's streams name, since a learner's released streams are processed again by its
+    /// own pipeline.
     public static final Learner LEARNER = new Learner("pipeline-1", "learningFlow");
 
     private static final NodeFixture NODE = new NodeFixture();
 
     public final ContentStores stores = new ContentStores();
-    /// Target schemas over the node fixture's store (task 7). A scenario's document names no target, so
-    /// the conformance check falls back to its group, exactly as it did before the setting existed; a
-    /// scenario about the target sets `targetSchema` to [NodeFixture#eventLoggingSchemaRef()].
+    /// Target schemas backed by the node fixture's schema store. A scenario's document names no target
+    /// schema, so the conformance check falls back to the schema group. A scenario about the target sets
+    /// `targetSchema` to [NodeFixture#eventLoggingSchemaRef()].
     public final TargetSchemas targetSchemas = NODE.targetSchemas();
     public final InMemoryDeletedPipelines deletedPipelines = new InMemoryDeletedPipelines();
     public final InMemoryAttempts attempts = new InMemoryAttempts(deletedPipelines);
     public final InMemoryLearnerBindings learnerBindings = new InMemoryLearnerBindings();
     public final InMemorySpend spend = new InMemorySpend();
-    /// The spend breaker (A24), off by default: a scenario that wants it sets its ceilings through the
-    /// document, or replaces this.
+    /// The spend breaker, which stops learning when spending passes its limits. It is off by default; a
+    /// scenario that wants it sets its limits through the document, or replaces this.
     public SpendBreaker breaker = new SpendBreaker(spend, 0L, 0);
     public final InMemoryLearnerStates states = new InMemoryLearnerStates();
     public final InMemoryGuidance guidance = new InMemoryGuidance();
@@ -134,29 +131,27 @@ public final class Scenarios {
     public final InMemorySnapshots snapshots = new InMemorySnapshots();
     public final InMemoryDocuments documents = new InMemoryDocuments();
     public final InMemoryInputs inputs = new InMemoryInputs();
-    /// The serving view of A46 over the three seams above it, as a node reads it from one query.
+    /// The Supervisor's list of learning pipelines, built from the in-memory state above, as a node reads
+    /// it with one query.
     public final InMemoryLearningPipelines learningPipelines = new InMemoryLearningPipelines(states, learnerBindings,
             attempts, deferrals, guidance, deletedPipelines);
-    /// What brings a learner's rows to the document it runs under, over the rows above.
+    /// Updates a learner's rows above to the document it runs under.
     public final InMemoryLearners learners = new InMemoryLearners(learnerBindings, guidance, deferrals, states);
-    /// As many attempts as a scenario could open, which is what one carrying takes on.
+    /// More attempts than a scenario could open, used as the limit when looking for the attempt a stream
+    /// opened.
     private static final int CARRY_AT_MOST = 100;
 
-    /// A document as a scenario means it: **inline**, so that the stage learns in front of the test. The
-    /// document's own default is deferred (A5), which is right for a node — an LLM call in a processing
-    /// task holds a task slot — and wrong for a scenario about what learning does rather than about when
-    /// it happens. Scenario 30, which *is* about when, says deferred for itself.
-    /// A document for a scenario.
+    /// Returns a document builder set up for a scenario.
     ///
-    /// **Automatic, where the product's default is review** (SIM-1). A scenario is about the learning
-    /// machinery — what is asked, what is judged, what is bound — and under review every one of them
-    /// would stop at a draft waiting for a person, which is scenario 22's subject and nobody else's. A
-    /// scenario that is about review sets it.
+    /// **Promotion is automatic, whereas the product's default is review.** A scenario is about the
+    /// learning machinery (what is asked, what is judged, what is bound), and under review every scenario
+    /// would stop at a draft waiting for a person. Only the scenarios about review need that, and they set
+    /// it themselves.
     ///
-    /// **With `Direct`'s steps, where a document built in shared code now has none** (Track 2 step 1c).
-    /// The built-in setups are JSON on the server, and it is the store that gives a new document its
-    /// steps; a scenario does not go through the store, so the harness gives it the same flow the store
-    /// would. A scenario about another setup says which.
+    /// **The flow has the `Direct` example's steps**, because a document built in shared code has no
+    /// steps. The built-in flows are JSON on the server, and the document store gives a new document its
+    /// steps; a scenario does not go through the store, so the harness gives it the flow the store would.
+    /// A scenario about another flow sets it.
     ///
     /// @return The builder.
     public static LearningFlowDoc.Builder document() {
@@ -178,48 +173,46 @@ public final class Scenarios {
     }
 
 
-    /**
-     * A script that answers the split and target questions from the configurations it will give, so the
-     * scenario states only what it is about.
-     */
+    /// Returns a script that answers the split and target questions from the configurations it will
+    /// give, so that the scenario states only what it is about.
     public Script script(final String splitter, final String stylesheet) {
         return Script.of().structure(new Structure(runners(), splitter, stylesheet));
     }
 
-    /// A script for input that is already XML: the split question is answered with the element that is one
-    /// record, the targets from the stylesheet (A35).
+    /// Returns a script for input that is already XML: the split question is answered with the element
+    /// that is one record, and the target questions from the stylesheet.
     public Script xmlScript(final String recordElement, final String stylesheet) {
         return Script.of().structure(Structure.ofXml(runners(), recordElement, stylesheet));
     }
 
-    /// A script for JSON: the split question is answered with the array's key, or root, the targets from the
-    /// stylesheet over the parser's XML.
+    /// Returns a script for JSON input: the split question is answered with the array's key (or the root),
+    /// and the target questions from the stylesheet run over the parser's XML.
     public Script jsonScript(final String arrayKey, final String stylesheet) {
         return Script.of().structure(Structure.ofJson(runners(), arrayKey, stylesheet));
     }
 
-    /// The node a stage says it is, for the learning lease of A42: one scenario is one node unless it says
-    /// otherwise, and a scenario about two nodes meeting a learner gives each its own name.
+    /// The node name the stage claims sessions under. A scenario is one node unless it says otherwise; a
+    /// scenario about two nodes processing one learner's streams gives each its own name.
     public String node = "node-1";
 
     public Stage stage(final Advisor advisor) {
         return stage(advisor, learnerBindings);
     }
 
-    /// A stage over a given binding store: for a scenario that watches when a binding is written — the moment a
-    /// second node must still be excluded (A42).
+    /// Returns a stage over a given binding store, for a scenario that watches when a binding is written,
+    /// which is a moment when a second node must still be kept out.
     public Stage stage(final Advisor advisor, final LearnerBindings learnerBindings) {
         return stage(document -> advisor, learnerBindings);
     }
 
-    /// A stage over given advisors: for a scenario about a node that makes a new advisor per call, each
-    /// counting its own tokens, as the node's own does (A28).
+    /// Returns a stage over given advisors, for a scenario about a node that makes a new advisor per call,
+    /// each counting its own tokens, as a real node does.
     public Stage stage(final Advisors advisors, final LearnerBindings learnerBindings) {
         return stage(advisors, learnerBindings, null);
     }
 
-    /// A stage over a given fragment runner: for a scenario that watches *how* a written fragment is
-    /// run — with which record boundary, say — rather than what it produced.
+    /// Returns a stage over a given fragment runner, for a scenario that checks how a written fragment is
+    /// run (with which record boundary, for example) rather than what it produced.
     ///
     /// @param fragmentRunner Null for the stand-in the scenarios use.
     public Stage stage(final Advisors advisors, final LearnerBindings learnerBindings,
@@ -239,8 +232,8 @@ public final class Scenarios {
                 learnerBindings,
                 states,
                 spend,
-                // No ceilings in the harness unless a scenario sets them: a scenario that asks the model
-                // a hundred times is a scenario, not a runaway
+                // No spending limits in the harness unless a scenario sets them, since a scenario may
+                // legitimately ask the model a hundred times.
                 breaker,
                 guidance,
                 outputs,
@@ -254,50 +247,52 @@ public final class Scenarios {
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 LEASE,
                 node,
-                // A harness, where a rebuilt prompt's caveat has no reader
+                // The Stroom build is not known in a test. It is only used to warn, when a prompt is
+                // rebuilt after an upgrade, that the wording may have changed.
                 null);
     }
 
-    /// Promotion over this scenario's state (simplification option iii): approve, reject and retract, as
-    /// the Supervisor gets them from a node's stage factory.
+    /// Returns the promotion actions (approve, reject and retract) over this scenario's state, as the
+    /// Supervisor gets them from a node's stage factory.
     ///
-    /// @return It, under the scenario's clock.
+    /// @return The promotion actions, using the scenario's clock.
     public Promotion promotion() {
         return new Promotion(learnerBindings, states, regressionSet, snapshots, outputs, attempts, stores.writer(),
                 stores.codes(), places, wake, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    /// A person's actions on a run or a learner over this scenario's state (simplification option iii):
-    /// grant, exhaust, amend, relearn and give up, as the Supervisor gets them from a node's stage factory.
+    /// Returns the actions a person can take on a session or a learner (grant, exhaust, amend, relearn and
+    /// give up) over this scenario's state, as the Supervisor gets them from a node's stage factory.
     ///
-    /// @return Them, under the scenario's clock and lease.
+    /// @return The actions, using the scenario's clock and lease.
     public SupervisorActions supervisorActions() {
         return new SupervisorActions(attempts, learnerBindings, states, regressionSet, snapshots, targetSchemas,
                 wake, Clock.fixed(NOW, ZoneOffset.UTC), LEASE);
     }
 
-    /// The worker over this scenario's state (A5, A28), answering with a given script: the job that
-    /// carries on the attempts a processing task parks. The stage is one of this scenario's,
-    /// since a stage holds nothing of a stream between calls.
+    /// Returns the background worker over this scenario's state, answering with a given advisor. The
+    /// worker is the job that carries on the attempts that processing tasks leave waiting for the model.
+    /// It uses a new stage from this scenario, since a stage holds nothing about a stream between calls.
     public DeferredWorker worker(final Advisor answerer) {
         return new DeferredWorker(stage(answerer), attempts, documents, inputs, StreamHeld.NONE, deletedPipelines,
                 document -> answerer,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    /// A person's *Improve* (A46), asked and then carried on as the worker carries it.
+    /// Runs a person's *Improve* request, then carries it on as the worker would.
     ///
-    /// The ask opens an attempt and parks it at its first question — a model conversation is minutes
-    /// long and does not belong in a web request — and the worker is what puts the questions. This does
-    /// both, through the same route the worker takes: the attempt says which binding it is improving,
-    /// and its sample is that binding's accepted records put back together rather than a stream.
+    /// The request opens an attempt and leaves it waiting at its first question, because a model
+    /// conversation takes minutes and does not belong in a web request; the worker then asks the
+    /// questions. This does both, the same way the worker does: the attempt records which binding it is
+    /// improving, and its sample is that binding's accepted records put back together, rather than a
+    /// stream.
     ///
-    /// @param advisors    Who answers.
+    /// @param advisors    Who answers the questions.
     /// @param doc         The document.
     /// @param bindingUuid The binding to improve.
-    /// @param message     What the person wants better, or null.
+    /// @param message     What the person wants improved, or null.
     /// @param by          Who asked.
-    /// @return What carrying the improvement on came to.
+    /// @return The result of carrying on the improvement.
     public StageRun improved(final Advisors advisors,
                              final LearningFlowDoc doc,
                              final String bindingUuid,
@@ -313,19 +308,19 @@ public final class Scenarios {
                 advisors.of(doc, attempt.attempt().askedWith()));
     }
 
-    /// What production does with a stream (design 04 §3; A60, A99): the task decides — serve, defer or
-    /// error, and never learn — and where it defers and opens a session, the session is carried as the
-    /// worker carries it ([DeferredWorker] calls [Stage#resume]), asking the given advisor. The document
-    /// and the stream are put where the worker reads them.
+    /// Processes a stream as production does. The processing task decides to serve, defer or fail the
+    /// stream, and never learns itself. If it defers the stream and opens a session, the session is then
+    /// carried on as the worker would ([DeferredWorker] calls [Stage#resume]), asking the given advisor.
+    /// The document and the stream are stored where the worker reads them.
     ///
-    /// @return What the task decided, the attempt it opened if it opened one, and what carrying that
-    ///         attempt came to — the learning's own run, with its decision, verdicts and output — or the
-    ///         task's decision again where nothing was carried.
+    /// @return What the task decided, the attempt it opened if any, and the result of carrying on that
+    ///         attempt (the learning run, with its decision, verdicts and output), or the task's decision
+    ///         again if nothing was carried on.
     public Processed process(final Advisor advisor, final LearningFlowDoc doc, final Input input) {
         return process(advisor, learnerBindings, doc, input);
     }
 
-    /// The same over a given binding store: for a scenario that watches when a binding is written (A42).
+    /// The same over a given binding store, for a scenario that watches when a binding is written.
     public Processed process(final Advisor advisor,
                              final LearnerBindings learnerBindings,
                              final LearningFlowDoc doc,
@@ -333,8 +328,8 @@ public final class Scenarios {
         return process(document -> advisor, learnerBindings, null, doc, input);
     }
 
-    /// The same as another learner: a second pipeline, or a second element of one, meeting its streams
-    /// (design 06 phase J slice 2b).
+    /// The same as another learner: a second pipeline, or a second element of one pipeline, processing
+    /// its streams.
     public Processed process(final Advisor advisor,
                              final Learner learner,
                              final LearningFlowDoc doc,
@@ -343,7 +338,7 @@ public final class Scenarios {
     }
 
     /// The same over given advisors, binding store and fragment runner, as [#stage(Advisors, LearnerBindings,
-    /// FragmentRunner)] builds a stage over them; a null runner is the scenario's own.
+    /// FragmentRunner)] builds a stage over them; a null runner means the scenario's own.
     public Processed process(final Advisors advisors,
                              final LearnerBindings learnerBindings,
                              final FragmentRunner fragmentRunner,
@@ -362,8 +357,8 @@ public final class Scenarios {
         inputs.put(input);
         final Stage stage = stage(advisors, learnerBindings, fragmentRunner);
         final StageRun first = stage.decide(doc, learner, input);
-        // A bound stream is served as it is read, by the incumbent where its learner is being
-        // relearned (A29, A100).
+        // A bound stream is served straight away, by the current binding even while its learner is
+        // learning again.
         final TextSink servedAtOnce = served(stage, learner, doc, input, first);
         final Recorded opened = attempts.forDocument(doc.getUuid(), CARRY_AT_MOST).stream()
                 .filter(recorded -> Objects.equals(recorded.attempt().inputId(), input.id()))
@@ -371,9 +366,10 @@ public final class Scenarios {
                 .max(Comparator.comparingLong(Recorded::id))
                 .orElse(null);
         if (opened == null) {
-            // Nothing opened on this stream: deferred on another stream's session, with learning off, or
-            // served with nothing to learn. The run returned carries what the stream was served as, so
-            // that what a scenario reads off a bound stream is what the task wrote.
+            // No session was opened for this stream: it was deferred behind another stream's session,
+            // learning is off, or it was served with nothing to learn. The returned run carries what the
+            // stream was served as, so that what a scenario reads from a bound stream is what the task
+            // wrote.
             final StageRun run = servedAtOnce == null
                     ? first
                     : new StageRun(first.doc(), first.decision(), first.learner(), first.produced(),
@@ -382,8 +378,8 @@ public final class Scenarios {
             return new Processed(first, null, run, servedAtOnce);
         }
         final StageRun learned = stage.resume(doc, opened.id(), input, advisors.of(doc));
-        // What the wake makes of a stream that waited (design 04 §5.3): its task decides again, and a
-        // stream now bound is served.
+        // What happens when a waiting stream is woken: its task decides again, and if the stream is now
+        // bound, it is served.
         final TextSink served = servedAtOnce != null || learned.produced() == null
                 ? servedAtOnce
                 : served(stage, learner, doc, input, stage.decide(doc, learner, input));
@@ -402,14 +398,15 @@ public final class Scenarios {
         try {
             stage.stream(doc, learner, bound.binding(), input, sink);
         } catch (final DeferTaskException e) {
-            // A record short of the bar: the stream waits on the session that opened, as a task would.
+            // A record fell short of the bar, so the stream waits on the session that was opened, as a
+            // task's stream would.
             return null;
         }
         return sink;
     }
 
-    /// A stream served as a task serves a bound one (design 04 §3): decided, and streamed through
-    /// the bound fragment into a sink. Null where the task does not bind it.
+    /// Serves a stream as a task serves a bound one: the task decides, and the stream is run through the
+    /// bound fragment into a sink. Returns null if the task does not bind the stream.
     public TextSink served(final LearningFlowDoc doc, final Input input) {
         inputs.put(input);
         final Stage stage = stage(Script.of());
@@ -430,9 +427,8 @@ public final class Scenarios {
                 .orElseThrow(() -> new IllegalArgumentException("No failing corpus case " + stem));
     }
 
-    /**
-     * A reply resource from this package: the stylesheets and expected outputs scenarios are built on.
-     */
+    /// Reads a resource from this package: the stylesheets, inputs and expected outputs that scenarios
+    /// are built on.
     public static String resource(final String name) {
         try (InputStream in = Scenarios.class.getResourceAsStream(name)) {
             if (in == null) {
@@ -444,24 +440,22 @@ public final class Scenarios {
         }
     }
 
-    /// The same events however they are spaced: a transform run one record at a time writes the same
-    /// events as one run over the whole document (§12 item 25), and what lies between them is the
-    /// serialiser's business and not the scenario's.
+    /// Normalises XML whitespace so that the same events compare equal however they are spaced. A
+    /// transform run one record at a time writes the same events as one run over the whole document, but
+    /// the whitespace between them depends on the serialiser, which is not what a scenario tests.
     public static String canonical(final String xml) {
         if (xml == null) {
             return null;
         }
-        // The declaration goes, the space between elements goes, and the space inside a start tag — which
-        // is where a stylesheet's own line breaks put its attributes — becomes one space.
+        // The XML declaration and the whitespace between elements are removed, and whitespace inside a
+        // tag (where a stylesheet's line breaks between attributes end up) becomes one space.
         final String tagsNormalised = Pattern.compile("<[^>]*>")
                 .matcher(xml)
                 .replaceAll(match -> Matcher.quoteReplacement(match.group().replaceAll("\\s+", " ")));
         return tagsNormalised.replaceAll("<\\?xml[^>]*\\?>", "").replaceAll(">\\s+<", "><").strip();
     }
 
-    /**
-     * A model reply as the grammar of {@code ConfigurationReply} wants it: one fenced block.
-     */
+    /// Wraps a document as a model reply in the form `ConfigurationReply` expects: one fenced block.
     public static String fenced(final String document) {
         return "Here is the configuration:\n```xml\n" + document + "\n```\n";
     }
@@ -470,20 +464,19 @@ public final class Scenarios {
     // --------------------------------------------------------------------------------
 
 
-    /// A stream processed as production processes it: what the task decided, the attempt it opened
-    /// where it opened one, what carrying that attempt came to, and what the stream was served as —
-    /// at once where it was bound, or once the wake made its task decide again — or null where it
-    /// was not served.
+    /// A stream processed as production processes it: what the task decided, the attempt it opened (if
+    /// any), the result of carrying on that attempt, and what the stream was served as (straight away if it
+    /// was bound, or after the wake made its task decide again), or null if it was not served.
     public record Processed(StageRun first, Recorded attempt, StageRun learned, TextSink served) {
 
-        /// The events the stream was served as, or null where it was not served.
+        /// The events the stream was served as, or null if it was not served.
         public String output() {
             return served == null
                     ? null
                     : served.text();
         }
 
-        /// The status the attempt came to, or null where the stream opened none.
+        /// The attempt's final status, or null if the stream opened no attempt.
         public AttemptStatus status() {
             return attempt == null
                     ? null

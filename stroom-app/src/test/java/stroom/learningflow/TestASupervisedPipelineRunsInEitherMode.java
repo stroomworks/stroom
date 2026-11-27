@@ -44,16 +44,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Track 1 task 5 (simplification option H): **a supervised pipeline runs with either way of getting
-/// tasks to workers.**
+/// Tests that a processor filter can be created over a pipeline with a Learning Flow element whichever way
+/// tasks reach workers, i.e. with `stroom.processor.claimTasksOnWorker` either off or on.
 ///
-/// It used to be refused unless `stroom.processor.claimTasksOnWorker` was on, because "a wake writes rows
-/// the worker reads, which a master-fed task queue would not see". That reason does not hold: deferring,
-/// waking and the retry sweep are plain database updates, the same in both modes, and the master queue
-/// re-reads `CREATED` tasks from the database every time it fills — a woken task is exactly what that
-/// query finds. The requirement is gone, and this is what replaces the test of it.
+/// Deferring, waking and the retry sweep are plain database updates that work the same in both modes. When
+/// the master node's task queue fills, it reads `CREATED` tasks from the database, which is the status a
+/// woken task has, so a woken task is picked up in either mode.
 ///
-/// Run with the setting both off and on, because off is the default and was the refused case.
+/// The test runs with the setting off and on. Off is the default.
 class TestASupervisedPipelineRunsInEitherMode extends AbstractCoreIntegrationTest {
 
     private static final String FEED = "DOOR-ACCESS-CLAIMING";
@@ -131,13 +129,12 @@ class TestASupervisedPipelineRunsInEitherMode extends AbstractCoreIntegrationTes
         return pipelineRef;
     }
 
-    /// A pipeline that holds no Learning Flow element of its own and inherits one from a parent: the
-    /// shape the check answered "not supervised" for whenever it could not read the parent, and so the
-    /// shape most worth proving runs in both modes.
+    /// Creates a pipeline that has no Learning Flow element of its own but inherits one from a parent.
+    /// This case is included because detecting the element requires reading the parent pipeline.
     ///
-    /// @param feed The feed its appender writes to.
-    /// @param doc  The Learning Flow document the parent's stage runs under.
-    /// @return The pipeline.
+    /// @param feed The feed the parent's stream appender writes to.
+    /// @param doc  The Learning Flow document the parent's element uses.
+    /// @return The child pipeline.
     private DocRef inheriting(final DocRef feed, final DocRef doc) {
         final DocRef parent = supervised(feed, doc);
         final DocRef child = pipelineStore.createDocument(FEED + " inheriting " + System.nanoTime());

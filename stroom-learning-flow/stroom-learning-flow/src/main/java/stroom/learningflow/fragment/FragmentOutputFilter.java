@@ -23,17 +23,15 @@ import stroom.svg.shared.SvgImage;
 
 import jakarta.inject.Inject;
 
-/**
- * The tail added to a fragment when it is run: every event the fragment's last element emits goes
- * wherever {@link FragmentOutput} points. Internal — a fragment has no destination of its own (A20),
- * and this is the one it is lent.
- */
+/// An internal pipeline element that [PipelineFragmentRunner] adds to the end of a fragment when it runs
+/// it. A fragment has no writer or destination of its own, so this element forwards every event the
+/// fragment's last element emits to the handler held by [FragmentOutput].
 @ConfigurableElement(
         type = FragmentOutputFilter.TYPE,
-        // Stepping visibility because a build that captures drops any element without it and links
-        // straight past to its children (`PipelineFactory#getChildElements`). This element has no
-        // children, so being dropped means the tail's events reach nobody — and a fragment is always
-        // run under a capture, since a run is judged as well as served.
+        // Stepping visibility is needed because a pipeline built with a capture drops any element without
+        // it and links its parent straight to its children (`PipelineFactory#getChildElements`). This
+        // element has no children, so if it were dropped its events would reach nothing, and a fragment
+        // that is being judged is always run with a capture.
         roles = {
                 PipelineElementType.ROLE_TARGET,
                 PipelineElementType.VISABILITY_STEPPING},

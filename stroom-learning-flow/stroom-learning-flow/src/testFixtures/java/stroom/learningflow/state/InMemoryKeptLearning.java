@@ -21,9 +21,9 @@ import stroom.learningflow.element.KeptLearning;
 import java.util.List;
 import java.util.Set;
 
-/// The retention job's view of what a harness without a database keeps: nothing it need look after.
-/// What is in memory lasts as long as the JVM does, so nothing in it outlives the run to be found deleted
-/// at midnight or aged out; a deleted pipeline is still heard of, and marked, through
+/// An in-memory [KeptLearning], which gives the retention job nothing to do. In-memory learning lasts only
+/// as long as the JVM, so none of it outlives the run to be found by the nightly check for deleted
+/// pipelines or removed for age. A deleted pipeline is still recorded and marked through
 /// [InMemoryDeletedPipelines].
 public final class InMemoryKeptLearning implements KeptLearning {
 
@@ -39,6 +39,6 @@ public final class InMemoryKeptLearning implements KeptLearning {
 
     @Override
     public void forget(final String pipelineUuid) {
-        // Nothing is kept beyond the run, so nothing is forgotten.
+        // Nothing is kept beyond the run, so there is nothing to delete.
     }
 }

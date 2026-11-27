@@ -34,21 +34,24 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-/// Where a feed stands, said for a person (design 07, the Feeds tab): a chip, one sentence, a sentence of
-/// detail, and the actions that fit it — the main ones as buttons, the rest in a menu. Where its learning
-/// run stopped with a report ([StopReport]), the sentence is the report's error, and its details and
-/// suggestions come with it; a suggestion the tab can act on, and that isn't already a button, is
-/// [#canDo]. Worked out from what
-/// the Supervisor already reads: the feed's learner row, its learning run (with its turns, where fetched)
-/// and the document it runs under. A learner's actions and its run's are offered together, so that nobody
-/// has to know which level an action belongs to.
+/// Describes the state of a Smart Pipeline's learning in plain words, for its Learning Status tab and the
+/// lists of Smart Pipelines. It gives a chip, a headline sentence, a sentence of detail, and the actions
+/// that apply now: the main ones as buttons and the rest in a menu. If the learning run stopped with a report
+/// ([StopReport]), the headline is the report's error, and the report's details and suggestions are included;
+/// [#canDo] says which suggestions the tab can act on.
 ///
-/// The guards are the Supervisor's: nothing that would change a deleted pipeline's learning (A137), the
-/// translation's actions only where one serves, stop only where it hasn't stopped and
-/// no draft awaits review, approve and reject only on a draft, grant and the fallback only on a paused run.
+/// It is worked out from the data the tab already fetches: the feed's learner row, its learning run (with its
+/// turns, if fetched) and the document it learns under. The learner's actions and the run's actions are
+/// offered together, so that a person doesn't have to know which one an action applies to.
+///
+/// An action is offered only when the server would allow it: nothing that would change a deleted pipeline's
+/// learning; the translation's actions only when a translation is in use; stop learning only when learning
+/// hasn't already stopped and no draft awaits review; approve and reject only for a draft; and give more,
+/// finish with Unknowns and answer only for a paused run.
 public final class FeedSituation {
 
-    // The chip of a Smart Pipeline that would learn but for a spend ceiling (A24)
+    // The chip of a Smart Pipeline that would be learning if a spend ceiling (a limit on tokens or questions
+    // per hour) had not been reached
     private static final String SPEND_LIMIT = "Spend limit";
 
     private final Tone tone;
@@ -81,15 +84,15 @@ public final class FeedSituation {
         this.doable = Collections.unmodifiableSet(doable);
     }
 
-    /// Works out where a feed stands.
+    /// Works out the state of a feed's learning.
     ///
     /// @param learner The feed's learner row.
-    /// @param run     The learning run shown with it, or null for none; its turns, where fetched, say what
-    ///                step it is at.
-    /// @param doc     The document it runs under, or null where not known: its pass mark, flag and default
-    ///                tries.
-    /// @param nowMs   The time now, for how long streams have waited.
-    /// @return Where it stands.
+    /// @param run     The learning run shown with it, or null for none. Its turns, if fetched, say which step
+    ///                it is at.
+    /// @param doc     The document it learns under, or null if not known. It supplies the score below which a
+    ///                translation is flagged, the default number of tries and the steps' names.
+    /// @param nowMs   The current time, used to say how long streams have waited.
+    /// @return The feed's situation.
     public static FeedSituation of(final SupervisorLearner learner,
                                    final SupervisorAttempt run,
                                    final LearningFlowDoc doc,
@@ -151,7 +154,7 @@ public final class FeedSituation {
             final String reason = learner.getGivenUpReason() == null || learner.getGivenUpReason().isEmpty()
                     ? "Stopped learning"
                     : "Stopped learning: " + PlainWords.lowerFirst(learner.getGivenUpReason());
-            // The run that gave it up says why in parts; a later run, or none, doesn't
+            // Only the run that gave up has a report explaining why; a later run, or no run, does not
             final StopReport report = status == AttemptStatus.ABANDONED
                     ? run.getReport()
                     : null;
@@ -162,7 +165,7 @@ public final class FeedSituation {
                     .withReport(report, available, doc);
         }
         if (status == AttemptStatus.ERROR) {
-            // A run that failed leaves the learner as it was: its next stream opens another
+            // A run that failed leaves the learner as it was, and the feed's next stream starts another run
             final String error = error(run);
             return build(Tone.DANGER, "Failed",
                     error == null || error.isEmpty()
@@ -184,7 +187,8 @@ public final class FeedSituation {
                     available, List.of());
         }
         if (learner.getState() == LearnerState.LEARNING && learner.getSpendPaused() != null) {
-            // A spend ceiling (A24): nothing is wrong with the feed, and it starts again by itself
+            // A spend ceiling has been reached. Nothing is wrong with the feed, and learning resumes by itself
+            // once the ceiling clears
             return build(Tone.WARNING, SPEND_LIMIT,
                     "Not learning until a spend ceiling clears",
                     learner.getSpendPaused() + " " + waiting,
@@ -217,11 +221,11 @@ public final class FeedSituation {
                 available, List.of());
     }
 
-    /// Which zone the pipeline reads timestamps in, and where that comes from (decision N6, Track 2 step 4),
-    /// so that a surprising date can be traced to what set the zone.
+    /// Says which time zone the pipeline reads timestamps without an offset in, and what set it, so that a
+    /// surprising date can be traced to its cause. Any problem with the zone is added.
     ///
     /// @param learner A feed's learner row, as its pipeline's Learning Status tab lists it.
-    /// @return The sentence, or null where the row doesn't say.
+    /// @return The sentence, or null if the row has no time zone.
     public static String timeZone(final SupervisorLearner learner) {
         if (learner == null || learner.getTimeZone() == null) {
             return null;
@@ -237,7 +241,7 @@ public final class FeedSituation {
     }
 
     /// @param learner A feed's learner row.
-    /// @return The chip its row in the list shows, from the row alone.
+    /// @return The chip shown on its row in a list of Smart Pipelines, worked out from the row alone.
     public static String listChip(final SupervisorLearner learner) {
         if (learner.isPipelineDeleted()) {
             return "Deleted";
@@ -265,7 +269,7 @@ public final class FeedSituation {
     }
 
     /// @param learner A feed's learner row.
-    /// @return The tone of the chip its row in the list shows.
+    /// @return The tone of the chip shown on its row in a list of Smart Pipelines.
     public static Tone listTone(final SupervisorLearner learner) {
         if (learner.isPipelineDeleted() || learner.getState() == null) {
             return Tone.IDLE;
@@ -289,7 +293,8 @@ public final class FeedSituation {
     }
 
     /// @param learner A feed's learner row.
-    /// @return The line under its name in the list: what it scores, why it stopped, or what waits.
+    /// @return The summary shown on its row in a list of Smart Pipelines: what it scores or why it stopped,
+    ///         how many records it skipped, and how many streams are waiting.
     public static String listSummary(final SupervisorLearner learner) {
         final List<String> parts = new ArrayList<>();
         if (learner.getState() == LearnerState.GIVEN_UP && learner.getGivenUpReason() != null) {
@@ -298,9 +303,9 @@ public final class FeedSituation {
             parts.add("Scores " + PlainWords.percent(learner.getRollingScore()));
         }
         if (learner.getSkips() > 0) {
-            // A record the translation said was deliberately not an event. Nothing caps how many it may
-            // declare (ruling A148), so the count is what a person judges it by, and it belongs where
-            // they already read the score rather than behind another click.
+            // A skipped record is one the translation declared deliberately not to be an event. Nothing limits
+            // how many it may skip, so a person judges it by this count, which is shown beside the score where
+            // they already look rather than behind another click.
             parts.add(PlainWords.number(learner.getSkips()) + " of "
                       + PlainWords.number(learner.getRecords()) + " skipped");
         }
@@ -334,11 +339,11 @@ public final class FeedSituation {
                 EnumSet.noneOf(SuggestionAction.class));
     }
 
-    /// This situation as a person who may only read the feed's pipeline sees it: nothing that would change its
-    /// learning, which the server would refuse them; only what opens something to read, from a suggestion,
-    /// the model's document (the learned translation has its own link). What it says is unchanged.
+    /// This situation as seen by a person who may only read the feed's pipeline. It offers no actions that
+    /// would change the learning, since the server would refuse them. The only suggestion it can act on is
+    /// opening the AI model's document, which only reads. The text is unchanged.
     ///
-    /// @return The situation, read only.
+    /// @return A read-only copy of the situation.
     public FeedSituation readOnly() {
         final Set<SuggestionAction> readable = EnumSet.noneOf(SuggestionAction.class);
         if (doable.contains(SuggestionAction.OPEN_MODEL)) {
@@ -347,8 +352,9 @@ public final class FeedSituation {
         return new FeedSituation(tone, chip, headline, detail, List.of(), List.of(), details, suggestions, readable);
     }
 
-    /// This situation with a run's report: its details and suggestions, and which suggestions the tab can
-    /// act on. Those whose action is already a button here are said, not offered twice.
+    /// This situation with a run's report added: its details and suggestions, and which suggestions the tab
+    /// can act on. A suggestion whose action is already one of the buttons is shown as text only, so that
+    /// the action is not offered twice.
     private FeedSituation withReport(final StopReport report,
                                      final Set<FeedAction> available,
                                      final LearningFlowDoc doc) {
@@ -375,9 +381,9 @@ public final class FeedSituation {
                 report.getSuggestions(), can);
     }
 
-    /// @param action What a suggestion can be acted on with.
-    /// @return The feed's action that does it, or null where it is done elsewhere (a note, the Setup tab, the
-    ///         model's document).
+    /// @param action The action a suggestion proposes.
+    /// @return The feed action that carries it out, or null if it is done elsewhere (a note, the Setup tab or
+    ///         the AI model's document).
     public static FeedAction feedAction(final SuggestionAction action) {
         return switch (action) {
             case GIVE_MORE -> FeedAction.GRANT;
@@ -388,14 +394,14 @@ public final class FeedSituation {
         };
     }
 
-    // What a run stopped on, in one line: its report's error, else its decision
+    // Why a run stopped, in one line: its report's error if it has a report, otherwise its decision
     private static String error(final SupervisorAttempt run) {
         return run.getReport() != null
                 ? run.getReport().getError()
                 : run.getDecision();
     }
 
-    // What may be done now, by the Supervisor's own guards
+    // Returns the actions the server would allow now
     private static Set<FeedAction> available(final SupervisorLearner learner, final SupervisorAttempt run) {
         final Set<FeedAction> available = EnumSet.noneOf(FeedAction.class);
         final boolean live = !learner.isPipelineDeleted();
@@ -409,7 +415,8 @@ public final class FeedSituation {
         }
         if (live && status == AttemptStatus.PARKED) {
             available.add(FeedAction.GRANT);
-            // Marked Unknowns are event-logging's: a target with none has no fallback to finish with
+            // The fallback writes marked Unknown events, which only the event-logging schema has. A target
+            // schema without them has no fallback to finish with
             if (!run.isExhaustNext() && !learner.isFallbackUnavailable()) {
                 available.add(FeedAction.EXHAUST);
             }
@@ -423,7 +430,7 @@ public final class FeedSituation {
         if (live) {
             available.add(FeedAction.RELEARN);
         }
-        // Refused by the server while a draft awaits review: rejecting it is the way to give up
+        // The server refuses this while a draft awaits review; rejecting the draft is the way to stop
         if (live && learner.getState() != LearnerState.GIVEN_UP && status != AttemptStatus.AWAITING_REVIEW) {
             available.add(FeedAction.GIVE_UP);
         }
@@ -436,13 +443,13 @@ public final class FeedSituation {
         return available;
     }
 
-    /// Whether a feed's Learning history should be open of its own accord: while a run is going or waits for
-    /// someone, or streams wait for the feed. Otherwise, e.g. while it is just translating, it is folded, as a
-    /// Data Provider needs only where it stands.
+    /// Whether a feed's Learning history section should be expanded automatically: while a run is under way or
+    /// waiting for someone, or while streams are waiting for the feed. Otherwise, e.g. while it is simply
+    /// translating, it is collapsed, as a Data Provider needs to see only the feed's state.
     ///
     /// @param learner The feed's learner row.
-    /// @param run     Its learning run shown, or null for none.
-    /// @return Whether its Learning history should be open.
+    /// @param run     The learning run shown for it, or null for none.
+    /// @return Whether its Learning history should be expanded.
     public static boolean needsHistory(final SupervisorLearner learner, final SupervisorAttempt run) {
         if (learner.isPipelineDeleted()) {
             return false;
@@ -461,7 +468,7 @@ public final class FeedSituation {
     }
 
     /// @param run A learning run, with its turns.
-    /// @return The question it stopped at, which nobody has answered, or null for none.
+    /// @return The run's last question if nobody has answered it, or null if there is none.
     public static SupervisorTurn unanswered(final SupervisorAttempt run) {
         if (run == null || run.getTurns() == null || run.getTurns().isEmpty()) {
             return null;
@@ -472,7 +479,8 @@ public final class FeedSituation {
                 : null;
     }
 
-    // e.g. "writing the parser, try 2 of 3", from the run's last turn and the document's flow
+    // Describes the step the run is at, e.g. "writing the parser, try 2 of 3", from the run's last turn and
+    // the document's flow
     private static String atStep(final SupervisorAttempt run, final LearningFlowDoc doc) {
         final List<SupervisorTurn> turns = run.getTurns();
         if (turns == null || turns.isEmpty()) {
@@ -494,8 +502,8 @@ public final class FeedSituation {
     }
 
     /// @param doc    The document, or null.
-    /// @param stepId A step's id as a turn records it, or null.
-    /// @return The document's step of that id, or null where there is none.
+    /// @param stepId A step's id as a turn records it, or null. It is matched ignoring case.
+    /// @return The document's step with that id, or null if there is none.
     public static FlowStep step(final LearningFlowDoc doc, final String stepId) {
         if (doc == null || stepId == null || doc.getFlow() == null) {
             return null;
@@ -528,7 +536,8 @@ public final class FeedSituation {
         return said.toString();
     }
 
-    // e.g. "It scores 98% lately, over 1,204 records. It scored 95% when it was put to use."
+    // Describes how the translation in use is scoring, e.g. "It scores 98% lately, over 1,204 records. It
+    // scored 95% when it was put to use."
     private static String lately(final SupervisorLearner learner) {
         final StringBuilder said = new StringBuilder();
         if (learner.getRollingScore() != null) {
@@ -547,22 +556,22 @@ public final class FeedSituation {
                 : said.toString();
     }
 
-    /// @return The tone of its chip.
+    /// @return The tone of the chip.
     public Tone getTone() {
         return tone;
     }
 
-    /// @return Its chip's word, e.g. "Paused".
+    /// @return The chip's text, e.g. "Paused".
     public String getChip() {
         return chip;
     }
 
-    /// @return The one sentence that says where it stands.
+    /// @return The headline sentence that states the feed's situation.
     public String getHeadline() {
         return headline;
     }
 
-    /// @return The sentence of detail beneath it.
+    /// @return The detail beneath the headline.
     public String getDetail() {
         return detail;
     }
@@ -572,23 +581,23 @@ public final class FeedSituation {
         return primary;
     }
 
-    /// @return The other actions that may be done now, for a menu.
+    /// @return The other actions available now, for a menu.
     public List<FeedAction> getMore() {
         return more;
     }
 
-    /// @return The evidence of why its run stopped, a line each; empty where there is no report.
+    /// @return The details of why the run stopped, one per line; empty if there is no report.
     public List<String> getDetails() {
         return details;
     }
 
-    /// @return What a person can do about its run stopping; empty where there is no report.
+    /// @return What a person can do about the run stopping; empty if there is no report.
     public List<Suggestion> getSuggestions() {
         return suggestions;
     }
 
     /// @param suggestion One of [#getSuggestions()].
-    /// @return Whether the tab can do it, as a link: it has an action, the action may be taken now, and it
+    /// @return Whether the tab can offer it as a link: it has an action, the action may be taken now, and it
     ///         isn't one of the buttons already shown.
     public boolean canDo(final Suggestion suggestion) {
         return suggestion.getAction() != null && doable.contains(suggestion.getAction());
@@ -598,7 +607,7 @@ public final class FeedSituation {
     // --------------------------------------------------------------------------------
 
 
-    /// How a chip is coloured: each is a status colour of the theme, never the accent.
+    /// How a chip is coloured. Each tone is one of the theme's status colours, never the accent colour.
     public enum Tone {
         GOOD,
         WARNING,

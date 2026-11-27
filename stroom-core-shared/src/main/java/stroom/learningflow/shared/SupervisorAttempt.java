@@ -25,11 +25,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * One attempt as the Supervisor view shows it (A28): when, where, in what mode, what it was learning
- * from, what it came to and who or what decided. The turns are empty in the list and filled in the
- * detail, which is the same row opened.
- */
+/// One learning session (attempt) as the Supervisor shows it: when and on which node it ran, under which
+/// promotion mode, what it was learning from, what it came to, and who or what decided. The turns are empty
+/// when sessions are listed, and filled in when one session is opened in detail.
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SupervisorAttempt {
 
@@ -59,12 +57,13 @@ public class SupervisorAttempt {
     private final Double score;
     @JsonProperty
     private final long tokensSpent;
-    /// What a person granted the attempt beyond the document's budgets (A77): tokens and milliseconds.
+    /// What a person granted the session beyond the document's budgets: tokens here, and milliseconds in
+    /// `grantedMs`.
     @JsonProperty
     private final long grantedTokens;
     @JsonProperty
     private final long grantedMs;
-    /// Whether a person sent the attempt to the exhaustion step (A65), and the worker has not yet taken it.
+    /// Whether a person sent the session to the fallback step, and the worker has not yet resumed it.
     @JsonProperty
     private final boolean exhaustNext;
     @JsonProperty
@@ -73,16 +72,16 @@ public class SupervisorAttempt {
     private final long updateTimeMs;
     @JsonProperty
     private final List<SupervisorTurn> turns;
-    /// Whether the pipeline it was learning for has been deleted (design 06 A137): kept to be read, with
-    /// nothing offered that would change it.
+    /// Whether the pipeline it was learning for has been deleted. Such a session is kept to be read, but
+    /// nothing is offered that would change it.
     @JsonProperty
     private final boolean pipelineDeleted;
     /// Why it stopped, in parts (error, details, suggestions), where it stopped short of a translation; null
     /// otherwise, and for a session that stopped before reports were kept.
     @JsonProperty
     private final StopReport report;
-    /// How the translation it learned did on each check that ran (Track 2 step 4, approval evidence), for a
-    /// person deciding whether to approve it; empty for a run that learned nothing.
+    /// How the translation it learned did on each check that ran, as evidence for a person deciding whether
+    /// to approve it; empty for a session that learned nothing.
     @JsonProperty
     private final List<CheckResult> evidence;
     /// Who approved or rejected what it learned, and when; null where nobody did.
@@ -91,7 +90,7 @@ public class SupervisorAttempt {
     @JsonProperty
     private final Long reviewedTimeMs;
 
-    /// A session with no stop report.
+    /// Creates a session with no stop report, evidence or review.
     public SupervisorAttempt(final long id,
                              final DocRef doc,
                              final LearnerRef learner,
@@ -117,7 +116,7 @@ public class SupervisorAttempt {
                 pipelineDeleted, null);
     }
 
-    /// A session with no evidence and no review.
+    /// Creates a session with no evidence and no review.
     public SupervisorAttempt(final long id,
                              final DocRef doc,
                              final LearnerRef learner,
@@ -207,7 +206,7 @@ public class SupervisorAttempt {
         return doc;
     }
 
-    /// The learner the attempt is learning for (A128): what guidance is kept by.
+    /// @return The learner the session is learning for, which is also what guidance is kept against.
     public LearnerRef getLearner() {
         return learner;
     }

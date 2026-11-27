@@ -35,8 +35,10 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The bar is per record (design 04 §3, A55): each scorer that judges records one by one says which
-/// fell short, zero-based in output order, and a verdict's failing records are the union over its gates.
+/// Tests per-record scoring, which the bar is built on: every served record must clear every gate.
+///
+/// Each scorer that judges records one by one reports which records fell short, as zero-based indexes in output
+/// order, and a verdict's failing records are the union of those reported by its gates.
 class TestPerRecordScoring {
 
     private static final String EVENTS = """
@@ -96,8 +98,8 @@ class TestPerRecordScoring {
         assertThat(score.failingRecords()).isEmpty();
     }
 
-    /// The union over the gates and no more: a scorer that is not a gate may fail a record without it
-    /// falling short of the bar, which is a document choosing where its bar is.
+    /// Only gates count: a check that is only advice may fail a record without the record falling short of the
+    /// bar, because the document has chosen not to make that check part of its bar.
     @Test
     void aVerdictsFailingRecordsAreTheUnionOverItsGates() {
         final Score gateA = new Score(Check.CONFORMANCE, 0.5, List.of(), Set.of(1));
@@ -117,7 +119,7 @@ class TestPerRecordScoring {
     }
 
     /// The validator judges one top-level element at a time, counting from one; the records it names are
-    /// handed back counting from zero, as the output has them.
+    /// returned counting from zero, as the other scorers number them.
     @Test
     void schemaConformanceNamesTheRecordsThatDidNotValidate() {
         final String events = """

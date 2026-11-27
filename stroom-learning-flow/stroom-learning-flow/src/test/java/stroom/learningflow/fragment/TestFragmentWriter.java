@@ -43,12 +43,12 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/**
- * A learned chain becomes real content: two configuration documents and a pipeline fragment that links
- * {@code Source} to a parser to a transform and references the documents from the elements' properties.
- * The writer only needs each step's element and configuration text, so the steps here carry the text
- * without having been run.
- */
+/// Tests how `FragmentWriter` turns a learned chain into real Stroom content: a configuration document for each
+/// step, and a pipeline fragment that links `Source` through the chain's elements and references those
+/// documents from the elements' properties.
+///
+/// The writer only needs each step's element and configuration text, so the steps here carry the text without
+/// having been run.
 class TestFragmentWriter {
 
     private static final DocPath FOLDER = DocPath.fromParts("Learning Flow", "SYSLOG");
@@ -59,10 +59,10 @@ class TestFragmentWriter {
 
     @Test
     void aBoundaryPutsASplitFilterInFrontOfTheTransform() {
-        // §12 item 25: stroom's own shape for markup is parser, then split, then transform. The filter
-        // cuts the parsed stream into one document per record, so the stylesheet sees one record as a
-        // person writing one is shown one, memory is bounded by the record rather than the stream, and an
-        // error is isolated to the record that raised it.
+        // Stroom's usual pipeline for markup is parser, then SplitFilter, then transform. The filter cuts the
+        // parsed stream into one document per record, so the stylesheet sees one record at a time, as a person
+        // writing one would expect, memory use is bounded by the record rather than the stream, and an error is
+        // isolated to the record that raised it.
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
@@ -96,8 +96,8 @@ class TestFragmentWriter {
 
     @Test
     void markupWithNoParserIsSplitStraightAfterTheSource() {
-        // Input that is already XML has no parser to put the filter behind: the records are the source's
-        // own, and the transform is shown them one at a time just the same.
+        // Input that is already XML has no parser to put the filter after, so the filter splits the source's
+        // own records, and the transform still sees them one at a time.
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
@@ -120,10 +120,10 @@ class TestFragmentWriter {
 
     @Test
     void aBoundaryThatDoesNotKnowWhereItSitsIsWrittenWithoutAFilter() {
-        // A binding learned before the depth was recorded cannot say where to split, and a guess is worse
-        // than nothing: the usual depth of one splits a JSON document at its single top-level map, which
-        // is one document for the whole stream and bounds nothing. It is written as it was before item
-        // 25, until it is learned again.
+        // A binding learned by an earlier version has a record boundary with no depth, so cannot say where to
+        // split, and a guess is worse than nothing: the usual depth of one splits a JSON document at its single
+        // top-level map, which gives one document for the whole stream. Such a fragment is written without a
+        // SplitFilter until it is learned again.
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
@@ -139,8 +139,8 @@ class TestFragmentWriter {
 
     @Test
     void rawTextHasNoSplitFilterBecauseTheDataSplitterIsOne() {
-        // §12 item 25: for raw text the Data Splitter *is* the splitter, and a chain that cuts with a
-        // configuration carries no boundary of this kind.
+        // For raw text the Data Splitter already splits the input into records, so a chain that splits with
+        // a configuration has no record boundary and needs no SplitFilter.
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
@@ -199,14 +199,14 @@ class TestFragmentWriter {
         assertThat(stores.xslts.readDocument(xsltRef).getData()).isEqualTo(XSLT);
     }
 
-    /// A text converter is written as the kind the step says it is, not as the one most steps happen to
-    /// use.
+    /// Checks that a text converter is written with the converter type its step requires, not the type most
+    /// steps use.
     ///
-    /// `TextConverterDoc` carries its kind and the element that reads it refuses one of the wrong kind:
-    /// `XMLFragmentParser` throws "The assigned text converter is not an XML fragment". Written as Data
-    /// Splitter for everything, a learned `XMLFragmentParser` chain passes every scorer — the stand-in
-    /// runner reads only the text — and then fails on every stream a node gives it. Tier 1 could not see
-    /// it; this is where it is seen.
+    /// `TextConverterDoc` records its converter type, and the element that reads it refuses one of the wrong
+    /// type: `XMLFragmentParser` throws "The assigned text converter is not an XML fragment". If every text
+    /// converter were written as a Data Splitter, a learned `XMLFragmentParser` chain would pass every scorer,
+    /// because the stand-in runner reads only the text, and then fail on every real stream. Tests that use
+    /// the stand-in runners cannot see this, so it is checked here.
     @Test
     void aTextConverterIsWrittenAsTheKindItsStepSaysItIs() {
         final ContentStores stores = new ContentStores();
@@ -247,7 +247,7 @@ class TestFragmentWriter {
 
     @Test
     void everyWriteCreatesNewDocuments() {
-        // Design §7.3 rule 1: an improvement is a new document, never a new version of one that has run.
+        // Writing a fragment always creates new documents; it never changes documents that may already have run.
         final ContentStores stores = new ContentStores();
         final FragmentWriter writer = stores.writer();
         final List<LearnedStep> chain = List.of(
@@ -261,9 +261,9 @@ class TestFragmentWriter {
         assertThat(stores.xslts.list()).hasSize(2);
     }
 
-    /// A132: a fragment written where its name is taken takes the first free number after it, and the
-    /// documents it references take that name too, so that a fragment and its documents still sort together
-    /// and can be told from the ones before them.
+    /// A fragment whose name is already taken in the folder gets the first free number appended. The documents
+    /// it references are named after the numbered name, so a fragment and its documents still sort together and
+    /// can be told apart from earlier ones.
     @Test
     void aSecondFragmentOfTheSameNameTakesTheFirstFreeNumber() {
         final ContentStores stores = new ContentStores();
@@ -284,8 +284,8 @@ class TestFragmentWriter {
                         "DOOR-ACCESS Raw Events 3-xsltFilter");
     }
 
-    /// The first free number, not the next after the highest: a gap a person left by deleting a fragment
-    /// is filled.
+    /// The number used is the first free one, not the one after the highest, so a gap left when a person
+    /// deleted a fragment is filled.
     @Test
     void theFirstFreeNumberFillsAGap() {
         final ContentCreator creator = new ContentCreator() {

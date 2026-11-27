@@ -36,9 +36,12 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.view.client.AbstractDataProvider;
 import com.google.gwt.view.client.Range;
 
-/// The selected learning pipeline's waiting streams (design 04 §6, design 06 A115), a row per stream:
-/// whether it has been raised, its feed and type, its id, since when it has waited, how many times it has
-/// been tried, the transform it fell short of and why; oldest first. Nothing here is an action.
+/// Lists the streams waiting (deferred) on the selected Smart Pipeline because nothing can translate them yet,
+/// oldest first.
+///
+/// Each row shows whether the stream has been raised (waited too long), its feed and type, its id, when it
+/// started waiting, how many times it has been tried, the snapshot of the translation it failed against, and
+/// why. The list is for information only; it offers no actions.
 public class WaitingStreamList extends Component {
 
     private static final Binder BINDER = GWT.create(Binder.class);
@@ -54,17 +57,17 @@ public class WaitingStreamList extends Component {
         addColumns();
     }
 
-    /// @param dataProvider Gives the list its rows, a page at a time.
+    /// @param dataProvider Supplies the list's rows, a page at a time.
     public void setDataProvider(final AbstractDataProvider<BacklogStream> dataProvider) {
         dataProvider.addDataDisplay(dataGrid);
     }
 
-    /// @return The task monitor that spins the pager's refresh button.
+    /// @return The task monitor that shows the pager's refresh button as busy.
     public TaskMonitorFactory getTaskMonitor() {
         return pager;
     }
 
-    /// Goes back to the first page, e.g. for another pipeline's streams.
+    /// Goes back to the first page, e.g. when another pipeline is selected.
     public void showFirstPage() {
         dataGrid.setVisibleRange(new Range(0, PageRequest.DEFAULT_PAGE_LENGTH));
     }
