@@ -90,8 +90,10 @@ import java.util.List;
 public class StageFactory {
 
     private final Advisors advisors;
-    private final DataSplitterCompiler dataSplitterCompiler;
-    private final SchemaConformanceScorer schemaConformanceScorer;
+    // Providers, not instances: both report through the pipeline-scoped ErrorReceiverProxy, so they can only
+    // be made inside a pipeline scope, and the breaker, promotion and supervisor actions are asked for outside one.
+    private final Provider<DataSplitterCompiler> dataSplitterCompilerProvider;
+    private final Provider<SchemaConformanceScorer> schemaConformanceScorerProvider;
     private final FragmentWriter fragmentWriter;
     private final PipelineStore pipelineStore;
     private final PipelineDataCache pipelineDataCache;
@@ -123,8 +125,8 @@ public class StageFactory {
 
     @Inject
     public StageFactory(final Advisors advisors,
-                        final DataSplitterCompiler dataSplitterCompiler,
-                        final SchemaConformanceScorer schemaConformanceScorer,
+                        final Provider<DataSplitterCompiler> dataSplitterCompilerProvider,
+                        final Provider<SchemaConformanceScorer> schemaConformanceScorerProvider,
                         final FragmentWriter fragmentWriter,
                         final PipelineStore pipelineStore,
                         final PipelineDataCache pipelineDataCache,
@@ -154,8 +156,8 @@ public class StageFactory {
                         final FragmentCodes codes,
                         final Provider<LearningFlowConfig> configProvider) {
         this.advisors = advisors;
-        this.dataSplitterCompiler = dataSplitterCompiler;
-        this.schemaConformanceScorer = schemaConformanceScorer;
+        this.dataSplitterCompilerProvider = dataSplitterCompilerProvider;
+        this.schemaConformanceScorerProvider = schemaConformanceScorerProvider;
         this.fragmentWriter = fragmentWriter;
         this.pipelineStore = pipelineStore;
         this.pipelineDataCache = pipelineDataCache;
@@ -213,7 +215,8 @@ public class StageFactory {
                 wake, Clock.systemUTC(), configProvider.get().getSessionLease().getDuration());
     }
 
-    /// A stage on this node, under the wall clock.
+    /// A stage on this node, under the wall clock. Only to be called inside a pipeline scope: the Data Splitter
+    /// compiler and the schema scorer it is built from report through the scoped error receiver.
     public Stage create() {
         // A node judges a candidate with the element that will run it (§12 item 2) — but only where the
         // module re-implements one. The parsers here already drive stroom's own factories: the Data
@@ -221,13 +224,13 @@ public class StageFactory {
         // what each record consumed, which input coverage (A11) is scored on and a pipeline does not
         // tell anyone. The transform is the one place the module drives Saxon itself — its own
         // configuration, no pool, no function library — so it is the one wrapped.
-        final List<StepRunner> runners = runners(dataSplitterCompiler, pipelineFactoryProvider,
+        final List<StepRunner> runners = runners(dataSplitterCompilerProvider.get(), pipelineFactoryProvider,
                 headlessCaptureProvider, injectedCodeProvider, errorReceiverProvider, taskContextFactory);
         final List<Scorer> scorers = List.of(
                 new CompileScorer(), new PermittedScorer(), new InputCoverageScorer(),
                 new CompletenessScorer(), new YieldScorer(),
                 new TimesScorer(), new LiteralsScorer(),
-                schemaConformanceScorer,
+                schemaConformanceScorerProvider.get(),
                 new ExtractionQualityScorer(), new BusinessRulesScorer());
         return new Stage(
                 advisors,
