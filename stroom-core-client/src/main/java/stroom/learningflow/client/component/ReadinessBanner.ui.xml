@@ -1,0 +1,13 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- What stops a Learning Flow document learning anything, at the top of its Feeds tab (readiness-banner.css): a
+     banner of what is right and what to put right, shown only when something is wrong -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:tx="urn:import:stroom.widget.text.client">
+    <g:FlowPanel styleName="readiness-banner">
+        <tx:Label ui:field="title" styleName="readiness-banner__title"/>
+        <g:FlowPanel ui:field="items" styleName="readiness-banner__items"/>
+        <tx:Label ui:field="unsaved" styleName="readiness-banner__unsaved" visible="false"
+                  text="This is the document as you have it now. Save it for the changes to take effect."/>
+    </g:FlowPanel>
+</ui:UiBinder>

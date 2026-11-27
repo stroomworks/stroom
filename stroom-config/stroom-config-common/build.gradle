@@ -17,7 +17,7 @@
 ext.moduleName = 'stroom.config.common'
 
 dependencies {
-    implementation project(':stroom-util')
+    api project(':stroom-util')
     implementation project(':stroom-util-shared')
 
     implementation libs.jackson.annotations

@@ -288,10 +288,28 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.docstore.impl.DocStoreConfig getDocStoreConfig(
+    stroom.dataconnection.impl.DataConnectionConfig getDataConnectionConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.docstore.impl.DocStoreConfig.class);
+                stroom.dataconnection.impl.DataConnectionConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
+    stroom.docstore.impl.DocStoreCommonConfig getDocStoreCommonConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.docstore.impl.DocStoreCommonConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
+    stroom.docstore.impl.database.DocStoreConfig getDocStoreConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.docstore.impl.database.DocStoreConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
@@ -562,15 +580,6 @@ public class ConfigProvidersModule extends AbstractModule {
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
                 stroom.pipeline.stepping.store.SteppingConfig.class);
-    }
-
-    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
-    @Provides
-    @SuppressWarnings("unused")
-    stroom.pipelinefactory.impl.PipelineFactoryConfig getPipelineFactoryConfig(
-            final ConfigMapper configMapper) {
-        return configMapper.getConfigObject(
-                stroom.pipelinefactory.impl.PipelineFactoryConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
@@ -856,10 +865,10 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.shapeshifter.ai.ShapeshifterAiConfig getShapeshifterAiConfig(
+    stroom.learningflow.LearningFlowConfig getLearningFlowConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.shapeshifter.ai.ShapeshifterAiConfig.class);
+                stroom.learningflow.LearningFlowConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")

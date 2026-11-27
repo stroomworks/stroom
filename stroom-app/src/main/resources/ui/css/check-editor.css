@@ -18,19 +18,17 @@
 
 /* A number: a weight, a threshold or an expected ratio */
 .check-editor__number {
-    width: 120px;
+    width: calc(120px * var(--text-scale));
 }
 
-/* What a check with no settings of its own judges against, e.g. schema conformance's target */
-.check-editor__note {
-    color: var(--text-color--low-emphasis);
-    font-size: 12px;
-    max-width: 500px;
+/* A short name, e.g. a schema group */
+.check-editor__text {
+    width: calc(300px * var(--text-scale));
 }
 
 /* A list typed one item per line: required fields' XPaths, recognised type ids */
 .check-editor__lines {
-    width: 500px;
+    width: calc(500px * var(--text-scale));
     height: 100px;
 }
 

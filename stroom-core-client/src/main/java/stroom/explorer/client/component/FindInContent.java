@@ -107,6 +107,8 @@ public class FindInContent extends Component {
                 result -> onOpen.accept(result),
                 this::focus);
         selectionModel.addSelectionChangeHandler(event -> onSelectionChange.accept(selectionModel.getSelected()));
+        // The preview beside it shows the selected result (UI-GUIDE.md, "What a list selects")
+        selectionModel.setSelectFirst(true);
 
         // The pattern keeps the focus while the user types, so a screen reader is told of the
         // feedback as it changes (a Label has no setter for it)
@@ -223,7 +225,13 @@ public class FindInContent extends Component {
     }
 
     private void onPatternKeyUp(final KeyUpEvent e) {
+        updateFiltered();
         onPatternChange.run();
+    }
+
+    // With a pattern and nothing found, the list says "No matches"
+    private void updateFiltered() {
+        resultList.setFiltered(!pattern.getText().isBlank());
     }
 
     private void onPatternKeyDown(final KeyDownEvent e) {
@@ -234,6 +242,7 @@ public class FindInContent extends Component {
 
     private void onPatternValueChange(final ValueChangeEvent<String> e) {
         pattern.setStyleName(MULTILINE, pattern.getText().contains("\n"));
+        updateFiltered();
     }
 
     private void onToggleMatchCase(final ClickEvent e) {

@@ -15,8 +15,8 @@
  */
 
 /*
-   What an AI Translator element has learned, on its pipeline's Structure tab
-   (stroom.shapeshifter.client.component.LearnedTranslation): folded above the element's properties, then its
+   What a Smart Pipeline element has learned, on its pipeline's Structure tab
+   (stroom.learningflow.client.component.LearnedTranslation): folded above the element's properties, then its
    learned translation and that translation's elements, each with the documents it uses as links.
 */
 
@@ -36,7 +36,7 @@
 
 .learned-translation__message {
     color: var(--text-color--low-emphasis);
-    max-width: 760px;
+    max-width: calc(760px * var(--text-scale));
 }
 
 .learned-translation__line {
@@ -65,7 +65,7 @@
 }
 
 .learned-translation__type {
-    min-width: 140px;
+    min-width: calc(140px * var(--text-scale));
     color: var(--text-color--low-emphasis);
 }
 

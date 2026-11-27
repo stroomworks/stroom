@@ -7,7 +7,7 @@
              xmlns:tx="urn:import:stroom.widget.text.client">
     <g:FlowPanel styleName="paging-bar">
         <g:HTMLPanel styleName="paging-bar__space">&nbsp;</g:HTMLPanel>
-        <tx:Label ui:field="lblFrom" styleName="paging-bar__label"/>
+        <tx:Label ui:field="lblFrom" styleName="paging-bar__label" addStyleNames="allow-focus"/>
         <form:TextBox ui:field="txtFrom" addStyleNames="paging-bar__text-box" visible="false"/>
         <tx:Label text="&nbsp;to&nbsp;" styleName="paging-bar__label"/>
         <tx:Label ui:field="lblTo" styleName="paging-bar__label"/>
@@ -15,7 +15,7 @@
         <tx:Label text="&nbsp;of&nbsp;" styleName="paging-bar__label"/>
         <tx:Label ui:field="lblOf" styleName="paging-bar__label"/>
         <g:HTMLPanel styleName="paging-bar__space">&nbsp;</g:HTMLPanel>
-        <paging:Toolbar name="Paging">
+        <paging:Toolbar name="Paging" addStyleNames="toolbar--icons">
             <paging:ToolbarButton ui:field="first" svg="FAST_BACKWARD" title="First"/>
             <paging:ToolbarButton ui:field="prev" svg="STEP_BACKWARD" title="Backward"/>
             <paging:ToolbarButton ui:field="next" svg="STEP_FORWARD" title="Forward"/>

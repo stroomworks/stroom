@@ -22,7 +22,6 @@ import stroom.gwt.workbench.client.app.rest.RestHandler;
 import stroom.gwt.workbench.client.app.rest.RestReply;
 import stroom.gwt.workbench.client.app.screen.ContentStorySupport;
 import stroom.gwt.workbench.client.app.screen.ScreenHarness;
-import stroom.gwt.workbench.client.widgets.dateandtime.DateTimeWidgets;
 import stroom.gwt.workbench.client.widgets.selectors.SelectorWidgets;
 import stroom.gwt.workbench.client.widgets.selectors.UserFixture;
 import stroom.gwt.workbench.client.widgets.tree.TreeFixtures;
@@ -46,7 +45,6 @@ import stroom.query.client.component.ExpressionEditor;
 import stroom.query.client.component.ExpressionEditorController;
 import stroom.query.client.component.ExpressionTree;
 import stroom.query.client.component.ExpressionTreeController;
-import stroom.query.client.component.TermEditorController;
 import stroom.query.client.model.DynamicFieldSelectionListModel;
 import stroom.query.client.model.FieldSelectionListModel;
 import stroom.query.client.model.SimpleFieldSelectionListModel;
@@ -502,16 +500,22 @@ public final class ExpressionEditorStories {
                     play.keyboard("{End}{ArrowRight}");
                     final Query description = item(play, "Description contains test");
                     play.waitFor(() -> play.expect(description).toHaveFocus());
-                    play.waitFor(() -> play.expect("its right beyond the pane's",
-                            () -> description.right().get() - pane.right().get()).toBeLessThanOrEqual(0));
+                    // (all of it but at a large text size, where it is wider than the pane: then its start)
+                    play.waitFor(() -> play.expect("all of it in the pane (its start, if wider)", () -> {
+                        final double left = description.left().get();
+                        return description.width().get() <= pane.width().get()
+                                ? description.right().get() <= pane.right().get()
+                                : left >= pane.left().get() && left < pane.right().get();
+                    }).toEqual(true));
 
                     // Pressing on the background and dragging pans it, and selects nothing
                     play.run("scroll the pane", () -> pane.element().get().setScrollLeft(200));
-                    // On the last row, right of RunAsUser (relative to the pane, which doesn't move)
-                    play.fireEvent().mouseDown(background, EventInit.create().relativeTo(pane, 100, 212).buttons(1));
-                    play.fireEvent().mouseMove(background, EventInit.create().relativeTo(pane, 175, 212).buttons(1));
-                    play.fireEvent().mouseMove(background, EventInit.create().relativeTo(pane, 250, 212).buttons(1));
-                    play.fireEvent().mouseUp(background, EventInit.create().relativeTo(pane, 250, 212));
+                    // Below the last row, where nothing is at any text size (relative to the pane,
+                    // which doesn't move)
+                    play.fireEvent().mouseDown(background, EventInit.create().relativeTo(pane, 100, 250).buttons(1));
+                    play.fireEvent().mouseMove(background, EventInit.create().relativeTo(pane, 175, 250).buttons(1));
+                    play.fireEvent().mouseMove(background, EventInit.create().relativeTo(pane, 250, 250).buttons(1));
+                    play.fireEvent().mouseUp(background, EventInit.create().relativeTo(pane, 250, 250));
                     play.expect("the pane's scroll", () -> scrollLeft(pane)).toBe(50.0);
                     play.expect(item(play, "Description contains test")).toHaveAttribute("aria-selected", "true");
 
@@ -987,12 +991,7 @@ public final class ExpressionEditorStories {
 
     private static ExpressionTreeController treeController(final ScreenHarness harness) {
         return new ExpressionTreeController(harness.getEventBus(), () ->
-                new TermEditorController(harness.getEventBus(),
-                        harness.getRestFactory(),
-                        harness.getUiConfigCache(),
-                        SelectorWidgets.docSelectionControllerProvider(harness),
-                        SelectorWidgets.userRefSelectionControllerProvider(harness),
-                        DateTimeWidgets.dateTimeBoxControllers(harness)));
+                QueryWidgets.termEditorController(harness));
     }
 
     private static FieldSelectionListModel fieldModel(final ScreenHarness harness, final boolean dynamic) {

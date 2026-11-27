@@ -46,8 +46,9 @@ import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
 import stroom.credentials.impl.KeyStoreFileCredentialConfig;
 import stroom.dashboard.impl.DashboardConfig;
+import stroom.dataconnection.impl.DataConnectionConfig;
 import stroom.docref.DocRef;
-import stroom.docstore.impl.DocStoreConfig;
+import stroom.docstore.impl.database.DocStoreConfig;
 import stroom.document.asset.impl.DocumentAssetConfig;
 import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
@@ -61,13 +62,13 @@ import stroom.index.impl.db.IndexFieldDbConfig;
 import stroom.index.impl.selection.VolumeConfig;
 import stroom.job.impl.JobSystemConfig;
 import stroom.kafka.impl.KafkaConfig;
+import stroom.learningflow.LearningFlowConfig;
 import stroom.lifecycle.impl.LifecycleConfig;
 import stroom.lmdb.LmdbConfig;
 import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
 import stroom.pipeline.refdata.ReferenceDataLmdbConfig;
-import stroom.pipelinefactory.impl.PipelineFactoryConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.receive.common.ReceiveDataConfig;
@@ -75,7 +76,6 @@ import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
 import stroom.search.impl.SearchConfig;
 import stroom.search.solr.SolrConfig;
-import stroom.shapeshifter.ai.ShapeshifterAiConfig;
 import stroom.sqlstore.impl.SqlStoreConfig;
 import stroom.storedquery.impl.StoredQueryConfig;
 import stroom.ui.config.shared.UiConfig;
@@ -589,6 +589,25 @@ class TestConfigMapper {
         final TestConfig newTestConfig = configMapper.getConfigObject(TestConfig.class);
 
         assertThat(newTestConfig.getDocRefListProp()).isEqualTo(newValue);
+    }
+
+    @Test
+    void testReadOnlyDatabaseValueIgnored() {
+        // XSLT secure mode can only be set in the configuration file.
+        final TestConfig testConfig = new TestConfig();
+        final ConfigMapper configMapper = new ConfigMapper(testConfig, TestConfig::new);
+        final PropertyPath fullPath = PropertyPath.fromPathString("stroom.pipeline.xslt.secureMode");
+
+        final ConfigProperty configProperty = configMapper.getGlobalProperty(fullPath).orElseThrow();
+        assertThat(configProperty.isEditable()).isFalse();
+        final ConfigProperty decorated = configMapper.decorateDbConfigProperty(copyConfigProperty(configProperty)
+                .copy()
+                .databaseOverrideValue("false")
+                .build());
+
+        assertThat(decorated.hasDatabaseOverride()).isFalse();
+        assertThat(configMapper.getConfigObject(TestConfig.class).getPipelineConfig().getXsltConfig().isSecureMode())
+                .isTrue();
     }
 
     @Test
@@ -1112,7 +1131,6 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_NODE) final NodeConfig nodeConfig,
                 @JsonProperty(PROP_NAME_NODE_URI) final NodeUriConfig nodeUri,
                 @JsonProperty(PROP_NAME_PIPELINE) final PipelineConfig pipelineConfig,
-                @JsonProperty(PROP_NAME_PIPELINE_FACTORY) final PipelineFactoryConfig pipelineFactoryConfig,
                 @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                 @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                 @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
@@ -1122,9 +1140,10 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_S3) final S3Config s3Config,
                 @JsonProperty(PROP_NAME_SEARCH) final SearchConfig searchConfig,
                 @JsonProperty(PROP_NAME_SECURITY) final SecurityConfig securityConfig,
-                @JsonProperty(PROP_NAME_SHAPESHIFTER_AI) final ShapeshifterAiConfig shapeshifterAiConfig,
+                @JsonProperty(PROP_NAME_LEARNING_FLOW) final LearningFlowConfig learningFlowConfig,
                 @JsonProperty(PROP_NAME_SESSION_COOKIE) final SessionCookieConfig sessionCookieConfig,
                 @JsonProperty(PROP_NAME_SESSION) final SessionConfig sessionConfig,
+                @JsonProperty(PROP_NAME_DATA_CONNECTION) final DataConnectionConfig dataConnectionConfig,
                 @JsonProperty(PROP_NAME_SQL_STORE) final SqlStoreConfig sqlStoreConfig,
                 @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
                 @JsonProperty(PROP_NAME_PLANB) final PlanBConfig planBConfig,
@@ -1185,7 +1204,6 @@ class TestConfigMapper {
                     nodeConfig,
                     nodeUri,
                     pipelineConfig,
-                    pipelineFactoryConfig,
                     processorConfig,
                     propertyServiceConfig,
                     publicUri,
@@ -1195,10 +1213,11 @@ class TestConfigMapper {
                     s3Config,
                     searchConfig,
                     securityConfig,
-                    shapeshifterAiConfig,
+                    learningFlowConfig,
                     sessionCookieConfig,
                     sessionConfig,
                     solrConfig,
+                    dataConnectionConfig,
                     sqlStoreConfig,
                     planBConfig,
                     statisticsConfig,

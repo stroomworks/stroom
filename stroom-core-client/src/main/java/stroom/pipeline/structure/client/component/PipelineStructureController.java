@@ -21,6 +21,7 @@ import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestErrorHandler;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
+import stroom.docstore.shared.DocRefUtil;
 import stroom.document.client.event.RefreshDocumentEvent;
 import stroom.editor.client.component.CodeEditor;
 import stroom.editor.client.component.CodeEditorController;
@@ -81,11 +82,6 @@ import java.util.function.Consumer;
 public class PipelineStructureController extends Controller {
 
     private static final PipelineResource PIPELINE_RESOURCE = GWT.create(PipelineResource.class);
-    private static final DocRef NULL_SELECTION = DocRef.builder()
-            .uuid("")
-            .name("None")
-            .type("")
-            .build();
 
     private final PipelineStructure view;
     private final DocSelectionController inheritSelection;
@@ -162,7 +158,7 @@ public class PipelineStructureController extends Controller {
 
         own(inheritSelection.addSelectionListener(selected -> {
             final DocRef selectedDocRef = selected;
-            if (selectedDocRef != null && !Objects.equals(selectedDocRef, NULL_SELECTION)) {
+            if (!DocRefUtil.isNullSelection(selectedDocRef)) {
                 if (Objects.equals(selectedDocRef.getUuid(), pipelineDoc.getUuid())) {
                     AlertEvent.fireWarn(
                             PipelineStructureController.this,
@@ -232,7 +228,7 @@ public class PipelineStructureController extends Controller {
     }
 
     /// @param detail What more its owner has to say about the element selected, shown above its
-    ///               properties (e.g. what an AI Translator has learned), which shows or hides itself.
+    ///               properties (e.g. what a Smart Pipeline has learned), which shows or hides itself.
     public void setElementDetail(final IsWidget detail) {
         view.setElementDetail(detail);
     }

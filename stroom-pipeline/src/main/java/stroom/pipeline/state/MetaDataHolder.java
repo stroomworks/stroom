@@ -38,4 +38,12 @@ public class MetaDataHolder extends AbstractHolder<MetaDataHolder> implements Ho
     public void setMetaDataProvider(final MetaDataProvider metaDataProvider) {
         this.metaDataProvider = metaDataProvider;
     }
+
+    /**
+     * The provider as it stands, so that a caller adding to the metadata can wrap what is there rather
+     * than replace it. Null where nothing has set one.
+     */
+    public MetaDataProvider getMetaDataProvider() {
+        return metaDataProvider;
+    }
 }

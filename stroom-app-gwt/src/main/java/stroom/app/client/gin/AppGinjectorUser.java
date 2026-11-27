@@ -32,6 +32,7 @@ import stroom.credentials.client.gin.CredentialsModule;
 import stroom.dashboard.client.gin.DashboardModule;
 import stroom.data.client.gin.StreamStoreModule;
 import stroom.data.store.impl.fs.client.gin.FsVolumeModule;
+import stroom.dataconnection.client.gin.DataConnectionModule;
 import stroom.datagen.client.gin.DataGenModule;
 import stroom.dictionary.client.gin.DictionaryModule;
 import stroom.dispatch.client.RestModule;
@@ -45,11 +46,11 @@ import stroom.importexport.client.gin.ImportExportConfigModule;
 import stroom.index.client.gin.IndexModule;
 import stroom.job.client.gin.JobModule;
 import stroom.kafka.client.gin.KafkaConfigModule;
+import stroom.learningflow.client.gin.LearningFlowModule;
 import stroom.node.client.gin.NodeModule;
 import stroom.openai.client.gin.OpenAIModelModule;
 import stroom.pathways.client.gin.PathwaysModule;
 import stroom.pipeline.client.gin.PipelineModule;
-import stroom.pipelinefactory.client.gin.PipelineFactoryModule;
 import stroom.planb.client.gin.PlanBModule;
 import stroom.preferences.client.gin.UserPreferencesGinjector;
 import stroom.preferences.client.gin.UserPreferencesModule;
@@ -65,7 +66,6 @@ import stroom.security.client.gin.SecurityGinjector;
 import stroom.security.client.gin.SecurityModule;
 import stroom.security.identity.client.gin.IdentityGinjector;
 import stroom.security.identity.client.gin.IdentityModule;
-import stroom.shapeshifter.client.gin.ShapeshifterAiModule;
 import stroom.sqlstore.client.gin.SqlTemporalStoreModule;
 import stroom.statistics.impl.sql.client.gin.StatisticsModule;
 import stroom.task.client.gin.TaskModule;
@@ -108,9 +108,8 @@ import com.google.web.bindery.event.shared.EventBus;
         GlobalConfigModule.class,
         OpenAIModelModule.class,
         PathwaysModule.class,
-        PipelineFactoryModule.class,
         PipelineModule.class,
-        ShapeshifterAiModule.class,
+        LearningFlowModule.class,
         PluginsModule.class,
         ReceiveRulesModule.class,
         PopupModule.class,
@@ -120,6 +119,7 @@ import com.google.web.bindery.event.shared.EventBus;
         SecurityModule.class,
         IdentityModule.class,
         ElasticClusterModule.class,
+        DataConnectionModule.class,
         ElasticIndexModule.class,
         AnalyticsModule.class,
         DataGenModule.class,

@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-/* What stops a Shapeshifter AI document learning anything, on its Feeds tab (ReadinessBanner): a banner of
+/* What stops a Learning Flow document learning anything, on its Feeds tab (ReadinessBanner): a banner of
    what is right and what to put right, shown only when something is wrong. */
 
 .readiness-banner {
     padding: 10px 14px;
     border: 1px solid var(--border-color);
     border-radius: 5px;
-    font-size: 12.5px;
+    font-size: calc((var(--font-size-12) + var(--font-size-13)) / 2);
     background-color: rgba(var(--status__color--warning-rgb), .15);
 }
 

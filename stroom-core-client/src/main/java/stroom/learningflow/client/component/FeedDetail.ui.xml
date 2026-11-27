@@ -1,0 +1,98 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- One pipeline's learning, on its Learning Status tab (feed-detail.css): where it stands and what to do about it,
+     the learned translation it runs, which opens for editing by hand,
+     with why its learning run stopped as details and suggestions where it stopped short, and a note to the AI;
+     folded under Learning history, its learning runs, how far the one shown got and its conversation, and the
+     streams that wait for it where any do -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:c="urn:import:stroom.widget.component.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tab="urn:import:stroom.widget.tab.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.learningflow.client.component">
+    <g:FlowPanel styleName="max feed-detail">
+        <tx:Label ui:field="nothing" styleName="feed-detail__nothing"
+                  text="Choose a feed to see where it stands and what it needs."/>
+        <g:FlowPanel ui:field="content" styleName="feed-detail__content">
+            <g:FlowPanel styleName="feed-detail__head">
+                <g:HTMLPanel styleName="feed-detail__titles">
+                    <h2 class="feed-detail__title" ui:field="title"/>
+                    <span class="feed-detail__subtitle" ui:field="subtitle"/>
+                </g:HTMLPanel>
+            </g:FlowPanel>
+
+            <g:FlowPanel ui:field="status" styleName="feed-detail__status">
+                <g:FlowPanel styleName="feed-detail__status-line">
+                    <tx:InlineLabel ui:field="chip" styleName="feed-detail__chip"/>
+                    <tx:InlineLabel ui:field="headline" styleName="feed-detail__headline"/>
+                </g:FlowPanel>
+                <tx:Label ui:field="detail" styleName="feed-detail__detail"/>
+                <g:FlowPanel ui:field="translationLine" styleName="feed-detail__translation" visible="false">
+                    <tx:InlineLabel styleName="feed-detail__translation-label" text="Translating with"/>
+                    <b:LinkButton ui:field="translation" addStyleNames="feed-detail__translation-link"/>
+                </g:FlowPanel>
+                <tx:Label ui:field="timeZone" styleName="feed-detail__note" visible="false"/>
+                <g:FlowPanel ui:field="detailsPart" styleName="feed-detail__report-part" visible="false">
+                    <tx:Label styleName="feed-detail__report-heading" text="Details"/>
+                    <c:AriaPanel ui:field="details" styleName="feed-detail__report-list" role="list"
+                                 ariaLabel="Details"/>
+                </g:FlowPanel>
+                <g:FlowPanel ui:field="evidencePart" styleName="feed-detail__report-part" visible="false">
+                    <tx:Label styleName="feed-detail__report-heading" text="How it was judged"/>
+                    <c:AriaPanel ui:field="evidence" styleName="feed-detail__report-list" role="list"
+                                 ariaLabel="How it was judged"/>
+                    <tx:Label ui:field="reviewed" styleName="feed-detail__note" visible="false"/>
+                </g:FlowPanel>
+                <g:FlowPanel ui:field="suggestionsPart" styleName="feed-detail__report-part" visible="false">
+                    <tx:Label styleName="feed-detail__report-heading" text="Suggestions"/>
+                    <c:AriaPanel ui:field="suggestions" styleName="feed-detail__report-list" role="list"
+                                 ariaLabel="Suggestions"/>
+                </g:FlowPanel>
+                <g:FlowPanel ui:field="actions" styleName="feed-detail__actions"/>
+            </g:FlowPanel>
+
+            <g:FlowPanel ui:field="noteBox" styleName="form feed-detail__note-box">
+                <form:FormGroup identity="learningFlowFeedNote" label="Note to the AI"
+                                helpText="Something about this feed the AI can't see in the sample: what a field means, a correction, a fact. It goes into every question asked about this feed from now on, including a run that is waiting.">
+                    <form:TextArea ui:field="note" addStyleNames="w-100 feed-detail__note-text"
+                                   placeholder="For example: the third field is the user's ID, and a status of 0 means the action succeeded."/>
+                </form:FormGroup>
+                <g:FlowPanel styleName="feed-detail__note-actions">
+                    <b:Button ui:field="sendNote" addStyleNames="button--contained-primary" text="Send note"/>
+                    <b:Button ui:field="showNotes" opensDialog="true"/>
+                </g:FlowPanel>
+            </g:FlowPanel>
+
+            <s:Disclosure ui:field="history" text="Learning history">
+                <g:FlowPanel styleName="feed-detail__history-body">
+                    <form:FormGroup ui:field="runGroup" identity="learningFlowFeedRun" label="Learning run"
+                                    helpText="Each time the feed is learned, from its first stream, a stream with something new in it, or a person asking, is a learning run. The newest is shown first."
+                                    addStyleNames="feed-detail__run">
+                        <l:SelectionBox ui:field="run" addStyleNames="w-100"/>
+                    </form:FormGroup>
+
+                    <g:FlowPanel ui:field="progressSection" styleName="feed-detail__progress-section">
+                        <g:FlowPanel styleName="feed-detail__progress-heading">
+                            <tx:InlineLabel styleName="feed-detail__heading" text="Progress"/>
+                            <tx:InlineLabel ui:field="progressWhere" styleName="feed-detail__progress-where"/>
+                        </g:FlowPanel>
+                        <c:AriaPanel ui:field="progress" styleName="feed-detail__progress" role="list"
+                                     ariaLabel="Learning run steps"/>
+                        <tx:Label ui:field="progressNote" styleName="feed-detail__note"/>
+                    </g:FlowPanel>
+
+                    <g:FlowPanel ui:field="tabBarPanel" styleName="feed-detail__tab-bar">
+                        <tab:LinkTabBar ui:field="tabBar" addStyleNames="max"/>
+                    </g:FlowPanel>
+                    <g:FlowPanel ui:field="conversationPane" styleName="feed-detail__pane">
+                        <s:ConversationList ui:field="conversation"/>
+                    </g:FlowPanel>
+                    <g:SimplePanel ui:field="waitingPane" styleName="feed-detail__waiting"/>
+                </g:FlowPanel>
+            </s:Disclosure>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

@@ -1,0 +1,23 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A pipeline's AI Translation tab (pipeline-ai-tab.css): which of its AI elements, where it has more than one;
+     then where that element's feed stands and what to do about it, or that it hasn't learned anything yet -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.learningflow.client.component">
+    <g:FlowPanel styleName="max dock-container-vertical pipeline-ai-tab">
+        <g:FlowPanel ui:field="chooser" styleName="dock-min form form-padding pipeline-ai-tab__chooser"
+                     visible="false">
+            <form:FormGroup identity="learningFlowPipelineElement" label="Smart Pipeline element"
+                            helpText="This pipeline has more than one Smart Pipeline element. Each learns its own translation, under the Learning Flow it names.">
+                <l:SelectionBox ui:field="element" addStyleNames="pipeline-ai-tab__element"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <tx:Label ui:field="nothing" styleName="dock-min pipeline-ai-tab__nothing" visible="false"/>
+        <g:SimplePanel ui:field="detailPanel" styleName="dock-max pipeline-ai-tab__detail">
+            <s:FeedDetail ui:field="feedDetail"/>
+        </g:SimplePanel>
+    </g:FlowPanel>
+</ui:UiBinder>

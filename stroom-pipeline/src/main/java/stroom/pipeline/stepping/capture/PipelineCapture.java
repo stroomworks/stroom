@@ -30,7 +30,7 @@ import java.util.Set;
 /// for everything else — a supervisor judging a candidate, a harness scoring a chain — which keeps what
 /// it captured in memory and never involves a session, a store or a step request.
 ///
-/// The seam exists because capture and stepping are not the same thing (§12 item 2 of the Shapeshifter
+/// The seam exists because capture and stepping are not the same thing (§12 item 2 of the Learning Flow
 /// AI design): running a pipeline and reading what each element made of its input is useful wherever
 /// something needs to judge a configuration, and until this was extracted the only way to do it was to
 /// be a stepping session.

@@ -34,6 +34,8 @@ import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
+import java.util.List;
+
 /// Shows who currently holds access, and takes it away.
 ///
 /// It is deliberately one screen covering sessions and tokens together. They stop different things -
@@ -84,18 +86,22 @@ public class UserAccessController extends ContentTabController
         revokeButton = userAccessList.getToolbar().button(
                 SvgImage.DELETE,
                 "End Sessions and Revoke Tokens for Selected User",
+                "End Sessions",
                 this::revokeSelected);
         revokeButton.setEnabled(false);
         // Revoking does not stop someone coming back, and under an external identity provider it barely
         // slows them down. Disabling is what does, so it belongs next to it rather than on a screen an
         // administrator has to know to go and find.
         openUserButton = userAccessList.getToolbar().button(SvgImage.EDIT, "Open Selected User (to disable them)",
+                "Open",
                 this::openSelectedUser);
         openUserButton.setEnabled(false);
 
         uiConfigCache.get(extendedUiConfig -> {
             if (extendedUiConfig != null) {
                 isExternalIdp = extendedUiConfig.isExternalIdentityProvider();
+                userAccessList.setTokensTracked(!isExternalIdp);
+                setEdgeAuthentication(view, extendedUiConfig.isEdgeAuthentication());
             }
         }, this);
 
@@ -104,6 +110,16 @@ public class UserAccessController extends ContentTabController
             showSessionsForSelectedUser();
         }));
         setButtonStates();
+    }
+
+    // Behind an authenticating edge proxy (e.g. an AWS ALB) ending a session does not sign the user out:
+    // the proxy authenticates their very next request, and it issues their tokens rather than Stroom, so
+    // there are none to revoke here. Offering the actions would let an administrator believe they had cut
+    // someone off when they had not, so they are hidden and the screen says what does work.
+    private void setEdgeAuthentication(final UserAccess view, final boolean edgeAuthentication) {
+        revokeButton.setVisible(!edgeAuthentication);
+        userSessionsList.setEdgeAuthentication(edgeAuthentication);
+        view.setEdgeAuthenticationNoteVisible(edgeAuthentication);
     }
 
     private void showSessionsForSelectedUser() {
@@ -143,10 +159,10 @@ public class UserAccessController extends ContentTabController
                         .create(USER_ACCESS_RESOURCE)
                         .method(res -> res.revokeAccess(row.getSubjectId()))
                         .onSuccess(tokensRevoked -> {
-                            getSelectionModel().clear();
+                            // The user in their place, unless still listed (as inactive), when the
+                            // sessions pane follows their changed row
+                            getSelectionModel().selectNextAfterRemove(List.of(row));
                             refresh();
-                            // The sessions we were showing have just been ended.
-                            userSessionsList.setUser(null, null);
                         })
                         .onFailure(restError -> {
                             AlertEvent.fireError(this, restError.getMessage(), null);

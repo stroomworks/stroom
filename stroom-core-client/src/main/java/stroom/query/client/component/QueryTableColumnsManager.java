@@ -26,6 +26,7 @@ import stroom.query.client.cell.ColumnHeaderHtmlUtil;
 import stroom.query.client.result.component.ColumnFilterEditorController;
 import stroom.query.client.result.component.ColumnFormatController;
 import stroom.query.client.result.component.ColumnValuesFilterController;
+import stroom.query.client.result.component.ColumnWidthController;
 import stroom.query.client.result.component.ConditionalFormattingRulesController;
 import stroom.query.client.result.table.ColumnValuesDataSupplier;
 import stroom.query.client.result.table.FilterCellManager;
@@ -33,9 +34,11 @@ import stroom.query.shared.QueryTablePreferences;
 import stroom.svg.shared.SvgImage;
 import stroom.util.shared.NullSafe;
 import stroom.widget.component.client.ControllerDialog;
+import stroom.widget.datagrid.client.DataGrid;
 import stroom.widget.datagrid.client.Heading;
 import stroom.widget.datagrid.client.HeadingListener;
 import stroom.widget.datagrid.client.SortIcon;
+import stroom.widget.datagrid.client.model.TextScale;
 import stroom.widget.menu.client.HideMenuEvent;
 import stroom.widget.menu.client.IconMenuItem;
 import stroom.widget.menu.client.IconParentMenuItem;
@@ -46,6 +49,7 @@ import stroom.widget.popup.client.PopupPosition.PopupLocation;
 import stroom.widget.popup.client.PopupSize;
 import stroom.widget.popup.client.PopupType;
 import stroom.widget.util.client.ElementUtil;
+import stroom.widget.util.client.ListMoves;
 import stroom.widget.util.client.Rect;
 
 import com.google.gwt.dom.client.Element;
@@ -66,6 +70,7 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
     private final EventBus eventBus;
     private final QueryResultTableController tableController;
     private final Provider<ColumnFormatController> columnFormatProvider;
+    private final Provider<ColumnWidthController> columnWidthProvider;
     private final Provider<ConditionalFormattingRulesController> rulesProvider;
     private final Provider<ColumnFilterEditorController> columnFilterEditorProvider;
     private final ColumnValuesFilterController columnValuesFilter;
@@ -77,12 +82,14 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
     public QueryTableColumnsManager(final EventBus eventBus,
                                     final QueryResultTableController tableController,
                                     final Provider<ColumnFormatController> columnFormatProvider,
+                                    final Provider<ColumnWidthController> columnWidthProvider,
                                     final Provider<ConditionalFormattingRulesController> rulesProvider,
                                     final Provider<ColumnFilterEditorController> columnFilterEditorProvider,
                                     final ColumnValuesFilterController columnValuesFilter) {
         this.eventBus = eventBus;
         this.tableController = tableController;
         this.columnFormatProvider = columnFormatProvider;
+        this.columnWidthProvider = columnWidthProvider;
         this.rulesProvider = rulesProvider;
         this.columnFilterEditorProvider = columnFilterEditorProvider;
         this.columnValuesFilter = columnValuesFilter;
@@ -316,6 +323,23 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
         tableController.setPreferredColumns(columns);
     }
 
+    // One place among the columns shown, past any hidden: as dragging its header one place does
+    private void moveOnePlace(final Column column, final boolean left) {
+        final List<Column> columns = getColumns();
+        if (ListMoves.moveOnePlace(columns, column, left, Column::isVisible)) {
+            tableController.setPreferredColumns(columns);
+        }
+    }
+
+    // The width typed in the Column Width dialog, as dragging the header's edge sets it. Widths are
+    // kept at the medium text size, and drawn larger or smaller with the text size
+    private void resize(final Column column, final Element th) {
+        final int width = TextScale.toMedium(th.getOffsetWidth(), DataGrid.textScale());
+        columnWidthProvider.get().show(tableController, width, newWidth ->
+                tableController.setPreferredColumns(
+                        replaceColumns(getColumns(), column, column.copy().width(newWidth).build())));
+    }
+
     // The column with the id, or null if there is none
     private static Column findColumn(final List<Column> columns, final String id) {
         return columns.stream()
@@ -470,9 +494,13 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
         // The values filter, as the header's filter icon opens it, for the keyboard
         menuItems.add(createValuesFilterMenu(column, colIndex, th));
 
-        // Create move menu.
+        // Create move menu: to the start, one place either way, to the end; and the width, so the
+        // keyboard can do what dragging a header does
         menuItems.add(createMoveFirstMenu(column));
+        menuItems.add(createMoveOneMenu(column, true));
+        menuItems.add(createMoveOneMenu(column, false));
         menuItems.add(createMoveLastMenu(column));
+        menuItems.add(createResizeMenu(column, th));
 
         // Create hide menu.
         menuItems.add(createHideMenu(column));
@@ -572,18 +600,43 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
                 .build();
     }
 
+    private Item createMoveOneMenu(final Column column, final boolean left) {
+        return new IconMenuItem.Builder()
+                .priority(left
+                        ? 8
+                        : 9)
+                .icon(left
+                        ? SvgImage.ARROW_LEFT
+                        : SvgImage.ARROW_RIGHT)
+                .text(left
+                        ? "Move Column Left"
+                        : "Move Column Right")
+                .enabled(ListMoves.canMoveOnePlace(getColumns(), column, left, Column::isVisible))
+                .command(() -> moveOnePlace(column, left))
+                .build();
+    }
+
     private Item createMoveLastMenu(final Column column) {
         return new IconMenuItem.Builder()
-                .priority(8)
+                .priority(10)
                 .icon(SvgImage.STEP_FORWARD)
                 .text("Move Column to End")
                 .command(() -> moveLast(column))
                 .build();
     }
 
+    private Item createResizeMenu(final Column column, final Element th) {
+        return new IconMenuItem.Builder()
+                .priority(11)
+                .icon(SvgImage.RESIZE)
+                .text("Resize Column")
+                .command(() -> resize(column, th))
+                .build();
+    }
+
     private Item createHideMenu(final Column column) {
         return new IconMenuItem.Builder()
-                .priority(10)
+                .priority(12)
                 .icon(SvgImage.HIDE)
                 .text("Hide Column")
                 .command(() -> hideColumn(column))
@@ -611,7 +664,7 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
         }
 
         return new IconParentMenuItem.Builder()
-                .priority(11)
+                .priority(13)
                 .icon(SvgImage.SHOW)
                 .text("Show Hidden Column")
                 .children(menuItems)
@@ -620,7 +673,7 @@ public class QueryTableColumnsManager implements HeadingListener, FilterCellMana
 
     private Item createConditionalFormattingMenu(final Column column) {
         return new IconMenuItem.Builder()
-                .priority(12)
+                .priority(14)
                 .icon(SvgImage.FORMAT)
                 .text("Edit Conditional Formatting for Table")
                 .command(() -> {

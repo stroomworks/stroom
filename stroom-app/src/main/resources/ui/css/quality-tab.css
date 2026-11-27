@@ -15,7 +15,7 @@
  */
 
 /*
-   A Smart Pipeline's Quality Assurance tab (stroom.shapeshifter.client.component.QualityTab): which AI Translator
+   A Smart Pipeline's Quality Assurance tab (stroom.learningflow.client.component.QualityTab): which Smart Pipeline
    element, where there are several; then sections, each after the first starting at a rule: the figures its
    translation is judged by, as tiles that wrap, each tinted by whether it calls for attention; its volume; its
    regression set, a record at a time; and, folded, its learning runs' scores in a grid.
@@ -31,7 +31,7 @@
 }
 
 .quality-tab__element {
-    width: 360px;
+    width: calc(360px * var(--text-scale));
     max-width: 100%;
 }
 
@@ -45,7 +45,7 @@
     flex-direction: column;
     gap: 24px;
     padding: 12px 16px 16px;
-    max-width: 1100px;
+    max-width: calc(1100px * var(--text-scale));
 }
 
 /* A section: more room between sections than within one, and a rule where each after the first starts */
@@ -68,7 +68,7 @@
 
 .quality-tab__title {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--font-size-18);
     font-weight: 600;
 }
 
@@ -119,17 +119,17 @@
 
 .quality-tab__figure-label {
     color: var(--text-color--low-emphasis);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 .quality-tab__figure-value {
-    font-size: 22px;
+    font-size: var(--font-size-22);
     font-weight: 600;
 }
 
 .quality-tab__figure-note {
     color: var(--text-color--low-emphasis);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 /* The runs' grid, a fixed height inside the tab, which scrolls as a whole */
@@ -142,7 +142,7 @@
 
 /* The volume chart: one measure, one colour, thin bars with a gap, on a recessive baseline */
 .quality-tab__chart {
-    max-width: 640px;
+    max-width: calc(640px * var(--text-scale));
 }
 
 .quality-tab__chart-svg {
@@ -172,7 +172,7 @@
 
 .quality-tab__chart-label {
     fill: var(--text-color--low-emphasis);
-    font-size: 11px;
+    font-size: var(--font-size-11);
 }
 
 .quality-tab__days {
@@ -228,7 +228,7 @@
 
 .quality-tab__sample-title {
     color: var(--text-color--low-emphasis);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 .quality-tab__code {
@@ -238,7 +238,7 @@
     border-radius: 4px;
     background-color: rgba(127, 127, 127, .1);
     font-family: monospace;
-    font-size: 12px;
+    font-size: var(--font-size-12);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }

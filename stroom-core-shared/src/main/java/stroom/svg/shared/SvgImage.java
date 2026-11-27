@@ -655,6 +655,18 @@ public enum SvgImage {
             "rix(1,0,-0.00408154,0.99999167,0,0)\" /></g></svg> \n" +
             ""),
 
+    DOCUMENT_DATA_CONNECTION("document/DataConnection.svg", "svg-image__document-data-connection", "" +
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1792\" height=\"1792\" viewBox=\"0 0 " +
+            "1792 1792\"><path style=\"fill:var(--icon-colour__purple)\" d=\"M896 768q237 0 443-4" +
+            "3t325-127v170q0 69-103 128t-280 93.5-385 34.5-385-34.5-280-93.5-103-128v-170q119" +
+            " 84 325 127t443 43zm0 768q237 0 443-43t325-127v170q0 69-103 128t-280 93.5-385 34" +
+            ".5-385-34.5-280-93.5-103-128v-170q119 84 325 127t443 43zm0-384q237 0 443-43t325-" +
+            "127v170q0 69-103 128t-280 93.5-385 34.5-385-34.5-280-93.5-103-128v-170q119 84 32" +
+            "5 127t443 43zm0-1152q208 0 385 34.5t280 93.5 103 128v128q0 69-103 128t-280 93.5-" +
+            "385 34.5-385-34.5-280-93.5-103-128v-128q0-69 103-128t280-93.5 385-34.5z\"/></svg>" +
+            " \n" +
+            ""),
+
     DOCUMENT_DATA_GEN("document/DataGen.svg", "svg-image__document-data-gen", "" +
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1792\" height=\"1792\" viewBox=\"0 0 " +
             "1792 1792\"><path style=\"fill:var(--icon-colour__orange)\" d=\"m 938.50195,211.4100" +
@@ -1182,17 +1194,6 @@ public enum SvgImage {
             "45 1092.1016 C 931 1071.1016 916 1045.2683 900 1014.6016 C 899.63745 1014.2954 8" +
             "99.28365 1014.0042 898.92188 1013.6992 C 890.80126 996.429 881.35206 977.6246 87" +
             "0.56641 957.2793 z \"/></svg>\n" +
-            ""),
-
-    DOCUMENT_PIPELINE_FACTORY("document/PipelineFactory.svg", "svg-image__document-pipeline-factory", "" +
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1792\" height=\"1792\" viewBox=\"0 0 " +
-            "1792 1792\"><rect style=\"fill:var(--icon-colour__green)\" x=\"64\" y=\"448\" width=\"57" +
-            "6\" height=\"896\" rx=\"96\" ry=\"96\"/><g style=\"fill:none;stroke:var(--icon-colour__b" +
-            "lue);stroke-width:128;stroke-linecap:round\"><path d=\"M 640 640 L 1440 640\"/><pat" +
-            "h d=\"M 640 896 L 1440 896\"/><path d=\"M 640 1152 L 1440 1152\"/></g><g style=\"fill" +
-            ":var(--icon-colour__blue)\"><path d=\"M 1376 480 L 1728 640 L 1376 800 Z\"/><path d" +
-            "=\"M 1376 736 L 1728 896 L 1376 1056 Z\"/><path d=\"M 1376 992 L 1728 1152 L 1376 1" +
-            "312 Z\"/></g></svg> \n" +
             ""),
 
     DOCUMENT_PLAN_B("document/PlanB.svg", "svg-image__document-plan-b", "" +

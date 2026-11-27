@@ -18,6 +18,7 @@ package stroom.gwt.workbench.client.app.gin.editors;
 
 import stroom.ai.client.component.AskStroomAiController;
 import stroom.aws.s3.client.component.S3ConfigEditor;
+import stroom.dataconnection.client.component.DataConnectionEditor;
 import stroom.datagen.client.component.DataGenEditor;
 import stroom.document.asset.client.component.DocumentAssetSelectionController;
 import stroom.document.asset.client.component.DocumentAssetsTabController;
@@ -33,17 +34,16 @@ import stroom.gitrepo.client.component.GitRepoEditor;
 import stroom.gwt.workbench.client.app.screen.ScreenGinjector;
 import stroom.index.client.component.LuceneIndexEditor;
 import stroom.kafka.client.component.KafkaConfigEditor;
+import stroom.learningflow.client.component.LearningFlowEditor;
+import stroom.learningflow.client.component.StageDecisionPaneController;
 import stroom.openai.client.component.OpenAIModelEditor;
 import stroom.pathways.client.component.PathwaysEditor;
 import stroom.pipeline.client.component.TextConverterEditor;
 import stroom.pipeline.client.component.XsltEditor;
-import stroom.pipelinefactory.client.component.PipelineFactoryEditor;
 import stroom.script.client.component.ScriptEditor;
 import stroom.search.elastic.client.component.ElasticClusterEditor;
 import stroom.search.elastic.client.component.ElasticIndexEditor;
 import stroom.search.solr.client.component.SolrIndexEditor;
-import stroom.shapeshifter.client.component.ShapeshifterAiEditor;
-import stroom.shapeshifter.client.component.StageDecisionPaneController;
 import stroom.sqlstore.client.component.SqlTemporalStoreEditor;
 import stroom.sqlstore.client.component.SqlTemporalStoreSettingsController;
 import stroom.visualisation.client.component.VisualisationEditor;
@@ -73,6 +73,9 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
 
     /// @return A Documentation document's editor, as `DocumentationPlugin` opens it.
     DocumentationEditor getDocumentationEditor();
+
+    /// @return A Data Connection's editor, as `DataConnectionPlugin` opens it.
+    DataConnectionEditor getDataConnectionEditor();
 
     /// @return An Elastic Cluster's editor, as `ElasticClusterPlugin` opens it.
     ElasticClusterEditor getElasticClusterEditor();
@@ -161,17 +164,15 @@ public interface EditorsScreenGinjector extends ScreenGinjector {
     /// @return A Feed's editor, as `FeedPlugin` opens it.
     FeedEditor getFeedEditor();
 
-    // Shapeshifter AI and the Pipeline Factory
+    // Learning Flow
 
-    /// @return A Shapeshifter AI document's editor, as `ShapeshifterAiPlugin` opens it.
-    ShapeshifterAiEditor getShapeshifterAiEditor();
+    /// @return A Learning Flow document's editor, as `LearningFlowPlugin` opens it.
+    LearningFlowEditor getLearningFlowEditor();
 
-    /// @return A supervised stage's pane in the stepping screen, as `ShapeshifterAiPlugin` registers
-    /// it with `ElementStepDetailsPaneRegistry`.
+    /// @return The pane the stepping screen shows for a Learning Flow element, which explains what the
+    /// element decided for the stream, as `LearningFlowPlugin` registers it with
+    /// `ElementStepDetailsPaneRegistry`.
     StageDecisionPaneController getStageDecisionPane();
-
-    /// @return A Pipeline Factory's editor, as `PipelineFactoryPlugin` opens it.
-    PipelineFactoryEditor getPipelineFactoryEditor();
 
     // AI
 

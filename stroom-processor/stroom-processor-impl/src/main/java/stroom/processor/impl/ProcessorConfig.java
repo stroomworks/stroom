@@ -345,7 +345,7 @@ public class ProcessorConfig extends AbstractConfig implements IsStroomConfig, H
     }
 
     @JsonPropertyDescription("The minimum time a deferred task waits before it is tried again. An element " +
-                             "defers a task when what its stream needs is not there yet (a Shapeshifter AI " +
+                             "defers a task when what its stream needs is not there yet (a Learning Flow " +
                              "translation still being learned, say): the task is put back, nothing is written " +
                              "for the stream, and the reaper returns it to CREATED once this long has passed " +
                              "since it was deferred. Whatever the task waited for may wake it sooner. Honoured " +

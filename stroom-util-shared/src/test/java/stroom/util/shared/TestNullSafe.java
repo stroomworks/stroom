@@ -16,6 +16,7 @@
 
 package stroom.util.shared;
 
+import stroom.test.common.PerformanceTest;
 import stroom.test.common.TestUtil;
 import stroom.test.common.TestUtil.TestSetup;
 import stroom.test.common.TestUtil.TimedCase;
@@ -760,6 +761,26 @@ class TestNullSafe {
     }
 
     @TestFactory
+    Stream<DynamicTest> testHasMoreThanOne() {
+        final List<String> emptyList = Collections.emptyList();
+        final List<String> singleItemList = List.of("foo");
+        final List<String> multiItemList = List.of("foo", "bar");
+
+        return TestUtil.buildDynamicTestStream()
+                .withWrappedInputType(new TypeLiteral<List<String>>() {
+                })
+                .withOutputType(boolean.class)
+                .withTestFunction(testCase ->
+                        NullSafe.hasMoreThanOneItem(testCase.getInput()))
+                .withSimpleEqualityAssertion()
+                .addCase(null, false)
+                .addCase(emptyList, false)
+                .addCase(singleItemList, false)
+                .addCase(multiItemList, true)
+                .build();
+    }
+
+    @TestFactory
     Stream<DynamicTest> testHasOneItem() {
         return TestUtil.buildDynamicTestStream()
                 .withWrappedInputType(new TypeLiteral<List<String>>() {
@@ -1129,6 +1150,46 @@ class TestNullSafe {
                 .addCase("foo ", "foo")
                 .addCase(" foo ", "foo")
                 .addCase(" \n\tfoo\n\t ", "foo")
+                .build();
+    }
+
+    @TestFactory
+    Stream<DynamicTest> testStartsWith() {
+        return TestUtil.buildDynamicTestStream()
+                .withInputTypes(String.class, String.class)
+                .withOutputType(boolean.class)
+                .withTestFunction(testCase ->
+                        NullSafe.startsWith(testCase.getInput()._1, testCase.getInput()._2))
+                .withSimpleEqualityAssertion()
+                .addCase(Tuple.of(null, "foo"), false)
+                .addCase(Tuple.of("", "foo"), false)
+                .addCase(Tuple.of("bar", "foo"), false)
+                .addCase(Tuple.of("barfoo", "foo"), false)
+                .addCase(Tuple.of("_foo", "foo"), false)
+                .addCase(Tuple.of("_foo_", "foo"), false)
+                .addCase(Tuple.of("foobar", ""), true)
+                .addCase(Tuple.of("foobar", "foo"), true)
+                .addThrowsCase(Tuple.of("foobar", null), NullPointerException.class)
+                .build();
+    }
+
+    @TestFactory
+    Stream<DynamicTest> testEndsWith() {
+        return TestUtil.buildDynamicTestStream()
+                .withInputTypes(String.class, String.class)
+                .withOutputType(boolean.class)
+                .withTestFunction(testCase ->
+                        NullSafe.endsWith(testCase.getInput()._1, testCase.getInput()._2))
+                .withSimpleEqualityAssertion()
+                .addCase(Tuple.of(null, "bar"), false)
+                .addCase(Tuple.of("", "bar"), false)
+                .addCase(Tuple.of("foo", "bar"), false)
+                .addCase(Tuple.of("barfoo", "bar"), false)
+                .addCase(Tuple.of("bar_", "bar"), false)
+                .addCase(Tuple.of("_bar_", "bar"), false)
+                .addCase(Tuple.of("barfoo", ""), true)
+                .addCase(Tuple.of("foobar", "bar"), true)
+                .addThrowsCase(Tuple.of("foobar", null), NullPointerException.class)
                 .build();
     }
 
@@ -2580,6 +2641,7 @@ class TestNullSafe {
     }
 
     @Test
+    @PerformanceTest
     @Disabled
     void testPerformanceVsOptional() {
         final int iterations = 100_000_000;
@@ -2638,6 +2700,7 @@ class TestNullSafe {
         }
     }
 
+    @PerformanceTest
     @Disabled
     @Test
     void testIsNullPerf() {
@@ -2690,6 +2753,7 @@ class TestNullSafe {
                 optCase);
     }
 
+    @PerformanceTest
     @Disabled // Long-running manual perf test
     @Test
     void testGetPerf() {

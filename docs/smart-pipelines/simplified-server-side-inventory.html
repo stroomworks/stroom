@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simplified Server Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Shared styles for the AI translations notes, following the stroomworks.com design tokens. */
+
+:root {
+  --bg: #ffffff;
+  --bg-sunken: #f4f6f8;
+  --surface: #f8f9fb;
+  --surface-2: #eef1f5;
+  --hair: #dee2e9;
+  --hair-strong: #c6ccd6;
+  --fg: #14161a;
+  --fg-muted: #576070;
+  --fg-faint: #646d7c;
+  --accent: #bb4b00;
+  --accent-tint: #fff1e6;
+  --brand-orange: #ff6f00;
+  --wordmark-ink: #4d4d4d;
+  --data-1: #0891b2;
+  --data-2: #7c3aed;
+  --ok: #047857;
+  --warn: #a16207;
+  --danger: #b91c1c;
+  --ok-tint: #e7f5ef;
+  --warn-tint: #fbf3df;
+  --danger-tint: #fcecec;
+  --shadow-card: 0 1px 2px #10141e0a, 0 8px 24px -12px #10141e1f;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0b0d;
+    --bg-sunken: #07080a;
+    --surface: #101318;
+    --surface-2: #171b22;
+    --hair: #242832;
+    --hair-strong: #363c48;
+    --fg: #e9ecf1;
+    --fg-muted: #9aa3b2;
+    --fg-faint: #858e9c;
+    --accent: #ff6f00;
+    --accent-tint: #1e1408;
+    --wordmark-ink: #c9ced8;
+    --data-1: #12a2c0;
+    --data-2: #8b5cf6;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --ok-tint: #0d1f18;
+    --warn-tint: #211a08;
+    --danger-tint: #261313;
+    --shadow-card: 0 1px 0 #ffffff08 inset, 0 16px 40px -24px #000c;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0b0d;
+  --bg-sunken: #07080a;
+  --surface: #101318;
+  --surface-2: #171b22;
+  --hair: #242832;
+  --hair-strong: #363c48;
+  --fg: #e9ecf1;
+  --fg-muted: #9aa3b2;
+  --fg-faint: #858e9c;
+  --accent: #ff6f00;
+  --accent-tint: #1e1408;
+  --wordmark-ink: #c9ced8;
+  --data-1: #12a2c0;
+  --data-2: #8b5cf6;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --ok-tint: #0d1f18;
+  --warn-tint: #211a08;
+  --danger-tint: #261313;
+  --shadow-card: 0 1px 0 #ffffff08 inset, 0 16px 40px -24px #000c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 15.5px/1.65 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* ---------- Header and footer ---------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hair);
+}
+.site-header .wrap, .site-footer .wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 60px;
+  flex-wrap: wrap;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  text-decoration: none;
+}
+.wordmark .mark { width: 26px; height: 26px; display: block; }
+.wordmark .wordmark-type { height: 19px; width: auto; display: block; }
+.wordmark .sub { font-weight: 400; font-size: 0.875rem; color: var(--fg-muted); padding-left: 12px; border-left: 1px solid var(--hair-strong); line-height: 1.2; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.site-header nav { margin-left: auto; display: flex; gap: 18px; font-size: 0.875rem; }
+.site-header nav a { color: var(--fg-muted); text-decoration: none; }
+.site-header nav a:hover { color: var(--fg); }
+.site-header nav a[aria-current="page"] { color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); padding-bottom: 2px; }
+
+.site-footer { border-top: 1px solid var(--hair); background: var(--bg-sunken); margin-top: 64px; }
+.site-footer .wrap { padding-top: 28px; padding-bottom: 36px; font-size: 0.8125rem; color: var(--fg-muted); }
+
+/* ---------- Page body ---------- */
+
+main { max-width: 1080px; margin: 0 auto; padding: 48px 20px 40px; }
+@media (min-width: 640px) { main, .site-header .wrap, .site-footer .wrap { padding-left: 32px; padding-right: 32px; } }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  margin: 0 0 14px;
+}
+.eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--accent); }
+
+h1 {
+  font-size: clamp(2rem, 4.6vw, 3rem);
+  line-height: 1.06;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+h2 {
+  font-size: clamp(1.45rem, 2.6vw, 1.9rem);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 64px 0 12px;
+  padding-left: 16px;
+  border-left: 2px solid var(--accent);
+  text-wrap: balance;
+}
+h3 { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; margin: 32px 0 6px; }
+h4 { font-size: 0.8125rem; font-weight: 600; margin: 20px 0 4px; color: var(--fg); }
+p, li { max-width: 78ch; }
+.meta { color: var(--fg-muted); font-size: 1.0625rem; margin: 0 0 28px; max-width: 72ch; }
+.group-heading { margin-top: 48px; }
+
+code {
+  font: 500 0.85em/1.4 var(--font-mono);
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+pre {
+  font: 0.82rem/1.6 var(--font-mono);
+  background: var(--bg-sunken);
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 8px 0 16px;
+}
+pre code { background: none; padding: 0; }
+pre .c { color: var(--fg-faint); }
+
+/* Lists of short points marked with the accent rule. */
+ul.marks { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+ul.marks li { border-left: 2px solid var(--accent); padding-left: 10px; line-height: 1.3; }
+
+/* ---------- Contents ---------- */
+
+nav.toc {
+  border-top: 2px solid var(--fg);
+  border-bottom: 1px solid var(--hair);
+  padding: 14px 0 16px;
+  margin: 24px 0 8px;
+}
+nav.toc strong { font-size: 0.8125rem; font-weight: 600; }
+nav.toc ol { margin: 8px 0 0; padding-left: 22px; }
+nav.toc ol.cols { columns: 2; column-gap: 40px; }
+@media (max-width: 640px) { nav.toc ol.cols { columns: 1; } }
+nav.toc li { margin: 2px 0; }
+nav.toc a { color: var(--fg); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); }
+
+/* ---------- Callouts, cards, panels ---------- */
+
+.callout {
+  border-left: 2px solid var(--accent);
+  background: var(--accent-tint);
+  padding: 12px 18px;
+  margin: 20px 0;
+}
+.callout p { margin: 6px 0; }
+.callout.warn { border-color: var(--warn); background: var(--warn-tint); }
+.callout.bad { border-color: var(--danger); background: var(--danger-tint); }
+.callout.ok { border-color: var(--ok); background: var(--ok-tint); }
+
+.figure, .option {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  box-shadow: var(--shadow-card);
+  margin: 20px 0;
+}
+.figure { padding: 14px; overflow-x: auto; }
+.figure svg { display: block; width: 100%; min-width: 720px; height: auto; }
+.option { padding: 4px 22px 18px; border-top: 2px solid var(--accent); }
+.option > h3 { margin-top: 18px; font-size: 1.25rem; }
+.caption { color: var(--fg-muted); font-size: 0.85rem; margin: 8px 2px 0; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid2 > div { min-width: 0; }
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+.panel { border: 1px solid var(--hair); border-radius: 2px; padding: 8px 16px; background: var(--bg); }
+.panel h4 { margin-top: 10px; }
+.verdict { font-weight: 600; border-left: 2px solid var(--accent); padding-left: 12px; }
+
+/* ---------- Tables ---------- */
+
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; line-height: 1.55; }
+th, td { text-align: left; vertical-align: top; padding: 10px 16px 10px 0; border-bottom: 1px solid var(--hair); }
+thead th, tr:first-child th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 2px solid var(--fg);
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+td { color: var(--fg-muted); }
+td:first-child { color: var(--fg); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Dependency structure matrix. */
+.dsm th, .dsm td { text-align: center; padding: 6px 6px; font-variant-numeric: tabular-nums; }
+.dsm td:first-child { color: inherit; }
+.dsm th.row { text-align: left; padding-right: 12px; }
+.dsm td.self { background: var(--surface-2); }
+.dsm td.cyc { background: var(--danger-tint); color: var(--danger); font-weight: 700; }
+.dsm td.dep { background: var(--accent-tint); color: var(--fg); }
+
+/* ---------- Badges ---------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.6;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.tag::before { content: ""; width: 6px; height: 6px; background: currentColor; }
+.tag.bad { color: var(--danger); }
+.tag.warn { color: var(--warn); }
+.tag.ok { color: var(--ok); }
+.tag.info { color: var(--accent); }
+
+/* ---------- Misc ---------- */
+
+ol.findings > li { margin-bottom: 10px; }
+dl.terms { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 10px 0; }
+dl.terms dt { font-weight: 600; }
+dl.terms dd { margin: 0; }
+@media (max-width: 620px) { dl.terms { grid-template-columns: 1fr; } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 0.8125rem; color: var(--fg-muted); margin: 10px 2px 0; }
+.legend span::before { content: ""; display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--fg-faint); vertical-align: middle; margin-right: 6px; }
+.legend .l-bad::before { border-top-color: var(--danger); }
+.legend .l-dash::before { border-top: 2px dashed var(--danger); }
+
+/* ---------- Diagrams ---------- */
+
+svg text { fill: var(--fg); font-family: var(--font-sans); }
+svg .t-title { font-size: 13px; font-weight: 600; }
+svg .t-sub { font-size: 11px; fill: var(--fg-muted); }
+svg .t-head, svg .t-lane { font-size: 12px; font-weight: 600; fill: var(--fg-muted); }
+svg .t-edge { font-size: 10.5px; fill: var(--fg-muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+svg .t-edge.bad { fill: var(--danger); }
+svg .box { fill: var(--bg); stroke: var(--hair-strong); stroke-width: 1.25; }
+svg .box.focus { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.5; }
+svg .box.ai, svg .box.db { fill: var(--warn-tint); stroke: var(--warn); }
+svg .box.gone { fill: var(--danger-tint); stroke: var(--danger); stroke-dasharray: 5 3; }
+svg .box.ext { fill: var(--surface-2); stroke: var(--hair-strong); stroke-dasharray: 4 3; }
+svg .lane, svg .div { fill: none; stroke: var(--hair); stroke-dasharray: 2 4; }
+svg .e { fill: none; stroke: var(--fg-faint); stroke-width: 1.4; }
+svg .e.bad { stroke: var(--danger); }
+svg .e.dash { stroke-dasharray: 6 4; }
+svg .ah { fill: var(--fg-faint); }
+svg .ah.bad { fill: var(--danger); }
+</style>
+</head>
+<body>
+<header class="site-header"><div class="wrap">
+  <span class="wordmark"><img class="mark" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnoAAAJ6CAYAAAC/qu8MAAAYrElEQVR42u3dT4hl5Z3H4e8pxARXPeDgOATBHkO5cC2OLUQyVIPJ4JBVbzqCIQgFA6cX2cgMWYRINll4QGiQgGDcuArKqFDFSAbUEdcuLHQ6IGGcEGFciXHhmUXd7rmt1VX33rq3znnf8zwQiNp/qn+3uvtTv/ecc5sUpm/znSQPJLk/yfkk9yS5O8mdSc4luSPJ7Uma2f8AAE7yVZIvk3ye5LMknyb5JMnHSa4l+SDJ+02XP5b0ixp9CPVtHkzyaJKHkzw4izoAgCF8kuS9JO8k+X3T5T2ht3zc/SjJ40keS3KXzykAYKT+lOSNJK82XX4n9G4dd48kuZzkUg6PYAEASvJZkpeTvNR0eUvoHQbek0meSvKQzw8AoBLvJnm+6fLCJEOvb9MmaZPc63MBAKjUH5J0TZduEqHXt/lpkqdzeMcsAMAUXEvyq6bLb6oMvb7N95P8IskFrzUAMFFvJ/l50+XNKkKvb/OtJL9O8s9eWwCAJMlzSX7WdPlLsaHXt/lBki7JfV5PAICbfJSkbbq8vqmfYGuDkffLJK+JPACAI92X5LVZM23E2jd6fZu/TvJCkh96/QAAFvJakiebLn8ebejN3q7spSTf9XoBACzlwySX1/m2amsLvb7N4zl8GvS3vU4AACv5Ismlpsur6/jB1nKNXt/mx0leEXkAAKfy7SSvzNpq+NCbvYXZi14XAIC1eXHWWKdyqqPbWW2KPACAzXii6fLbMw+92TV5r5g/AMBG/dOq1+ytFHqzu2v/I67JAwDYtC+SfG+Vu3GXDr3Zc/LejkeoAACclQ+TXFj2OXur3IzxgsgDADhT35012FKWCr3ZW3R4xwsAgLP3w2XfLm3ho9u+zQ9y+PYcAAAMGHxNl9fXFnp9m28leT+Hb74LAMBwPkryQNPlLyd9w0WPbn8t8gAARuG+WZud6MSNXt/m+0n+3UwBAEblH5oubx73DRbZ6P3CHAEARufERjs29Po2P01ywRwBAEbnwqzVVgu9JE+bIQDAaD29Uuj1bdok580PAGC0zs+abbnQS279nQAAGI3lQq9v82SSe80NAGD07p2122Khl+QpMwMAKMZTC4Ve3+aRJA+ZFwBAMR6aNdzxoZfkslkBABTn8iKhd8mcAACKc+nY0Ovb/CjJOXMCACjOuVnLHR16SR43IwCAYj1+XOg9Zj4AAMV67MjQ69s8mOQu8wEAKNZds6a7OfSSPGo2AADFe/So0HvYXAAAivfwUaH3oLkAABTv5qPbvs13ktxtLgAAxbt71nY3NnoPmAkAQDUemA+9+80DAKAa98+H3nnzAACoxvn50LvHPAAAqnHPfOi5EQMAoB53z4feneYBAFCNO+dD75x5AABU49x86N1hHgAA1bhjPvRuNw8AgGrcPh96jXkAAFSjEXoAABMIPQAAKiP0AACEHgAAQg8AgMHdZgQUoU/S9eYAQJmuDHPfq9BjeM8KOAAq1TaDPttE6CHoAGCdDvaTqxcP///AD7ATeog6AFiHK+N7LLHQQ9QBQEVxJ/QQdwBQadwJPYQdACxj/rq7ggg9xB0A3EpB2zuhh7gDgJMUur0Teog7ALiVwrd3Qg9xBwATCDyhJ/AAQOBVTugJPACYjoHfkkzoIe4AYN2ub++aaf2yhZ7AA4D6A2+ihJ7AAwCBJ/QQeAAg8IQeAg8ABJ7QQ+ABgMATegg8ABB4Qk/kAUCVJvYcPKEn8ACgfgf7ydWLIk/oCTwAqIpjWqEn8gBA4CH0BB4ACLxJ2DKCEdjdE3kAcLAv8tbMRm9oAg8ABJ7QE3kAIPAQegIPAMbt+uNSEHoiDwAqYosn9KrTJ+lEHgAT5l0thF6VbPEAmLorIk/oiTwAqC/wGIzn6Ik8ABB5lbLRE3gAIPAqZaMn8gBA5FXKRk/kAYDAq5SNnsgDAJFXKRs9kQcAq/FcvNGz0RN5ALA8z8Urgo3eqnb3ku0dcwBgmpGH0KuWLR4AAo8COLoVeQAg8oQeIg+AyTnYF3kFc3Qr8gDgaAKveDZ6Ig8ARJ7QE3kAIPIoiaNbkQcAhzwAuTo2eiIPADwAWehNyO6eGQAwrchD6E2Gd7wAQOQh9CrkyBaAKfB8vElwM4bIA2BqBN5k2OiJPABEHkJP5AGAyEPoiTwAEHkIvUFpPABEHhWb9s0YndIDoGLe6WLyprvRc2QLgMhD6Ik8ACiKtzNjsqEn8gCoPfJgsqEHACIPoVch2zwARB5CT+QBgMhD6JVgd88rDYDIQ+hVaXvHKw2AyEPoVceRLQAiD6En8gBA5CH0AACRh9AbjG0eACIPoSfyAEDkIfQAAJGH0BuMbR4AIg8qDD2NB4DIg0pDr1N6AIg8qC/0HNkCIPKg0tADAJEHFYaebR4AIg8qDT0AEHlQYejZ5gFQulbkIfQAoE46D6F3BNs8AErnyBahd4TdPa8eACIPqgy97R2vHgAiD6oLPds8AEQeVBp6tnkAiDyoMPRs8wAQeVBp6NnmAVAiz8pD6AFApXQeQu8EnpsHQIkc2SL0AEDkwTRDzzYPAJEHlYYeAJTEzRcIvQXZ5gFQGp2H0AOACjmyRegtyDIPAJEHlYZep/QAEHmwituMAH+wAoDQO3tuwuC6tnFhMwBUFXpM2/ymTuQBgNCjorgDACoNPce24g4AqDT0EHgAgNBD4AEApYSeY1uBBwBUGnoIPADg1LzXLSIPACo1vo2eY1uBBwCshY0eIg8AhB6IPAAoybiObh3bCjwAYG1s9BB5ACD0QOQBgNBD5AEAQu8G1+eJPACg0tBD5AEAQg+RBwAIPdbpYN8MAEDoLcn1eWW4etEMAEDoUR1HtgAg9BB5AIDQowStyAMAobeq3T2vwpjpPAAQeivb3vEqjJUjWwAQegAACD1KYZsHAEKPCrkBAwCEHpXSeQAg9E7NO2KMj20eAAg9KqXzAEDoUSHbPAAQelRK5wGA0AMAQOhRCs/NAwChBwCA0Dve7p7pAwBUGXrbO6Y/Fo5tAUDoAQAg9AAAEHoMyrEtAAg9AACEHgAAQg8AAKEHAIDQY0FuxAAAoQcAgNADAEDoAQAg9AAAEHoAAAg9AAChBwCA0AMAQOgBACD0AAAQegAACD0AAKEHAIDQAwBA6AEAIPQAABB6LKE3AgAQetSpU3oAIPQAABB6AAAIPQAAhB4bs7tnBgAg9KjS9o4ZAIDQAwBA6AEAMOHQu9KY/lg863l6ACD0AAAQegAACD3GwPEtAAg9AACEHqXx8GQAEHpUysOTAUDorU3rESujY6sHAEJvLXTe+NjqAYDQo2JuwAUAoUelOqUHAEKPenmuHgAIPQAAhN7RrrgjY7Rs9QBA6CH2AAChBwCA0GM0bPUAQOitzDtkiD0AoNLQ03liDwCoNPQoh/fCBQChR6W8Fy4ACD0q5ggXAITeUjw4WewBAJWGHmIPABB6jCz23KABAELvRI5vy7S9Y7sHAEKPqok9ABB6iD0AQOgh9gCAakLPdXr1xJ7gAwChR+XBp/cAQOjdcLDvlalJZ7sHAELvuqsXvTI1cpwLAEIPwQcA1Bx6jm8FHwBwKk2S9O1IL5cXAdPjrmsAWE/kdWluMwZGG/eiDwBOF3vJiDd6X/+Ln2kTfgCweOTZ6FGUW0W/AASAIwk96g1AYDhtMzszAoTeca40/iIHKE23wJ/btvEg9ACo1FFfxNsEwgRDz1YPYBqO2gTa/EHloQfAdD0r/qD+0DvYT7Z3vGIAeOYmLGj8z9E76as6AJgn/OAw8jxHD4DqXF8KHOwnVy+aB9OOvaSgjd78b2AAWJToY4qR16XZMgYAqre9c7gosCxgarGXFLbRS/xGBWA9XM9HzZFnowfApNnyUbkyQ89XYABsIvh298wCoQcAVXItH0JvJGz1ANgkwYfQAwDBB0JvE2z1ABB8UGnoAYDgg4pDz1YPAMEHlYae2ANg6ODzWBaEHgBU6vpjWUDobYitHgBDc5yL0AMAwQdCb1m2egCMLfhA6Ik9ACqOPcGH0AOAyoMPhN4a2OoBMNbYE3wIvTU42PfqAjDe4AOhdwpXL3p1ARh37Ak+hN4pOMIFoITgA6G3Ike4AIg9hF6lHOECUErsCT6E3goc4QJQUvCB0BN7AIg9EHoAIPYQepWz1QOgtNjb3TMHhJ7YA6BK2zu2ewg9sQdA1cQeQg8AxB4IPVs9AMQeQk/sAYDYQ+iJPQAQewg9sQcAYg+hdzZasQeA2EPo1UnnAVBy7Ok9hN4JHOECUKpO6SH0xB4A9XKMi9ATewCIPYSe2AMAsYfQE3sAIPYQemIPAMQeQk/sAYDYQ+iJPQAQewg9sQeA2EPoIfYAEHsIPbEHAEXY3TMDoYfYA6BK2ztmIPQQewBUyxGu0EPsASD2EHpcaZJW8AEg9hB6dWpiuwcACL2qiT0ASmKrJ/QQewCIPYQeYg8AsYfQm0jsuUkDABB6lXKTBgClsNUTeqxI7AEg9hB6lceeo1wAQOhVylEuAGNnqyf0OCWxB4DYQ+hVHnuCDwAQepUHHwCMja2e0GONsSf4ABB7CL3Kgw8AQOhVHHuCD4CxsNUTegg+ACqm9YQeGww+ABhSp/SEHpuNPcEHwJAc4Qo9BB8AIPQQfACUxlZP6CH4AAChxzqDrxV8AJwBWz2hxwCa2PABAEKveoIPgE2y1RN6CD4AYDhNkvSt5137KgwAVmCZMN7I69LY6E31N6XfmABQPaEn+JKDfbMAYDVOiUbtNiMgVy/+///f3Uu2d8wEACrgGj18lQbA6bkkaHyR16Wx0WPx37TCDwDKir3ERo8ViD4Avs5Wb1yRZ6PH2n4zCz8AGB2hh/ADYD12926+wQ+hx0TC7/ofAO7oBaiXP+OFHhN2q6/y+iSdDSAArJubMSiH42CAMrgpYxyR52YM/MEB+OIL6iX0AFjfF1/ij8RNGUIPgEnEn/CbJjdljMaWEQCw0fC70iQH+2YBA3AzBgBny5ZvWqHPcJHXpbHRA+Ds//IXAHAmhB4Agg+EHgAIPpbgmF7oAcCN4GsFHwg9AOrUxHYPhB4AVfNIlno4vhV6APANVy/a7oHQA6BqYg+EHgBij5Ha3TMDoQcAJ8Seu3LL5L1vhR4AnKiJ2AOhB0DVsecoF4QeABWz2SuLx6wIPQBYmGNcEHoAVB57gNADoFKu1wOhB4DYY2Cu0xN6ACD2QOgBwM3cnAFCD4BK6TwQegBUzBHuuLlMT+gBgNirVKf0hB4AAEIPAI5kqwdCDwBA6AFAaWz1EHoAAGfIO2QIPQBYC1s9hB4AAEIPAEpjq4fQAwBA6AFAaWz1EHoAAAg9AIBV7e6ZgdADgDVyfDse2ztmIPQAABB6AAAIPQAmrHV8i9ADgDrpPIQeAABCDwAAoQcAgNADgM1xQwZCDwAqpfMQegAACD0AAIQeAABCDwAAoQcAgNADABB6AAAIPQAAhB4AAEIPAAChBwCA0AMAEHoAAAg9AACEHgAAQg8ANuPZ3gwQegAACD0AAIQeAABCDwAAoQcAC3EjBkIPAAChBwCA0AMAQOgBwPq5Pm88rjRmIPQAABB6AHAcyzyEHgBUqlN6CD0AAIQeABTCTRgIPQAAhB4AlMI2b3wO9s1A6AEAVbp60QyEHgCckm0eQg8AAKEHAKWwzQOhB0CFdvfMAIQeAFXa3jGDsbrSmIHQA4AVObIFoQeAyAOhBwCA0AOAwdjmgdADQOQxEDdiCD0AEHkg9AAQeWYAQg+A6mg8ONFtRgBAcXb3PBS5NK7PE3oAcCLHtbAwR7cAiDwQegAg8ljBwb4ZCD0AEHlVunrRDAbiGj0AxstNFyD0AKiQLR6cmqNbAEQem+OxKoOy0QNA4IHQAwCBB0IPABbRJ+lEXrUc2wo9ACbIBg+EHgACDxB6AIg7xsSxrdADQNwBQg8AYQcIPfylAcCgHNsKPRB3ACD0EHcAlMI2T+gh7gAAoYfAAwCEHuIOgEE5thV6TMDuXrK9Yw4AIPSohu0dwHTZ5gk9KtQn6QQeAAg96mF7B8B1tnlCD4EHAAg9BB4ApWibxEJP6CHuAKiQyBN6CDwAKuTaPKGHwAMAhB4CD4BS2OYJPQQeACD0EHgAlMI2T+gh8AAAoYfAA6AUtnlCj5HY3Uu2d8wBAIQe1eiTdLZ4AKyZbZ7QY2COaQEAoSfwAGBhtnlCjwG4Dg+ATTvYNwOhx5lyHR4AZ+XqRTMQepwZx7QAnBVHtkIPgQcAjM+WEYg8ADiSbV7xbPQEHgCIPKHHmXKzBQAg9CpkiwfAkGzzhB4CDwCRx7i5GUPkAQCVstEbmne2AGAsbPOEHmtkiweAyEPoVcYdtQCMifeyFXqsiS0eAGPjvWyFHqfkWjwAxsiRrdDjlGzxABB5DMDjVUQeACKPStnoCTwAoFI2eiIPgKmxzRN6iDwARB5lc3S7Lu6qBUDkIfQqZIsHgMhjhBzdijwARB5CD5EHAJTE0e0qXI8HQCls84QeS7DFA0DkUQhHtyIPAJGH0BN5ACDyEHoiDwBEHoNzjZ7AA0DkUSkbPZEHgMhD6Ik8ABB5CD2RBwAiD6En8gBA5CH0RB4AiDyW4K7bPkkn8gAQeQi9utjiAVCStkk0HkuY7tGtyAOgJFdEHkJP5AFQZ+SB0BN5AIg8mGboiTwARB5CT+QBwGAO9kUeazGNu25FHgClEHisUf0bPZEHgMhD6Ik8ABB51KTeo1uRB4DAY+Lq3OiJPABEHlQYeiIPgLFzVy1npK6jW5EHwNgJPM5QPRs9kQeAyIOb1LHRE3kACDz4hvI3eiIPgLFyLR4DK3ujp/EAGCuBh9A7hd29ZHvHKwiAwINbKPfoVuQBIPLgWGVu9FyXB4DAgwpDT+QBIPCgwtATeQAIPKgw9EQeAAIPKgw9kQeAwIMKQ0/kASDwoMLQ03gACDyoNPQ6pQeAwIP6Qs+RLQDiDioMPZEHgMCDCkNP5AGwKW2T6DuEnsgDoMK4E3kIPQCowPWjWXGH0BsB2zwA1hF2wMhCT+QBIO6gwtATeQAIO6g09ABA2EGFoWebB0CSHOwnVy+aA1QTeiIPYHo8xw4mEnrW8QDT449+OFNbRgAAIPQAABB6AAAIPQAAhB4AAMuH3ldGAQBQja/mQ+9L8wAAqMaX86H3uXkAAFTj8/nQ+8w8AACq8dl86H1qHgAA1fh0PvQ+MQ8AgGp8Mh96H5sHAEA1Pp4PvWvmAQBQjWvzofeBeQAAVOOD+dB73zwAAKrxfpI01/+pb/PfSe42FwCAon3SdPnb5Ob3un3PXAAAinej6eZD7x1zAQAo3jtHhd7vzQUAoHg3mq6Z/7d9m/9Jcpf5AAAU6U9Nl7+5/g9bX/uPb5gPAECxbmq5r4feq+YDAFCsm1qu+fp/7dv8b5Jz5gQAUJTPmi5/Nf8vto74Ri+bEwBAcb7RcEeF3kvmBABQnG80XHPUt+rb/GeSh8wLAKAI7zZd/v7r/3LrFt/4efMCACjGke3W3Opb922uJbnX3AAARu0PTZfzR/2HrWO+U2duAACjd8tma477Xn2b/0qOLkQAAAZ3renyd7f6j1snfOdfmR8AwGgd22rNSd+7b/NWkgvmCAAwKm83XR457htsLfCD/NwcAQBG58RGOzH0mi5vJnnOLAEARuO5WaOdLvRmfpbkIzMFABjcR7M2O9FCodd0+UuS1lwBAAbXztpsPaE3i73XkzxjtgAAg3lm1mSL9duyP3rf5t+S/NCcAQDO1GtNl39c5jtsrfCTPJnkQ7MGADgzH84abClLh17T5c9JLif5wswBADbuiySXZw222dCbxd57SS6ZOwDAxl2atdfStlb9GZsuryZ5wuwBADbmiVlzrWTrND9z0+W3SX7iNQAAWLufzFpr9VZbx0fRt/lxkhe9HgAAa/HEaSNvbaE3i73Hk7yc5NteGwCAlXyRw2vyXl3HD7a1ro9q9gF9Lx69AgCwig+TfG9dkbfW0JvF3ntJLiR5zWsFALCw15JcWPXu2lu22aY+2r7NL5P8i9cNAOBYzzRd/nUTP3CzyY+6b/ODJF2S+7yGAAA3+ShJu8x71y5ra5Mf/ewDfyDJc15LAIAbnkvywCYjL9nwRm9e3+b7SX6Rw2v4AACm6O0kP2+6vHkWP1lz1r+6vs1Pkzyd5LzXGgCYiGtJftV0+c1Z/qTNUL/avk2bpE1yr9ceAKjUH5J0TZduiJ+8GfpX37d5MslTSR7yuQAAVOLdJM83XV4Y8oNoxjKNvs0jSS4nuZTknM8PAKAwn+XwXcJearq8NYYPqBnjlPo2P0ryeJLHktzl8wYAGKk/JXkjyatNl9+N7YNrxj69vs2DSR5N8nCSB5Pc7XMKABjIJ0neS/JOkt+v+50sJhd6R4Tfd3L4bL77c3jn7j2z+Lszh0e+dyS5ffZra3w+AgAL+CrJl0k+z+ER7KezqPs4h3fMfpDk/abLH40KAIDB/R+n2LC0ym+imQAAAABJRU5ErkJggg==" alt="" width="26" height="26"><svg viewBox="0 0 4282.3598 617.98461" class="wordmark-type" aria-hidden="true" focusable="false"><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,-0.001)" d="m 1249.283,1156.912 c -142.494,0 -257.494,115.008 -257.504,257.5 -0,85.84 0,171.66 0,257.5 l 97.5,0 c -0.015,-85.812 0.022,-171.836 0,-257.5 0.106,-88.66 71.322,-161.25 160.006,-161.25 6.608,0 13.123,0.411 19.527,1.191 22.777,-30.64 52.231,-56.355 85.531,-75.189 -32.063,-14.297 -67.608,-22.252 -105.059,-22.252 l 0,0 z"></path><path fill="var(--wordmark-ink)" d="m 3658.8,925.028 c -16.196,0.159 -30.655,0.277 -38.962,0.277 l 0,0 c -113.995,0 -205.995,92.007 -206.003,206 -0,68.672 0,137.327 0,206 l 78,0 c -0.012,-68.649 0.018,-137.469 0,-206 0.085,-70.928 57.057,-129 128.005,-129 1.464,0 23.616,0.158 38.962,0.264 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" d="m 1818.531,1099.528 c 0,-53 43,-97 96,-97 53,0 97,44 97,97 l 0,238 77,0 0,-238 c 0,-53 43,-97 97,-97 53,0 96,44 96,97 l 0,238 77,0 0,-238 c 0,-96 -77,-174 -173,-174 -55,0 -104,25 -136,65 -32,-40 -80,-65 -135,-65 -96,0 -174,78 -174,174 l 0,238 78,0 z"></path><path fill="var(--wordmark-ink)" d="m 2445.935,1163.304 c 0,53 43,97 96,97 53,0 97,-44 97,-97 l 0,-238 77,0 0,238 c 0,53 43,97 97,97 53,0 96,-44 96,-97 l 0,-238 77,0 0,238 c 0,96 -77,174 -173,174 -55,0 -104,-25 -136,-65 -32,40 -80,65 -135,65 -96,0 -174,-78 -174,-174 l 0,-238 78,0 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="translate(0,217.527)" d="m 1524.474,708.001 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="translate(0,217.527)" d="m 1189.415,708.001 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path></g><g transform="translate(-80,-719.543)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,-0.001)" d="m 851.807,899.43 c -35.983,10.463 -68.687,28.53 -96.25,52.379 l 0,204.859 0.002,0.244 -0.002,0 c -81.388,0.001 -153.789,37.525 -200.934,96.25 l 200.934,0 0,418.75 96.25,0 0,-418.75 181.066,0 c 33.952,-45.074 82.455,-79.241 136.277,-96.25 l -317.344,0 0,-257.482 z"></path></g><g transform="translate(-80,-742.016)"><path fill="var(--brand-orange)" transform="matrix(0.8,0,0,0.8,0,22.472)" d="m 252.5,1156.912 c -83.75,0 -152.5,67.5 -152.5,152.5 0,83.75 68.75,152.5 152.5,152.5 l 210,0 c 31.25,0 56.25,26.25 56.25,56.25 0,31.25 -25,56.25 -56.25,56.25 l -225.988,0 c -54.032,17.359 -102.636,51.986 -136.498,97.5 l 362.486,0 c 83.75,0 152.5,-68.75 152.5,-153.75 0,-83.75 -68.75,-152.5 -152.5,-152.5 l -210,0 c -31.25,0 -56.25,-25 -56.25,-56.25 0,-31.25 25,-56.25 56.25,-56.25 l 285.988,0 c 33.738,-44.854 81.839,-78.982 135.27,-96.25 l -421.258,0 z"></path><path fill="var(--wordmark-ink)" d="m 3200.535,947.777 c -114,0 -206,92 -206,206 0,113 92,206 206,206 114,0 206,-93 206,-206 0,-114 -92,-206 -206,-206 z m 0,334 c -71,0 -129,-57 -129,-128 0,-71 58,-129 129,-129 71,0 129,58 129,129 0,71 -58,128 -129,128 z"></path><path fill="var(--wordmark-ink)" d="m 3745.8,742.31 c -33.458,9.33 -59.871,27.204 -77,41.575 l 0,575.892 77,0 0,-207 0,-410.467 z m 0,410.467 157,206 98,0 -158,-206 158,-206 -98,0 -157,206 z"></path><path fill="var(--wordmark-ink)" d="m 4072.36,947.777 c -67,0 -122,54 -122,122 0,67 55,122 122,122 l 168,0 c 25,0 45,21 45,45 0,25 -20,45 -45,45 l -286.014,0 c 19.941,26 39.882,52 59.823,78 l 226.19,0 c 67,0 122,-55 122,-123 0,-67 -55,-122 -122,-122 l -168,0 c -25,0 -45,-20 -45,-45 0,-25 20,-45 45,-45 l 290,0 0,-77 -290,0 z"></path></g></svg><span class="visually-hidden">Stroomworks</span><span class="sub">AI translations</span></span>
+</div></header>
+<main>
+
+<p class="eyebrow">Server-side review · target state</p>
+<h1>Shapeshifter AI: simplified server-side inventory</h1>
+<p class="meta">Branch <code>ai_translations</code> · 9 November 2026 · The server side as it would be once every option in the simplification options document is implemented. Client code is out of scope.</p>
+
+<div class="callout warn">
+  <p><strong>This describes a proposal, not today's code.</strong> It's the counterpart of the server-side inventory, which records the code as it stands. It assumes all of the simplification options are implemented:</p>
+  <ul>
+    <li><strong>A:</strong> review by default, and one promotion path for both modes</li>
+    <li><strong>B:</strong> a fixed learning recipe</li>
+    <li><strong>C:</strong> no provisional bindings</li>
+    <li><strong>D:</strong> a smaller Supervisor</li>
+    <li><strong>E:</strong> prompts in code</li>
+    <li><strong>F:</strong> unused parts removed</li>
+    <li><strong>i–iv:</strong> one execution path, fewer storage interfaces, services instead of one central class, test code out of the product</li>
+    <li>the safety controls the options document requires before any feed runs automatically</li>
+  </ul>
+  <p>Counts taken from the current code are exact. Projected sizes are marked <strong>≈</strong> and are estimates. Names of new classes, settings and permissions are illustrative until the work is designed.</p>
+</div>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol class="cols">
+    <li><a href="#summary">Summary: before and after</a></li>
+    <li><a href="#modules">Module dependency graph</a></li>
+    <li><a href="#runtime">How it runs</a></li>
+    <li><a href="#rest">REST endpoints</a></li>
+    <li><a href="#jobs">Jobs, elements, document type, hooks</a></li>
+    <li><a href="#config">Configuration and permissions</a></li>
+    <li><a href="#schema">Database schema</a></li>
+    <li><a href="#llm">Model (LLM) call sites</a></li>
+    <li><a href="#ports">Ports and their bindings</a></li>
+    <li><a href="#packages">Package structure</a></li>
+    <li><a href="#tests">Tests</a></li>
+    <li><a href="#findings">Earlier findings: what is resolved</a></li>
+    <li><a href="#open">Still open</a></li>
+  </ol>
+</nav>
+
+<!-- ================================================================== -->
+<h2 id="summary">1. Summary: before and after</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Measure</th><th class="num">Today</th><th class="num">Target</th><th>What changes it</th></tr>
+  <tr><td>Shapeshifter server modules</td><td class="num">2</td><td class="num">4</td><td>New <code>-api</code> and <code>-engine</code> modules give the code real boundaries (i–iii)</td></tr>
+  <tr><td>Server lines in the product (excl. jOOQ)</td><td class="num">24,506</td><td class="num">≈ 19,000–21,000</td><td>About 5,000–6,000 removed or moved to test fixtures, partly offset by the new safety controls</td></tr>
+  <tr><td>Largest class</td><td class="num">2,566</td><td class="num">&lt; 1,000</td><td><code>Stage</code> split into four services (iii)</td></tr>
+  <tr><td>Package dependency cycles</td><td class="num">2 (one ≈ 15k lines)</td><td class="num">0</td><td>Layering, enforced by an architecture test</td></tr>
+  <tr><td>Shared types in <code>stroom.shapeshifter.shared</code></td><td class="num">56</td><td class="num">≈ 38</td><td>Flow, template, unbuilt-scorer and deferred-action types removed (B, D, E, F)</td></tr>
+  <tr><td>REST endpoints</td><td class="num">21</td><td class="num">13</td><td>Templates, guidance, amend, improve, exhaust and accept removed (C, D, E)</td></tr>
+  <tr><td>Database tables</td><td class="num">11</td><td class="num">10</td><td><code>shapeshifter_guidance</code> replaced by the document's existing <code>instructions</code> field (D)</td></tr>
+  <tr><td>Storage interfaces</td><td class="num">17</td><td class="num">5</td><td>Grouped by what they store (ii)</td></tr>
+  <tr><td>All injected interfaces ("ports")</td><td class="num">22</td><td class="num">≈ 11</td><td>Storage grouped; one candidate runner replaces five step and fragment runners (i, ii)</td></tr>
+  <tr><td>Ways a candidate is run</td><td class="num">2</td><td class="num">1</td><td>Candidates judged by the same real pipeline that serves (i)</td></tr>
+  <tr><td>Promotion write paths</td><td class="num">2</td><td class="num">1</td><td>Always a draft; automatic mode approves it at once (A)</td></tr>
+  <tr><td>Default promotion mode</td><td>automatic</td><td>review</td><td>(A)</td></tr>
+  <tr><td>Test doubles in the production jar</td><td class="num">19 classes</td><td class="num">0</td><td>Moved to <code>testFixtures</code>, ≈ 5 remain (ii, iv)</td></tr>
+</table></div>
+
+<p>The things that make autonomous mode possible are all kept: the Shapeshifter element at the head of each AI pipeline, per-record judging, deferral (including the <code>DEFERRED</code> status in <code>stroom-processor</code>), the worker, the corpus and snapshots.</p>
+
+<!-- ================================================================== -->
+<h2 id="modules">2. Module dependency graph</h2>
+<p>Gradle project dependencies in the target state. Dependencies only point downwards: nothing depends on an implementation module except <code>stroom-app</code>, which wires everything together.</p>
+
+<div class="figure">
+<svg viewBox="0 0 960 500" role="img" aria-labelledby="g1t">
+  <title id="g1t">Target Gradle module dependencies for Shapeshifter AI</title>
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <!-- edges -->
+  <line class="e" x1="420" y1="70" x2="255" y2="120" marker-end="url(#a1)"/>
+  <line class="e" x1="540" y1="70" x2="705" y2="120" marker-end="url(#a1)"/>
+  <text class="t-edge" x="610" y="88">installs modules</text>
+
+  <line class="e" x1="200" y1="176" x2="200" y2="240" marker-end="url(#a1)"/>
+  <line class="e" x1="300" y1="176" x2="460" y2="380" marker-end="url(#a1)"/>
+  <text class="t-edge" x="330" y="230">ports only</text>
+  <line class="e" x1="100" y1="176" x2="100" y2="380" marker-end="url(#a1)"/>
+  <text class="t-edge" x="20" y="300">adapters</text>
+  <text class="t-edge" x="20" y="313">only</text>
+  <line class="e" x1="140" y1="176" x2="270" y2="380" marker-end="url(#a1)"/>
+  <line class="e" x1="320" y1="150" x2="640" y2="270" marker-end="url(#a1)"/>
+  <text class="t-edge" x="470" y="196">Advisor adapter</text>
+
+  <line class="e" x1="260" y1="296" x2="440" y2="400" marker-end="url(#a1)"/>
+  <line class="e" x1="690" y1="176" x2="560" y2="380" marker-end="url(#a1)"/>
+  <text class="t-edge" x="628" y="300">implements ports</text>
+
+  <line class="e" x1="770" y1="326" x2="770" y2="380" marker-end="url(#a1)"/>
+
+  <!-- boxes -->
+  <rect class="box" x="370" y="20" width="220" height="50" rx="2"/>
+  <text class="t-title" x="480" y="41" text-anchor="middle">stroom-app</text>
+  <text class="t-sub" x="480" y="58" text-anchor="middle">wires everything together</text>
+
+  <rect class="box focus" x="40" y="120" width="280" height="56" rx="2"/>
+  <text class="t-title" x="180" y="143" text-anchor="middle">stroom-shapeshifter-ai-impl</text>
+  <text class="t-sub" x="180" y="162" text-anchor="middle">services, REST, jobs, pipeline adapters ≈ 9–10k</text>
+
+  <rect class="box focus" x="640" y="120" width="280" height="56" rx="2"/>
+  <text class="t-title" x="780" y="143" text-anchor="middle">stroom-shapeshifter-ai-impl-db</text>
+  <text class="t-sub" x="780" y="162" text-anchor="middle">5 DAOs + caches ≈ 2.4k (+ jOOQ)</text>
+
+  <rect class="box focus" x="100" y="240" width="200" height="56" rx="2"/>
+  <text class="t-title" x="200" y="263" text-anchor="middle">…-ai-engine</text>
+  <text class="t-sub" x="200" y="282" text-anchor="middle">recipe, scoring, gate ≈ 7–8k</text>
+
+  <rect class="box" x="640" y="270" width="260" height="56" rx="2"/>
+  <text class="t-title" x="770" y="293" text-anchor="middle">stroom-ai-api</text>
+  <text class="t-sub" x="770" y="312" text-anchor="middle">on master, unchanged</text>
+
+  <rect class="box" x="20" y="380" width="170" height="56" rx="2"/>
+  <text class="t-title" x="105" y="403" text-anchor="middle">stroom-pipeline</text>
+  <text class="t-sub" x="105" y="422" text-anchor="middle">used by impl only</text>
+
+  <rect class="box" x="205" y="380" width="160" height="56" rx="2"/>
+  <text class="t-title" x="285" y="403" text-anchor="middle">core-shared</text>
+  <text class="t-sub" x="285" y="422" text-anchor="middle">≈ 38 shapeshifter types</text>
+
+  <rect class="box focus" x="400" y="380" width="200" height="56" rx="2"/>
+  <text class="t-title" x="500" y="403" text-anchor="middle">…-ai-api</text>
+  <text class="t-sub" x="500" y="422" text-anchor="middle">ports + domain model ≈ 1k</text>
+
+  <rect class="box ext" x="680" y="380" width="180" height="56" rx="2"/>
+  <text class="t-title" x="770" y="403" text-anchor="middle">langchain4j</text>
+  <text class="t-sub" x="770" y="422" text-anchor="middle">via stroom-ai-api</text>
+  <text class="t-sub" x="20" y="480">New modules are shaded. "…-ai-engine" and "…-ai-api" are short for stroom-shapeshifter-ai-engine and stroom-shapeshifter-ai-api.</text>
+</svg>
+<p class="caption">The impl module also depends on <code>core-shared</code>, the <code>*-api</code> modules (docstore, security, meta, processor, job, task, explorer) and <code>stroom-ai-api</code>. Those edges are left out to keep the diagram readable.</p>
+</div>
+
+<div class="table-wrap"><table>
+  <tr><th>Module</th><th>Holds</th><th>May depend on</th><th class="num">≈ main lines</th></tr>
+  <tr><td><code>stroom-shapeshifter-ai-api</code> <span class="tag info">new</span></td><td>The 5 storage interfaces and the other ports (§9), and the engine's domain records</td><td><code>stroom-docref</code>, <code>stroom-util-shared</code></td><td class="num">≈ 1,000</td></tr>
+  <tr><td><code>stroom-shapeshifter-ai-engine</code> <span class="tag info">new</span></td><td>The fixed learning recipe, question text, reply parsing, scorers that work on records, the promotion gate, corpus comparison</td><td><code>-api</code>, utilities. <strong>Not</strong> <code>stroom-pipeline</code></td><td class="num">≈ 7,000–8,000</td></tr>
+  <tr><td><code>stroom-shapeshifter-ai-impl</code> <span class="tag warn">was <code>stroom-shapeshifter-ai</code></span></td><td>The four services, REST resources, jobs, the document store, pipeline elements and the candidate runner, the model adapter, safety controls</td><td><code>-api</code>, <code>-engine</code>, <code>stroom-pipeline</code>, <code>stroom-ai-api</code>, other <code>*-api</code> modules</td><td class="num">≈ 9,000–10,000</td></tr>
+  <tr><td><code>stroom-shapeshifter-ai-impl-db</code></td><td>5 DAOs, two caches, Flyway migration</td><td><code>-api</code> only (plus DB utilities)</td><td class="num">≈ 2,400</td></tr>
+</table></div>
+
+<p>Wiring in <code>stroom-app</code> is unchanged in shape: <code>AppModule</code> installs the impl module, <code>CoreModule</code> installs the DAO module, and <code>DbConnectionsModule</code> installs the DB module. <code>InMemoryStateModule</code> moves to <code>testFixtures</code>. The modules are still installed on every node. Unattended behaviour is limited per feed by the promotion mode and the new permission (§6), not by a module-level switch.</p>
+
+<!-- ================================================================== -->
+<h2 id="runtime">3. How it runs</h2>
+<p>The runtime path keeps its shape. Four changes are visible here:</p>
+<ul>
+  <li>Each kind of work belongs to one service.</li>
+  <li>Candidates are run by the real pipeline.</li>
+  <li>Every promotion goes through a draft.</li>
+  <li>Every model call passes the spend breaker and rate limit first.</li>
+</ul>
+
+<div class="figure">
+<svg viewBox="0 0 1000 600" role="img" aria-labelledby="g2t">
+  <title id="g2t">Target runtime flow of Shapeshifter AI</title>
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <line class="lane" x1="0" y1="142" x2="1000" y2="142"/>
+  <line class="lane" x1="0" y1="262" x2="1000" y2="262"/>
+  <line class="lane" x1="0" y1="392" x2="1000" y2="392"/>
+  <line class="lane" x1="0" y1="490" x2="1000" y2="490"/>
+  <text class="t-lane" x="10" y="80">Processing</text>
+  <text class="t-lane" x="10" y="95">task</text>
+  <text class="t-lane" x="10" y="195">Learning job</text>
+  <text class="t-lane" x="10" y="210">(every 1m)</text>
+  <text class="t-lane" x="10" y="320">Promotion</text>
+  <text class="t-lane" x="10" y="435">Supervisor</text>
+  <text class="t-lane" x="10" y="450">(person, REST)</text>
+  <text class="t-lane" x="10" y="545">Database</text>
+
+  <!-- lane 1 -->
+  <rect class="box" x="145" y="55" width="150" height="60" rx="2"/>
+  <text class="t-title" x="220" y="80" text-anchor="middle">Stream on a</text>
+  <text class="t-title" x="220" y="96" text-anchor="middle">supervised pipeline</text>
+
+  <rect class="box focus" x="320" y="55" width="180" height="60" rx="2"/>
+  <text class="t-title" x="410" y="80" text-anchor="middle">ServingService</text>
+  <text class="t-sub" x="410" y="98" text-anchor="middle">via ShapeshifterAiParser</text>
+
+  <rect class="box" x="535" y="55" width="190" height="60" rx="2"/>
+  <text class="t-title" x="630" y="80" text-anchor="middle">CandidateRunner</text>
+  <text class="t-sub" x="630" y="98" text-anchor="middle">real pipeline, judges records</text>
+
+  <rect class="box" x="755" y="55" width="190" height="60" rx="2"/>
+  <text class="t-title" x="850" y="80" text-anchor="middle">Events written</text>
+  <text class="t-sub" x="850" y="98" text-anchor="middle">every record cleared the bar</text>
+
+  <line class="e" x1="295" y1="85" x2="320" y2="85" marker-end="url(#a2)"/>
+  <line class="e" x1="500" y1="85" x2="535" y2="85" marker-end="url(#a2)"/>
+  <text class="t-edge" x="505" y="78">binding</text>
+  <line class="e" x1="725" y1="85" x2="755" y2="85" marker-end="url(#a2)"/>
+  <path class="e" d="M490,115 V128 H512 V515" marker-end="url(#a2)"/>
+  <text class="t-edge" x="518" y="138">none, or short: defer</text>
+
+  <!-- lane 2 -->
+  <rect class="box focus" x="145" y="165" width="170" height="70" rx="2"/>
+  <text class="t-title" x="230" y="188" text-anchor="middle">LearningSession-</text>
+  <text class="t-title" x="230" y="204" text-anchor="middle">Service</text>
+  <text class="t-sub" x="230" y="222" text-anchor="middle">fixed recipe (engine)</text>
+
+  <rect class="box" x="345" y="165" width="150" height="70" rx="2"/>
+  <text class="t-title" x="420" y="188" text-anchor="middle">Safety gate</text>
+  <text class="t-sub" x="420" y="206" text-anchor="middle">spend breaker,</text>
+  <text class="t-sub" x="420" y="220" text-anchor="middle">rate limit</text>
+
+  <rect class="box" x="535" y="165" width="160" height="70" rx="2"/>
+  <text class="t-title" x="615" y="188" text-anchor="middle">Advisor</text>
+  <text class="t-sub" x="615" y="206" text-anchor="middle">ModelAdvisor adapter</text>
+  <text class="t-sub" x="615" y="220" text-anchor="middle">audit event per call</text>
+
+  <rect class="box ext" x="755" y="165" width="150" height="70" rx="2"/>
+  <text class="t-title" x="830" y="196" text-anchor="middle">Model provider</text>
+  <text class="t-sub" x="830" y="213" text-anchor="middle">external, over HTTP</text>
+
+  <line class="e" x1="315" y1="200" x2="345" y2="200" marker-end="url(#a2)"/>
+  <line class="e" x1="495" y1="200" x2="535" y2="200" marker-end="url(#a2)"/>
+  <line class="e" x1="695" y1="192" x2="755" y2="192" marker-end="url(#a2)"/>
+  <line class="e" x1="755" y1="210" x2="695" y2="210" marker-end="url(#a2)"/>
+  <path class="e" d="M230,165 V150 H630 V115" marker-end="url(#a2)"/>
+  <text class="t-edge" x="250" y="160">reply → static stylesheet check → run candidate</text>
+
+  <!-- lane 3 -->
+  <rect class="box focus" x="145" y="290" width="170" height="70" rx="2"/>
+  <text class="t-title" x="230" y="314" text-anchor="middle">PromotionService</text>
+  <text class="t-sub" x="230" y="332" text-anchor="middle">gate passed →</text>
+  <text class="t-sub" x="230" y="346" text-anchor="middle">always a draft</text>
+
+  <rect class="box" x="345" y="275" width="150" height="46" rx="2"/>
+  <text class="t-title" x="420" y="296" text-anchor="middle">Review (default)</text>
+  <text class="t-sub" x="420" y="312" text-anchor="middle">waits for a person</text>
+
+  <rect class="box ai" x="345" y="332" width="150" height="46" rx="2"/>
+  <text class="t-title" x="420" y="353" text-anchor="middle">Automatic</text>
+  <text class="t-sub" x="420" y="369" text-anchor="middle">approved at once</text>
+
+  <rect class="box" x="535" y="290" width="170" height="70" rx="2"/>
+  <text class="t-title" x="620" y="314" text-anchor="middle">Approve</text>
+  <text class="t-sub" x="620" y="332" text-anchor="middle">bind, snapshot,</text>
+  <text class="t-sub" x="620" y="346" text-anchor="middle">tidy draft</text>
+
+  <rect class="box" x="735" y="290" width="170" height="70" rx="2"/>
+  <text class="t-title" x="820" y="314" text-anchor="middle">Wake</text>
+  <text class="t-sub" x="820" y="332" text-anchor="middle">deferred tasks back</text>
+  <text class="t-sub" x="820" y="346" text-anchor="middle">to CREATED</text>
+
+  <line class="e" x1="230" y1="235" x2="230" y2="290" marker-end="url(#a2)"/>
+  <line class="e" x1="315" y1="315" x2="345" y2="300" marker-end="url(#a2)"/>
+  <line class="e" x1="315" y1="335" x2="345" y2="353" marker-end="url(#a2)"/>
+  <line class="e" x1="495" y1="300" x2="535" y2="315" marker-end="url(#a2)"/>
+  <line class="e" x1="495" y1="353" x2="535" y2="337" marker-end="url(#a2)"/>
+  <line class="e" x1="705" y1="325" x2="735" y2="325" marker-end="url(#a2)"/>
+  <path class="e" d="M905,325 H975 V35 H220 V55" marker-end="url(#a2)"/>
+  <text class="t-edge" x="560" y="30">deferred streams are processed again</text>
+
+  <!-- lane 4 -->
+  <rect class="box focus" x="145" y="410" width="330" height="60" rx="2"/>
+  <text class="t-title" x="310" y="433" text-anchor="middle">SupervisorResource → SupervisorService</text>
+  <text class="t-sub" x="310" y="452" text-anchor="middle">approve · reject · retract · relearn · give up · grant</text>
+  <path class="e" d="M330,410 V385 H420 V378" marker-end="url(#a2)"/>
+  <text class="t-edge" x="340" y="400">approve / reject</text>
+
+  <!-- lane 5 -->
+  <rect class="box db" x="145" y="515" width="820" height="62" rx="2"/>
+  <text class="t-title" x="555" y="538" text-anchor="middle">10 shapeshifter_* tables, reached through 5 storage interfaces in …-ai-api</text>
+  <text class="t-sub" x="555" y="558" text-anchor="middle">attempt · turn · deferral · binding · learner_state · spend · output · corpus · snapshot · deleted_pipeline</text>
+</svg>
+<p class="caption">Compared with today: no provisional branch, no in-place rewrite, no improve call inside a web request, and the parallel parser runners are gone. Supervisor actions go through a service rather than straight to the engine.</p>
+</div>
+
+<!-- ================================================================== -->
+<h2 id="rest">4. REST endpoints</h2>
+<p>Interfaces stay in <code>stroom-core-shared/…/shapeshifter/shared/</code>. Implementations are thin, <code>@AutoLogged</code> resources in <code>-impl</code> that check permissions and call a service. Paths that remain are unchanged.</p>
+
+<h3><code>/shapeshifterAi/v1</code>: document</h3>
+<div class="table-wrap"><table>
+  <tr><th>Method</th><th>Path</th><th>Purpose</th><th>Permission</th><th>Status</th></tr>
+  <tr><td>GET</td><td><code>/{uuid}</code></td><td>Fetch document</td><td>Through <code>DocumentResourceHelper</code></td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>PUT</td><td><code>/{uuid}</code></td><td>Update document</td><td>Through <code>DocumentResourceHelper</code>. Setting <code>promotionMode</code> to automatic also needs the new application permission (§6)</td><td><span class="tag warn">changed</span></td></tr>
+  <tr><td>GET</td><td><code>/templates</code></td><td>Built-in prompt templates</td><td>–</td><td><span class="tag bad">removed (E)</span></td></tr>
+</table></div>
+
+<h3><code>/shapeshifterAiSupervisor/v1</code>: Supervisor</h3>
+<div class="table-wrap"><table>
+  <tr><th>Method</th><th>Path</th><th>Purpose</th><th>Permission</th><th>Status</th></tr>
+  <tr><td>POST</td><td><code>/find</code></td><td>Find sessions across documents</td><td>VIEW, applied inside the query</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>GET</td><td><code>/{id}</code></td><td>One session with its turns</td><td>VIEW</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/{id}/approve</code></td><td>Approve a draft (the same code automatic mode calls)</td><td>EDIT</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/{id}/reject</code></td><td>Reject a draft</td><td>EDIT</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/{id}/grant</code></td><td>More tokens or time for a parked session</td><td>EDIT, within the spend breaker's limits</td><td><span class="tag warn">changed</span></td></tr>
+  <tr><td>POST</td><td><code>/backlog</code></td><td>Deferred streams across documents</td><td>VIEW filter</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/serving/{doc}/{binding}/retract</code></td><td>Withdraw a serving binding (undo a bad automatic promotion)</td><td>EDIT</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/learners</code></td><td>List learning pipelines</td><td>VIEW filter</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/learners/{doc}/waiting</code></td><td>Streams waiting on one learner</td><td>VIEW</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/learners/{doc}/relearn</code></td><td>Send a learner back to learn afresh</td><td>EDIT</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/learners/{doc}/giveUp</code></td><td>Give a learner up</td><td>EDIT</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>POST</td><td><code>/{id}/turns/{number}</code></td><td>Answer a turn instead of the model</td><td>–</td><td><span class="tag bad">deferred (D)</span></td></tr>
+  <tr><td>POST</td><td><code>/{id}/exhaust</code></td><td>Jump to the exhaustion step</td><td>–</td><td><span class="tag bad">removed (B, D)</span></td></tr>
+  <tr><td>POST</td><td><code>/serving/{doc}/{binding}/improve</code></td><td>Improve a serving binding</td><td>–</td><td><span class="tag bad">deferred (D)</span></td></tr>
+  <tr><td>POST</td><td><code>/serving/{doc}/{binding}/accept</code></td><td>Confirm a provisional binding</td><td>–</td><td><span class="tag bad">removed (C)</span></td></tr>
+  <tr><td>GET, POST, DELETE</td><td><code>/guidance/{doc}…</code></td><td>Guidance for a learner</td><td>–</td><td><span class="tag bad">removed (D)</span>: use the document's <code>instructions</code></td></tr>
+</table></div>
+<p>That leaves 2 document endpoints and 11 Supervisor endpoints: 13 in total, down from 21. With <em>improve</em> gone, no web request calls the model.</p>
+
+<!-- ================================================================== -->
+<h2 id="jobs">5. Jobs, pipeline elements, document type, hooks</h2>
+<div class="table-wrap"><table>
+  <tr><th>Kind</th><th>Name</th><th>Where</th><th>Notes</th></tr>
+  <tr><td>Job</td><td>Shapeshifter AI Deferred Learning</td><td><code>impl/learning/DeferredLearningJob</code> → <code>LearningSessionService</code></td><td>Unchanged schedule (1m), batch and lease. Now stops early if the spend breaker is open</td></tr>
+  <tr><td>Job</td><td>Shapeshifter AI Attempt Retention</td><td><code>impl/learning/RetentionJob</code></td><td>Unchanged. Also tidies approved and rejected drafts' documents</td></tr>
+  <tr><td>Check</td><td>Overdue waiting streams <span class="tag info">new</span></td><td>Part of the learning job, or a job of its own (to be designed)</td><td>Streams waiting past the document's maximum deferral age raise an alert or error, rather than only being flagged on screen</td></tr>
+  <tr><td>Pipeline element</td><td>Shapeshifter AI parser</td><td><code>impl/pipeline/ShapeshifterAiParser</code></td><td>Unchanged role: the user places it at the head of an AI pipeline. Calls <code>ServingService</code></td></tr>
+  <tr><td>Pipeline element</td><td>Fragment output</td><td><code>impl/pipeline/FragmentOutputFilter</code></td><td>Unchanged</td></tr>
+  <tr><td>Pipeline element</td><td>Fragment tap</td><td><code>impl/pipeline/FragmentTapFilter</code></td><td>Internal: added by the runner. Should be hidden from the pipeline editor's palette</td></tr>
+  <tr><td>Pipeline element</td><td>Input coverage <span class="tag info">new</span></td><td><code>impl/pipeline/CoverageFilter</code></td><td>Internal: added by <code>CandidateRunner</code> when judging, to record how much input each record used. Replaces the module's own parser runners (i)</td></tr>
+  <tr><td>Document type</td><td><code>ShapeshifterAiDoc</code></td><td><code>impl/doc/</code></td><td>Registered through <code>DocumentStoreBinder</code> as now. Fields change: see below</td></tr>
+  <tr><td>Content creation</td><td>Learned documents</td><td><code>impl/pipeline/LearnedContent</code></td><td>One port where there were two (<code>Places</code> and <code>ContentCreator</code>). Writes the draft, then copies it into the learner's single set of documents on approve</td></tr>
+  <tr><td>Entity events</td><td>Pipeline deletion, cache invalidation</td><td><code>impl/…/PipelineDeletions</code>, <code>impl-db</code> caches</td><td>Unchanged</td></tr>
+  <tr><td>Audit</td><td><code>ShapeshifterAiAsk</code> events, plus promotion events <span class="tag info">new</span></td><td><code>ModelAdvisor</code>, <code>PromotionService</code></td><td>Each automatic approval is audited with the scores it passed on, so it can be told apart from a person's approval</td></tr>
+</table></div>
+
+<h3><code>ShapeshifterAiDoc</code> fields</h3>
+<div class="table-wrap"><table>
+  <tr><th>Field</th><th>Status</th><th>Notes</th></tr>
+  <tr><td><code>flow</code></td><td><span class="tag bad">removed (B, E)</span></td><td>The editable flow and the prompt templates stored in it. The recipe and the prompt text move into <code>-engine</code></td></tr>
+  <tr><td><code>regressionRetentionDays</code></td><td><span class="tag bad">removed (F)</span></td><td>Was read by nothing</td></tr>
+  <tr><td><code>promotionMode</code></td><td><span class="tag warn">changed (A)</span></td><td>Default becomes <code>REVIEW</code>. Changing it to <code>AUTOMATIC</code> needs the new permission</td></tr>
+  <tr><td><code>minRecordsToLearn</code></td><td><span class="tag warn">changed (C)</span></td><td>Was "below this, the binding is provisional". Now "below this, the draft is never approved automatically"</td></tr>
+  <tr><td><code>scorers</code></td><td><span class="tag warn">changed (F)</span></td><td><code>ERROR_LOAD</code> and <code>EVENT_CLASSIFICATION</code> no longer allowed</td></tr>
+  <tr><td><code>instructions</code></td><td><span class="tag ok">kept, wider role (D)</span></td><td>Already added to the model's system message. It now also does the job guidance did: the place for "notes for the model"</td></tr>
+  <tr><td><code>maxAttempts</code>, <code>attemptBudgetMs</code>, <code>tokenBudget</code></td><td><span class="tag ok">kept</span></td><td><code>maxAttempts</code> becomes "retries per step" in the fixed recipe</td></tr>
+  <tr><td>Others: <code>model</code>, <code>learningMode</code>, <code>promotionFloor</code>, <code>relearnThreshold</code>, <code>maxDeferralAgeMs</code>, <code>sampleSizeLimit</code>, <code>heldOutFraction</code>, <code>regressionCap</code></td><td><span class="tag ok">kept</span></td><td></td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="config">6. Configuration and permissions</h2>
+<p>Under <code>appConfig.shapeshifterAi</code>. The six existing properties are kept, and the new ones are for the safety controls. New names are illustrative.</p>
+<div class="table-wrap"><table>
+  <tr><th>Property</th><th>Type</th><th>Purpose</th><th>Status</th></tr>
+  <tr><td><code>db</code></td><td><code>ShapeshifterAiDbConfig</code></td><td>Connection for the runtime-state tables</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td><code>bindingCache</code>, <code>learnerStateCache</code></td><td><code>CacheConfig</code></td><td>Per-node caches on the serving path</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td><code>deferredLearningBatchSize</code></td><td><code>int</code></td><td>Sessions advanced per job pass</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td><code>attemptRetention</code></td><td><code>StroomDuration</code></td><td>How long finished sessions are kept</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td><code>sessionLease</code></td><td><code>StroomDuration</code></td><td>A node's claim on a session</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td><code>spendLimit</code></td><td>tokens per window, per document and system-wide</td><td>The spend breaker: no model calls once reached, until the window rolls over</td><td><span class="tag info">new</span></td></tr>
+  <tr><td><code>modelRequestRateLimit</code></td><td>requests per minute</td><td>Caps model calls across all documents</td><td><span class="tag info">new</span></td></tr>
+</table></div>
+
+<h3>Permissions</h3>
+<div class="table-wrap"><table>
+  <tr><th>Permission</th><th>Kind</th><th>Grants</th><th>Status</th></tr>
+  <tr><td>Document VIEW / EDIT on <code>ShapeshifterAiDoc</code></td><td>Document</td><td>Read and edit the Learning Flow's own tabs. Since the agreed UI (<a href="ui-design.md">ui-design.md</a>), a pipeline's learning is read and acted on by the <em>pipeline's</em> VIEW / EDIT, on its Learning Status tab</td><td><span class="tag ok">kept</span></td></tr>
+  <tr><td>"Enable automatic Shapeshifter AI promotion"</td><td>Application</td><td>Switching a document to automatic. Without it, a person can only use review</td><td><span class="tag info">new</span></td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="schema">7. Database schema</h2>
+<p>Still one migration, <code>V08_00_00_001__shapeshifter_ai.sql</code>. It hasn't been released, so it's edited in place rather than followed by a new migration. Its final version number still has to be agreed against the release it ships in.</p>
+<div class="table-wrap"><table>
+  <tr><th>Table</th><th>Storage interface</th><th>Change</th></tr>
+  <tr><td><code>shapeshifter_learner_state</code></td><td><code>LearnerStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_binding</code></td><td><code>LearnerStore</code></td><td><code>provisional</code> column removed (C). <code>draft</code> stays: every promotion now passes through it</td></tr>
+  <tr><td><code>shapeshifter_deleted_pipeline</code></td><td><code>LearnerStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_attempt</code></td><td><code>SessionStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_turn</code></td><td><code>SessionStore</code></td><td><code>carried_guidance</code> column removed (D). Question and answer text still stored, so retention matters (<a href="#open">§13</a>)</td></tr>
+  <tr><td><code>shapeshifter_deferral</code></td><td><code>SessionStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_corpus</code></td><td><code>CorpusStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_output</code></td><td><code>OutputStore</code></td><td><code>record_spans</code> and <code>provisional</code> columns removed (C, F)</td></tr>
+  <tr><td><code>shapeshifter_snapshot</code></td><td><code>OutputStore</code></td><td>None</td></tr>
+  <tr><td><code>shapeshifter_spend</code></td><td><code>SpendStore</code></td><td>Unchanged, but now <em>read</em>, by the spend breaker</td></tr>
+  <tr><td><s><code>shapeshifter_guidance</code></s></td><td>–</td><td><span class="tag bad">removed (D)</span>: replaced by the document's <code>instructions</code></td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="llm">8. Model (LLM) call sites</h2>
+<div class="table-wrap"><table>
+  <tr><th>Where</th><th>What it does</th></tr>
+  <tr><td><code>-api</code>: <code>Advisor</code> port</td><td>"Send these messages, get a reply and token usage back." The engine depends only on this. It never sees langchain4j</td></tr>
+  <tr><td><code>-impl</code>: <code>model/ModelAdvisor</code></td><td><strong>Still the only place the model is called.</strong> Resolves the document's model through <code>stroom-ai-api</code> and calls it. Writes an audit event per call. The one class in Shapeshifter that imports langchain4j</td></tr>
+  <tr><td><code>-impl</code>: <code>model/ModelGate</code> <span class="tag info">new</span></td><td>Wraps the advisor. Refuses a call if the spend breaker is open or the rate limit is reached, and records spend afterwards</td></tr>
+  <tr><td><code>-engine</code>: recipe and question text</td><td>The fixed Chain → Configure parser → Configure transform → Admit recipe. Prompt text is code, reviewed and tested like code. The document adds only its <code>instructions</code></td></tr>
+  <tr><td><code>-engine</code>: <code>StylesheetSafetyCheck</code> <span class="tag info">new</span></td><td>Runs on every generated stylesheet, both before it's judged and again at promotion. Refuses extension functions, <code>document()</code>, <code>unparsed-text()</code>, <code>collection()</code>, <code>xsl:include</code> / <code>import</code> / <code>result-document</code> and external entities. Also refuses Data Splitter configurations that set <code>ignoreErrors</code> (A19)</td></tr>
+  <tr><td>Callers</td><td>Only <code>LearningSessionService</code>, in the worker. No web request calls the model</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="ports">9. Ports and their bindings</h2>
+<p>Every port lives in <code>-api</code>. Names are illustrative.</p>
+<div class="table-wrap"><table>
+  <tr><th>Port</th><th>Replaces (today)</th><th>Production binding</th><th>Test double (<code>testFixtures</code>)</th></tr>
+  <tr><td><code>LearnerStore</code></td><td><code>Learners</code>, <code>LearnerStates</code>, <code>LearnerBindings</code>, <code>LearningPipelines</code>, <code>DeletedPipelines</code>, <code>KeptLearning</code></td><td><code>LearnerDao</code>, behind the existing per-node caches for bindings and state</td><td>in-memory</td></tr>
+  <tr><td><code>SessionStore</code></td><td><code>Attempts</code>, <code>Deferrals</code>, <code>Guidance</code></td><td><code>SessionDao</code></td><td>in-memory</td></tr>
+  <tr><td><code>CorpusStore</code></td><td><code>CorpusIndex</code>, <code>RegressionSet</code></td><td><code>CorpusDao</code> + streams on the source feed</td><td>in-memory</td></tr>
+  <tr><td><code>OutputStore</code></td><td><code>Outputs</code>, <code>Snapshots</code></td><td><code>OutputDao</code></td><td>in-memory</td></tr>
+  <tr><td><code>SpendStore</code></td><td><code>Spend</code></td><td><code>SpendDao</code></td><td>in-memory</td></tr>
+  <tr><td><code>Advisor</code></td><td><code>Advisors</code></td><td><code>ModelGate</code> → <code>ModelAdvisor</code></td><td>scripted advisor (exists)</td></tr>
+  <tr><td><code>CandidateRunner</code></td><td><code>StepRunner</code> ×4 (<code>DataSplitterStep</code>, <code>JsonStep</code>, <code>XmlFragmentStep</code>, <code>PipelineStepRunner</code>), <code>FragmentRunner</code> ×2</td><td><code>PipelineCandidateRunner</code>: the real pipeline plus <code>CoverageFilter</code></td><td>Tier 1 tests run the real runner too (see §11)</td></tr>
+  <tr><td><code>LearnedContent</code></td><td><code>Places</code>, <code>ContentCreator</code></td><td>Explorer-backed writer</td><td>in-memory</td></tr>
+  <tr><td><code>Inputs</code></td><td><code>Inputs</code></td><td><code>StreamInputs</code></td><td>in-memory</td></tr>
+  <tr><td><code>Documents</code></td><td><code>Documents</code></td><td><code>StoreDocuments</code></td><td>in-memory</td></tr>
+  <tr><td><code>Wake</code></td><td><code>Wake</code></td><td><code>TaskWake</code></td><td>in-memory</td></tr>
+</table></div>
+<p>That's 11 ports instead of 22. <code>FragmentCheck</code> becomes an internal part of <code>PipelineCandidateRunner</code> rather than a separately bound port.</p>
+
+<!-- ================================================================== -->
+<h2 id="packages">10. Package structure</h2>
+<p>Packages are named for what they do, and only depend downwards. Today, five packages form one cycle of about 15,000 lines, and <code>doc</code> and <code>element</code> form another. In the target state an architecture test (ArchUnit or similar) fails the build if a dependency points the wrong way.</p>
+
+<div class="figure">
+<svg viewBox="0 0 960 430" role="img" aria-labelledby="g3t">
+  <title id="g3t">Target package layering</title>
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+
+  <text class="t-head" x="10" y="24">-impl</text>
+  <rect class="box" x="90" y="10" width="120" height="44" rx="2"/><text class="t-title" x="150" y="37" text-anchor="middle">rest</text>
+  <rect class="box" x="225" y="10" width="120" height="44" rx="2"/><text class="t-title" x="285" y="37" text-anchor="middle">job</text>
+  <rect class="box" x="360" y="10" width="140" height="44" rx="2"/><text class="t-title" x="430" y="37" text-anchor="middle">pipeline</text>
+  <rect class="box" x="515" y="10" width="120" height="44" rx="2"/><text class="t-title" x="575" y="37" text-anchor="middle">doc</text>
+  <rect class="box" x="650" y="10" width="120" height="44" rx="2"/><text class="t-title" x="710" y="37" text-anchor="middle">model</text>
+
+  <rect class="box focus" x="90" y="90" width="680" height="54" rx="2"/>
+  <text class="t-title" x="430" y="112" text-anchor="middle">service</text>
+  <text class="t-sub" x="430" y="130" text-anchor="middle">ServingService · LearningSessionService · PromotionService · SupervisorService</text>
+
+  <line class="e" x1="150" y1="54" x2="150" y2="90" marker-end="url(#a3)"/>
+  <line class="e" x1="285" y1="54" x2="285" y2="90" marker-end="url(#a3)"/>
+  <line class="e" x1="430" y1="54" x2="430" y2="90" marker-end="url(#a3)"/>
+
+  <line class="div" x1="0" y1="170" x2="960" y2="170"/>
+  <text class="t-head" x="10" y="200">-engine</text>
+  <rect class="box" x="90" y="186" width="150" height="54" rx="2"/><text class="t-title" x="165" y="209" text-anchor="middle">recipe</text><text class="t-sub" x="165" y="227" text-anchor="middle">steps, question text</text>
+  <rect class="box" x="265" y="186" width="150" height="54" rx="2"/><text class="t-title" x="340" y="209" text-anchor="middle">promotion</text><text class="t-sub" x="340" y="227" text-anchor="middle">gate, draft rules</text>
+  <rect class="box" x="440" y="186" width="150" height="54" rx="2"/><text class="t-title" x="515" y="209" text-anchor="middle">reply</text><text class="t-sub" x="515" y="227" text-anchor="middle">parsing, safety check</text>
+  <rect class="box" x="90" y="262" width="325" height="50" rx="2"/><text class="t-title" x="252" y="284" text-anchor="middle">scoring</text><text class="t-sub" x="252" y="301" text-anchor="middle">scorers, scorecard, the bar</text>
+  <rect class="box" x="440" y="262" width="150" height="50" rx="2"/><text class="t-title" x="515" y="284" text-anchor="middle">corpus</text><text class="t-sub" x="515" y="301" text-anchor="middle">regression rules</text>
+  <line class="e" x1="165" y1="240" x2="165" y2="262" marker-end="url(#a3)"/>
+  <line class="e" x1="340" y1="240" x2="340" y2="262" marker-end="url(#a3)"/>
+  <line class="e" x1="390" y1="240" x2="470" y2="262" marker-end="url(#a3)"/>
+
+  <line class="e" x1="300" y1="144" x2="300" y2="186" marker-end="url(#a3)"/>
+  <text class="t-edge" x="308" y="168">uses</text>
+
+  <line class="div" x1="0" y1="336" x2="960" y2="336"/>
+  <text class="t-head" x="10" y="366">-api</text>
+  <rect class="box focus" x="90" y="350" width="680" height="54" rx="2"/>
+  <text class="t-title" x="430" y="372" text-anchor="middle">ports + domain records</text>
+  <text class="t-sub" x="430" y="390" text-anchor="middle">LearnerStore · SessionStore · CorpusStore · OutputStore · SpendStore · Advisor · CandidateRunner · …</text>
+  <line class="e" x1="252" y1="312" x2="252" y2="350" marker-end="url(#a3)"/>
+  <line class="e" x1="515" y1="312" x2="515" y2="350" marker-end="url(#a3)"/>
+  <path class="e" d="M770,117 H850 V377 H770" marker-end="url(#a3)"/>
+  <text class="t-edge" x="800" y="250">-impl-db implements</text>
+  <text class="t-edge" x="800" y="263">these, from below</text>
+</svg>
+<p class="caption">Arrows mean "depends on". <code>pipeline</code>, <code>doc</code> and <code>model</code> in <code>-impl</code> provide the production bindings of ports (candidate runner, documents, advisor) and are wired by Guice. The services see only the port interfaces.</p>
+</div>
+
+<div class="table-wrap"><table>
+  <tr><th>Today's package</th><th>Lines</th><th>Goes to</th></tr>
+  <tr><td><code>stage</code></td><td class="num">5,294</td><td>Ports → <code>-api</code>. <code>Stage</code> split into the four services (<code>-impl/service</code>) plus engine rules (<code>-engine/promotion</code>)</td></tr>
+  <tr><td><code>learning</code></td><td class="num">3,624</td><td><code>-engine/recipe</code> and <code>-engine/reply</code>, much smaller without the flow interpreter</td></tr>
+  <tr><td><code>scoring</code></td><td class="num">2,152</td><td><code>-engine/scoring</code>. Schema validation that needs <code>stroom-pipeline</code> sits behind a port, implemented in <code>-impl/pipeline</code></td></tr>
+  <tr><td><code>fragment</code></td><td class="num">2,649</td><td><code>-impl/pipeline</code> (runner, filters, learned-content writer). The stand-in runner is removed</td></tr>
+  <tr><td><code>extraction</code>, <code>transformation</code></td><td class="num">1,592</td><td>Mostly removed (i). Record-splitting rules that the scorers need move to <code>-engine/scoring</code></td></tr>
+  <tr><td><code>element</code></td><td class="num">2,972</td><td>Divided by job: elements → <code>-impl/pipeline</code>, jobs → <code>-impl/job</code>, model adapter → <code>-impl/model</code></td></tr>
+  <tr><td><code>doc</code></td><td class="num">1,094</td><td>Store → <code>-impl/doc</code>, resources → <code>-impl/rest</code>, business logic → <code>SupervisorService</code></td></tr>
+  <tr><td><code>cache</code></td><td class="num">327</td><td><code>-impl-db</code>, next to the DAOs they wrap</td></tr>
+  <tr><td><code>state</code></td><td class="num">1,870</td><td><code>testFixtures</code>, ≈ 5 doubles instead of 19</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="tests">11. Tests</h2>
+<div class="table-wrap"><table>
+  <tr><th>Kind</th><th>Today</th><th>Target</th></tr>
+  <tr><td>Unit tests (engine)</td><td>Mixed in with pipeline-dependent tests</td><td>Fast, isolated tests of recipe, scoring, gate and reply parsing, with no Stroom pipeline needed</td></tr>
+  <tr><td>Tier 1 scenarios</td><td>Run on stand-in parser runners and a stand-in fragment runner</td><td>Run on the real <code>PipelineCandidateRunner</code>, with in-memory storage and a scripted model. Slower than today, but they test what ships</td></tr>
+  <tr><td>"Runners agree" tests</td><td><code>TestStepRunnersAgree</code>, <code>TestFragmentRunnersAgree</code></td><td><span class="tag bad">removed</span>: there's only one runner</td></tr>
+  <tr><td>Flow grammar tests</td><td>Parsing, validation and examples</td><td><span class="tag bad">removed</span> with the flow (B)</td></tr>
+  <tr><td>DAO tests</td><td>10 classes on MySQL</td><td>5 classes, one per storage interface</td></tr>
+  <tr><td><code>stroom-app</code> scenarios</td><td>≈ 22</td><td>Kept, less those for removed actions (accept, improve, amend, exhaust, guidance, provisional). Added: automatic approval through the review path, the spend breaker, the permission check</td></tr>
+  <tr><td>Safety tests</td><td>The stand-in refuses unsafe XSLT</td><td><code>StylesheetSafetyCheck</code> tests for each refused construct, run against the real runner</td></tr>
+  <tr><td>Architecture test</td><td>None</td><td>Enforces the module and package layering in §2 and §10</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="findings">12. Earlier findings: what is resolved</h2>
+<p>These are the boundary findings from the server-side inventory, and what becomes of each in the target state.</p>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Finding today</th><th>Target</th><th>Status</th></tr>
+  <tr><td>1</td><td>No API module; <code>-impl-db</code> depends on the whole engine</td><td><code>-api</code> holds the ports; <code>-impl-db</code> depends on it alone</td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>2</td><td>Engine depends on <code>stroom-pipeline</code></td><td><code>-engine</code> doesn't; only <code>-impl</code>'s adapters do</td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>3</td><td>LLM types leak: <code>ModelAdvisor</code> uses langchain4j directly, and <code>stroom-ai-api</code> exposes langchain4j types</td><td>Shapeshifter's own boundary (<code>Advisor</code>) is clean, and langchain4j is confined to one adapter class. <code>stroom-ai-api</code> itself is unchanged</td><td><span class="tag warn">partly</span></td></tr>
+  <tr><td>4</td><td>A 15k-line package cycle, plus <code>doc ↔ element</code></td><td>Layered packages, enforced by a test</td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>5</td><td>Shared REST DTOs used as the engine's domain model</td><td>Fewer shared types (≈ 38). Whether the engine gets its own records, or keeps using the shared ones, wasn't one of the options</td><td><span class="tag warn">partly</span></td></tr>
+  <tr><td>6</td><td>Resource → service → DAO layering not followed</td><td>Thin resources; <code>SupervisorService</code> holds the logic</td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>7</td><td>Test doubles in the production jar</td><td>In <code>testFixtures</code></td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>8</td><td>Packages named by role, hiding the boundaries</td><td>Named by what they do (§10)</td><td><span class="tag ok">resolved</span></td></tr>
+  <tr><td>9</td><td>Many release-fixed artefacts</td><td>Fewer: 13 endpoints, 10 tables, 8 config properties (2 new), 1 new permission, 2 jobs, 4 elements (2 user-facing)</td><td><span class="tag warn">reduced</span></td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="open">13. Still open</h2>
+<p>The simplification options don't address these. They still need decisions or work:</p>
+<ol class="findings">
+  <li><strong>Sending log data to the model.</strong> Samples go to the model unredacted (A146). Someone must own which feeds' data may go to which model.</li>
+  <li><strong>Turn text retention.</strong> <code>shapeshifter_turn</code> stores every question and answer, and questions contain samples of the feed's data. Retention prunes them (<code>attemptRetention</code>). Check that the period suits the most sensitive feed, and that the table is protected accordingly.</li>
+  <li><strong>Drift the system can't see.</strong> Lines a parser drops while serving are reported but never judged (ISSUES 2), so some format changes go unnoticed. This matters more on automatic feeds.</li>
+  <li><strong><code>stroom-ai-api</code>.</strong> It still mixes model access with Ask Stroom's chat storage and exposes langchain4j types. Shapeshifter is insulated from this by its <code>Advisor</code> port. Fixing it is separate work, on a module that's already on master.</li>
+  <li><strong>Engine domain model.</strong> Decide whether <code>-engine</code> gets its own records, mapped to the shared DTOs in <code>-impl</code>, so the client contract and the engine can change independently (finding 5).</li>
+  <li><strong>Scale.</strong> The Supervisor's backlog and learners lists still group or page parts of the data in memory (ISSUES 11). Watch this in the real-scale trial.</li>
+  <li><strong>Release numbering.</strong> The migration version (<code>V08_00_00_001</code>) must match the release this ships in.</li>
+</ol>
+
+<p class="caption">Basis: the server-side inventory (today's code) and the simplification options document; <code>stroom-shapeshifter/stroom-shapeshifter-ai/design/</code> and <code>ISSUES.md</code>; the current migration and <code>ShapeshifterAiDoc</code>. Today's counts are measured; target figures marked ≈ are estimates.</p>
+
+</main>
+<footer class="site-footer"><div class="wrap">Stroomworks · internal engineering note · generated from branch <code>ai_translations</code> · not for external distribution</div></footer>
+</body>
+</html>

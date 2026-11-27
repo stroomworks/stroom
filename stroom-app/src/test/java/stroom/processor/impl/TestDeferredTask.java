@@ -65,7 +65,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// to `CREATED` by the reaper's sweep after the retry delay, or at once by a wake, and then completes. In
 /// both task selection modes, since the handler and the reaper serve both.
 ///
-/// The element is [DeferringParser], which stands where Shapeshifter AI's will: it defers each stream
+/// The element is [DeferringParser], which stands where Learning Flow's will: it defers each stream
 /// the first time and emits a small document the second.
 @IncludeModule(DeferringParserModule.class)
 class TestDeferredTask extends AbstractCoreIntegrationTest {

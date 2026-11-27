@@ -55,14 +55,9 @@ public class DocumentTypeRegistry {
             "ProcessorFilter",
             "Processor Filter",
             SvgImage.FILTER);
-    public static final DocumentType PIPELINE_FACTORY_DOCUMENT_TYPE = new DocumentType(
-            DocumentTypeGroup.DATA_PROCESSING,
-            "PipelineFactory",
-            "Pipeline Factory",
-            SvgImage.DOCUMENT_PIPELINE_FACTORY);
-    public static final DocumentType SHAPESHIFTER_AI_DOCUMENT_TYPE = new DocumentType(
+    public static final DocumentType LEARNING_FLOW_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
-            "ShapeshifterAi",
+            "LearningFlow",
             "Learning Flow",
             SvgImage.AI);
     public static final DocumentType ANALYTIC_RULE_DOCUMENT_TYPE = new DocumentType(
@@ -125,6 +120,11 @@ public class DocumentTypeRegistry {
             "SqlTemporalStore",
             "SQL Temporal Store",
             SvgImage.DOCUMENT_SQL_TEMPORAL_STORE);
+    public static final DocumentType DATA_CONNECTION_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.INDEXING,
+            "DataConnection",
+            "Data Connection",
+            SvgImage.DOCUMENT_DATA_CONNECTION);
     public static final DocumentType DOCUMENTATION_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "Documentation",
@@ -282,8 +282,7 @@ public class DocumentTypeRegistry {
 
 
     static {
-        put(PIPELINE_FACTORY_DOCUMENT_TYPE);
-        put(SHAPESHIFTER_AI_DOCUMENT_TYPE);
+        put(LEARNING_FLOW_DOCUMENT_TYPE);
         put(ANALYTICS_STORE_DOCUMENT_TYPE);
         put(ANALYTIC_RULE_DOCUMENT_TYPE);
         put(DATA_GENERATOR_DOCUMENT_TYPE);
@@ -322,6 +321,7 @@ public class DocumentTypeRegistry {
         put(TRACES_DOCUMENT_TYPE);
         put(FLOOR_MAP_EVENT_STORE_DOCUMENT_TYPE);
         put(SQL_TEMPORAL_STORE_DOCUMENT_TYPE);
+        put(DATA_CONNECTION_DOCUMENT_TYPE);
 
         // Searchables
         put(DUAL_DOCUMENT_TYPE);

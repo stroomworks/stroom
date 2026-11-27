@@ -47,14 +47,14 @@
 
 .approach-section__fallback-title {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--font-size-18);
     font-weight: 600;
 }
 
 .approach-section__note {
     margin: 0;
     color: var(--text-color--low-emphasis);
-    max-width: 760px;
+    max-width: calc(760px * var(--text-scale));
 }
 
 /* The question text, set off from the step above it */

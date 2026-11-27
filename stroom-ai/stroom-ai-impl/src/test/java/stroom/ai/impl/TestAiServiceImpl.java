@@ -25,6 +25,7 @@ import stroom.util.jersey.HttpClientProviderCache;
 import stroom.util.shared.http.HttpClientConfig;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.shared.time.TimeUnit;
+import stroom.util.time.SimpleDurationUtil;
 
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -106,6 +107,28 @@ class TestAiServiceImpl {
         assertThat(callsMadeWith.getFirst().getConnectionTimeout().getDuration()).isEqualTo(DOC_CONNECT_TIMEOUT);
     }
 
+    /// Regression test for gh-6017. Now that the model document's timeouts are honoured, the default
+    /// connection timeout must stay short so an unreachable model server is reported promptly, while the
+    /// response timeout stays long enough for slow models.
+    @Test
+    void testDefaultHttpClientConfigTimeouts() {
+        final HttpClientConfig config = aiService().getDefaultHttpClientConfig();
+
+        assertThat(toDuration(config.getConnectionTimeout()))
+                .isEqualTo(Duration.ofSeconds(30));
+        assertThat(toDuration(config.getTimeout()))
+                .isEqualTo(Duration.ofMinutes(10));
+    }
+
+    /// The default configuration is built once and reused.
+    @Test
+    void testDefaultHttpClientConfigIsReused() {
+        final AiServiceImpl aiService = aiService();
+
+        assertThat(aiService.getDefaultHttpClientConfig())
+                .isSameAs(aiService.getDefaultHttpClientConfig());
+    }
+
     // -----------------------------------------------------------------------------------------------
 
     private AiServiceImpl aiService() {
@@ -124,9 +147,17 @@ class TestAiServiceImpl {
     /// Records the configuration of every call, then fails it as a model that answers too slowly does,
     /// so nothing is sent anywhere.
     private HttpClientProviderCache recordingHttpClientCache() {
-        return httpClientConfiguration -> {
-            callsMadeWith.add(httpClientConfiguration);
-            return failingProvider();
+        return new HttpClientProviderCache() {
+            @Override
+            public HttpClientProvider get(final HttpClientConfiguration httpClientConfiguration) {
+                callsMadeWith.add(httpClientConfiguration);
+                return failingProvider();
+            }
+
+            @Override
+            public HttpClientProvider getAddressChecked(final HttpClientConfiguration httpClientConfiguration) {
+                return get(httpClientConfiguration);
+            }
         };
     }
 
@@ -141,6 +172,10 @@ class TestAiServiceImpl {
                 .connectionTimeout(SimpleDuration.builder().time(20).timeUnit(TimeUnit.SECONDS).build())
                 .retries(retries)
                 .build();
+    }
+
+    private static Duration toDuration(final SimpleDuration simpleDuration) {
+        return SimpleDurationUtil.convertToStroomDuration(simpleDuration).getDuration();
     }
 
     private static OpenAIModelDoc modelDoc(final HttpClientConfig httpClientConfig) {

@@ -44,6 +44,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -80,7 +81,13 @@ public class MetaServiceConfig extends AbstractConfig implements IsStroomConfig,
                 .expireAfterAccess(StroomDuration.ofMinutes(10))
                 .build();
         // Use LinkedHashSet for consistent order when serialised
-        metaTypes = CollectionUtil.asUnmodifiabledConsistentOrderSet(StreamTypeNames.ALL_HARD_CODED_STREAM_TYPE_NAMES);
+        // The hard-coded types, and the Smart Pipelines corpus. The corpus is written by Stroom itself
+        // and must not be receivable from outside (see StreamTypeNames.LEARNING_FLOW_CORPUS), but it has
+        // to be listed here or it cannot be picked — and so cannot be excluded from a processor filter
+        // written over a feed alone (audit finding S13).
+        final Set<String> stored = new HashSet<>(StreamTypeNames.ALL_HARD_CODED_STREAM_TYPE_NAMES);
+        stored.add(StreamTypeNames.LEARNING_FLOW_CORPUS);
+        metaTypes = CollectionUtil.asUnmodifiabledConsistentOrderSet(stored);
         rawMetaTypes = CollectionUtil.asUnmodifiabledConsistentOrderSet(
                 StreamTypeNames.ALL_HARD_CODED_RAW_STREAM_TYPE_NAMES);
         dataFormats = CollectionUtil.asUnmodifiabledConsistentOrderSet(DataFormatNames.ALL_HARD_CODED_FORMAT_NAMES);

@@ -1,0 +1,27 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- What a Smart Pipeline element has learned, on its pipeline's Structure tab above its properties
+     (learned-translation.css): folded until asked for, then the learned translation it runs, which opens, and its
+     elements in the order records pass through them, each with the documents it uses, which open; and a link to
+     the pipeline's Learning Status -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:c="urn:import:stroom.widget.component.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.learningflow.client.component">
+    <g:FlowPanel styleName="learned-translation" visible="false">
+        <s:Disclosure ui:field="disclosure" text="What it learned">
+            <g:FlowPanel styleName="learned-translation__body">
+                <tx:Label ui:field="message" styleName="learned-translation__message"/>
+                <g:FlowPanel ui:field="translationLine" styleName="learned-translation__line">
+                    <tx:InlineLabel styleName="learned-translation__label" text="Translating with"/>
+                    <b:LinkButton ui:field="fragment" addStyleNames="learned-translation__link"/>
+                </g:FlowPanel>
+                <c:AriaPanel ui:field="parts" styleName="learned-translation__parts" role="list"
+                             ariaLabel="Learned elements"/>
+                <b:LinkButton ui:field="openStatus" addStyleNames="learned-translation__link"
+                              text="Open its Learning Status"/>
+            </g:FlowPanel>
+        </s:Disclosure>
+    </g:FlowPanel>
+</ui:UiBinder>

@@ -27,6 +27,17 @@ develocity {
     }
 }
 
+// CI sets this to a dir that it saves and restores between runs, so unchanged
+// tasks (including tests) can be taken from the cache rather than run again.
+def gradleBuildCacheDir = System.getenv('GRADLE_BUILD_CACHE_DIR')
+if (gradleBuildCacheDir) {
+    buildCache {
+        local {
+            directory = new File(gradleBuildCacheDir)
+        }
+    }
+}
+
 rootProject.name = 'stroom'
 
 // Activity
@@ -106,7 +117,6 @@ include 'stroom-credentials:stroom-credentials-impl'
 include 'stroom-credentials:stroom-credentials-impl-db'
 
 // Dashboard
-include 'stroom-dashboard-gwt'
 include 'stroom-dashboard:stroom-dashboard-client'
 include 'stroom-dashboard:stroom-dashboard-impl'
 include 'stroom-dashboard:stroom-storedquery-api'
@@ -293,13 +303,10 @@ include 'stroom-security:stroom-security-mock'
 include 'stroom-security:stroom-security-openid-api'
 include 'stroom-security:stroom-security-user-api'
 
-// Pipeline Factory
-include 'stroom-pipeline-factory:stroom-pipeline-factory-impl'
-include 'stroom-pipeline-factory:stroom-pipeline-factory-impl-db'
 
-// Shapeshifter
-include 'stroom-shapeshifter:stroom-shapeshifter-ai'
-include 'stroom-shapeshifter:stroom-shapeshifter-ai-impl-db'
+// Learning Flow
+include 'stroom-learning-flow:stroom-learning-flow'
+include 'stroom-learning-flow:stroom-learning-flow-impl-db'
 
 // SQL Store
 include 'stroom-sqlstore:stroom-sqlstore-api'
@@ -307,6 +314,7 @@ include 'stroom-sqlstore:stroom-sqlstore-shared'
 include 'stroom-sqlstore:stroom-sqlstore-impl'
 include 'stroom-sqlstore:stroom-sqlstore-impl-db'
 include 'stroom-sqlstore:stroom-sqlstore-impl-db-jooq'
+include 'stroom-data-connection:stroom-data-connection-impl'
 
 // SSL Tests
 include 'stroom-ssl-test'
@@ -333,3 +341,4 @@ include 'stroom-util-shared'
 // View
 include 'stroom-view:stroom-view-api'
 include 'stroom-view:stroom-view-impl'
+include 'stroom-docstore:stroom-docstore-impl-database'

@@ -30,6 +30,7 @@ import stroom.node.client.NodeClient;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
 import stroom.svg.shared.SvgImage;
+import stroom.util.client.CountDownAndRun;
 import stroom.util.client.DelayedUpdate;
 import stroom.util.shared.PathSafeNames;
 import stroom.widget.button.client.IsButton;
@@ -94,12 +95,15 @@ public class IndexVolumeGroupEditorController extends Controller {
         indexVolumeStatusList.getToolbar().setName("Volume actions");
         indexVolumeStatusList.getToolbar().button(SvgImage.ADD, "New Index Volume", this::create);
         openButton = indexVolumeStatusList.getToolbar().button(SvgImage.EDIT,
-                "Edit Selected Index Volume", this::edit);
+                "Edit Selected Index Volume",
+                "Edit", this::edit);
         openButton.setEnabled(false);
         deleteButton = indexVolumeStatusList.getToolbar().button(SvgImage.DELETE,
-                "Delete Selected Index Volumes", this::delete);
+                "Delete Selected Index Volumes",
+                "Delete", this::delete);
         deleteButton.setEnabled(false);
         indexVolumeStatusList.getToolbar().button(SvgImage.REFRESH, "Rescan Index Volumes", this::onRescan);
+        indexVolumeStatusList.setDataHandler(this::showMixedWarning);
         delayedUpdate = new DelayedUpdate(indexVolumeStatusList::refresh);
         onDispose(delayedUpdate::reset);
 
@@ -133,6 +137,25 @@ public class IndexVolumeGroupEditorController extends Controller {
         indexVolumeStatusList.init(expressionCriteria,
                 guard(volumes -> open(opener, volumeGroup, title, consumer)),
                 this::dispose);
+    }
+
+    // Warn when the group holds both kinds of volume, as its shards then differ in which nodes can read them.
+    private void showMixedWarning(final List<IndexVolume> volumes) {
+        view.setMixedWarningVisible(holdsSharedAndLocal(volumes));
+    }
+
+    // Package-private for the tests
+    static boolean holdsSharedAndLocal(final List<IndexVolume> volumes) {
+        boolean hasShared = false;
+        boolean hasLocal = false;
+        for (final IndexVolume volume : volumes) {
+            if (volume.isShared()) {
+                hasShared = true;
+            } else {
+                hasLocal = true;
+            }
+        }
+        return hasShared && hasLocal;
     }
 
     private void open(final HasControllerNode opener,
@@ -201,6 +224,9 @@ public class IndexVolumeGroupEditorController extends Controller {
     private void editVolume(final IndexVolume indexVolume, final String caption) {
         editProvider.get().show(this, indexVolume, caption, result -> {
             if (result != null) {
+                // The volume made or saved, if the page shows it (UI-GUIDE.md, "What a list selects")
+                indexVolumeStatusList.getSelectionModel()
+                        .selectWhenShown(row -> Objects.equals(row.getId(), result.getId()));
                 indexVolumeStatusList.refresh();
             }
         }, indexVolumeStatusList.getTaskListener());
@@ -214,12 +240,20 @@ public class IndexVolumeGroupEditorController extends Controller {
                     : "Are you sure you want to delete the selected volume?";
             ConfirmEvent.fire(this, message, result -> {
                 if (result) {
-                    indexVolumeStatusList.getSelectionModel().clear();
+                    // Once all are answered, the volume in place of the first
+                    final CountDownAndRun countdown = new CountDownAndRun(list.size(), () -> {
+                        indexVolumeStatusList.getSelectionModel().selectNextAfterRemove(list);
+                        indexVolumeStatusList.refresh();
+                    });
                     for (final IndexVolume volume : list) {
                         restFactory
                                 .create(INDEX_VOLUME_RESOURCE)
                                 .method(res -> res.delete(volume.getId()))
-                                .onSuccess(response -> indexVolumeStatusList.refresh())
+                                .onSuccess(response -> countdown.countdown())
+                                .onFailure(error -> {
+                                    AlertEvent.fireError(this, error.getMessage(), null);
+                                    countdown.countdown();
+                                })
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
                                 .exec();
@@ -230,9 +264,10 @@ public class IndexVolumeGroupEditorController extends Controller {
     }
 
     private void enableButtons() {
-        final boolean enabled = indexVolumeStatusList.getSelectionModel().getSelected() != null;
-        openButton.setEnabled(enabled);
-        deleteButton.setEnabled(enabled);
+        // Open edits one volume; Delete deletes all selected
+        final int count = indexVolumeStatusList.getSelectionModel().getSelectedCount();
+        openButton.setEnabled(count == 1);
+        deleteButton.setEnabled(count > 0);
     }
 
     private void doWithGroupNameValidation(final String groupName,

@@ -119,15 +119,6 @@ public class UserAccessListController extends Controller {
                             .exec();
                 }
 
-                @Override
-                protected void changeData(final ResultPage<UserAccessRow> data) {
-                    super.changeData(data);
-                    if (!data.isEmpty()) {
-                        view.getSelectionModel().setSelected(data.getFirst());
-                    } else {
-                        view.getSelectionModel().clear();
-                    }
-                }
             };
             view.setDataProvider(dataProvider);
         } else {
@@ -140,6 +131,14 @@ public class UserAccessListController extends Controller {
     /// @return The toolbar.
     public Toolbar getToolbar() {
         return view.getToolbar();
+    }
+
+    /// Sets whether Stroom tracks the users' tokens, which it only does with its internal identity
+    /// provider; when it does not, the token columns say so.
+    ///
+    /// @param tokensTracked True if Stroom tracks the users' tokens.
+    public void setTokensTracked(final boolean tokensTracked) {
+        view.setTokensTracked(tokensTracked);
     }
 
     /// Filters the users, as if the user typed it.

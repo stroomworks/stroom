@@ -315,6 +315,10 @@
     --vis-axis__color: rgba(255,255,255,0.54);
     --vis-text__color: var(--text-color);
     --vis-text__color--faint: rgba(255,255,255,0.12);
+    /* Borders round a visualisation's panels and boxes (e.g. each chart of a grid), and round its fields
+       and buttons, as Stroom's own */
+    --vis-border__color: var(--border-color);
+    --vis-control__border-color: var(--control__border-color);
     --vis-icon__color: rgba(255,255,255,0.6);
     --vis-icon__color--hover: rgba(255,255,255,0.87);
     --vis-barchart-element__stroke: #000;
@@ -323,4 +327,16 @@
     --vis-tip__background-color: rgba(30, 30, 30, 0.8);
     --vis-tip-text__color: #bbb;
 
+}
+
+/* In forced colours (e.g. Windows high contrast) secondary text is GrayText, as in the light theme
+   (theme-root.css) */
+@media (forced-colors: active) {
+    .stroom-theme-dark {
+        --text-color--muted: GrayText;
+        /* Popups and dialogs are solid: forced colours keep a background's transparency, so
+           over the code editor they turned grey and looked disabled */
+        --transparency__background-color: Canvas;
+        --transparency__backdrop-filter: none;
+    }
 }

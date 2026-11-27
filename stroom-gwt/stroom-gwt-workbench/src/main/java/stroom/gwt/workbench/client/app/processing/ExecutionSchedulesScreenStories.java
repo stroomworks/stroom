@@ -96,9 +96,10 @@ public final class ExecutionSchedulesScreenStories {
             RestReply.json("{\"ok\": false, \"string\": \"Expression term has a missing field\"}"),
             "[\"node1\", \"node2\", \"node3\"]", RestReply.json(SCHEDULES));
     private static final RestFixtures ONE_NODE_FIXTURES = fixtures("[\"node1\"]", RestReply.json(SCHEDULES));
-    // The list as loaded (the first load and the flush of selections that goes with each), then edited
+    // The list as loaded, then edited (a refresh once also fetched every schedule, to drop selected
+    // ones gone; the grid now drops rows not shown)
     private static final RestFixtures EDIT_FIXTURES = fixtures("[\"node1\", \"node2\", \"node3\"]",
-            RestReply.json(SCHEDULES), RestReply.json(SCHEDULES), RestReply.json(EDITED_SCHEDULES));
+            RestReply.json(SCHEDULES), RestReply.json(EDITED_SCHEDULES));
 
     private static final String RUN_NOW = "Run Schedules Now";
     private static final String EDIT = "Edit Selected Schedule";
@@ -210,6 +211,15 @@ public final class ExecutionSchedulesScreenStories {
                     play.expect(play.getByTitle("Clear Schedule Filter")).toHaveAttribute("aria-disabled", "true");
                     play.expect(play.spy(ScreenHarness.ALERT_SPY)).not().toHaveBeenCalled();
                     expectNoErrors(play);
+                })
+                // Filter Schedules left open (the screenshot and the dialog measurement show it)
+                .story("FilterSchedulesOpen", context -> render(context, FIXTURES, false))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.findByText("Hourly rollup");
+                    play.click(play.getByTitle("Filter Schedules"));
+                    final Play filter = dialog(screen, "Filter Schedules");
+                    play.waitFor(() -> play.expect(filter.getByRole("tree", "Expression")).toBeVisible());
                 })
                 // An invalid filter says why, and once that is closed the dialog can be used again: its OK
                 // and Cancel once stayed disabled, as the validation never told the dialog it failed

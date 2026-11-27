@@ -15,7 +15,7 @@
  */
 
 /*
-   What is out of sight until someone asks for it (stroom.shapeshifter.client.component.Disclosure): a link
+   What is out of sight until someone asks for it (stroom.learningflow.client.component.Disclosure): a link
    with a chevron that points down once it is unfolded, and what it unfolds beneath it.
 */
 
@@ -31,7 +31,7 @@
     align-items: center;
     gap: 6px;
     color: var(--link__text-color);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 .disclosure__toggle::before {

@@ -44,7 +44,7 @@
     gap: 8px;
     margin: 0;
     font-weight: 600;
-    font-size: 18px;
+    font-size: var(--font-size-18);
     color: var(--text-color);
     outline: none;
 }
@@ -60,7 +60,7 @@
     border: 1px solid var(--focus-border);
     background-color: var(--focus-border);
     color: var(--page__background-color);
-    font-size: 13px;
+    font-size: var(--font-size-13);
 }
 
 /* The heading's size and weight, which base.css would set back on a span */
@@ -82,7 +82,7 @@
     padding: 0 7px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    font-size: 11.5px;
+    font-size: calc((var(--font-size-11) + var(--font-size-12)) / 2);
     line-height: 18px;
     color: var(--text-color--low-emphasis);
     white-space: nowrap;
@@ -115,12 +115,12 @@
 }
 
 .step-card__when {
-    min-width: 200px;
+    min-width: calc(200px * var(--text-scale));
 }
 
 /* A number of tries or kinds; under the card, to outrank the text box's own width */
 .step-card .step-card__count {
-    width: 120px;
+    width: calc(120px * var(--text-scale));
 }
 
 .step-card__ticks {
@@ -174,14 +174,14 @@
 
 .step-card__usual-line {
     color: var(--text-color--low-emphasis);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 /* A text button (LinkButton), in the colour of a link so that it reads as one before it is hovered */
 .step-card__link {
     align-self: flex-start;
     color: var(--link__text-color);
-    font-size: 12px;
+    font-size: var(--font-size-12);
 }
 
 /* Advanced options, a disclosure: a chevron that points down once it is unfolded */

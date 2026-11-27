@@ -1,0 +1,41 @@
+[ {
+  "kind" : "CHAIN"
+}, {
+  "kind" : "SPLIT"
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "PARSER",
+  "transitions" : [ {
+    "on" : "YIELD_SHORT",
+    "goTo" : "split"
+  } ]
+}, {
+  "id" : "first",
+  "kind" : "CONFIGURE",
+  "role" : "TRANSFORM",
+  "candidates" : 2,
+  "transitions" : [ {
+    "on" : "PASSED",
+    "goTo" : "end"
+  }, {
+    "goTo" : "target"
+  } ]
+}, {
+  "kind" : "TARGET",
+  "kinds" : 3
+}, {
+  "id" : "again",
+  "kind" : "CONFIGURE",
+  "role" : "PARSER"
+}, {
+  "kind" : "CONFIGURE",
+  "role" : "TRANSFORM",
+  "transitions" : [ {
+    "on" : "PRESERVATION_SHORT",
+    "goTo" : "again"
+  }, {
+    "goTo" : "admit"
+  } ]
+}, {
+  "kind" : "ADMIT"
+} ]

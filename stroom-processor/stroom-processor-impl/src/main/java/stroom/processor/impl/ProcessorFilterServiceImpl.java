@@ -18,8 +18,6 @@ package stroom.processor.impl;
 
 import stroom.analytics.shared.AnalyticRuleDoc;
 import stroom.docref.DocRef;
-import stroom.docstore.api.DependencyRemapper;
-import stroom.docstore.api.DocDependencyService;
 import stroom.docstore.api.DocFinder;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.meta.api.MetaService;
@@ -28,7 +26,6 @@ import stroom.meta.shared.MetaFields;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorService;
-import stroom.processor.api.SupervisedPipelines;
 import stroom.processor.shared.CreateProcessFilterRequest;
 import stroom.processor.shared.FetchProcessorRequest;
 import stroom.processor.shared.Processor;
@@ -64,7 +61,6 @@ import stroom.util.shared.UserDependency;
 import stroom.util.shared.UserRef;
 
 import jakarta.inject.Inject;
-import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.util.ArrayList;
@@ -74,7 +70,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Singleton
@@ -91,9 +86,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
     private final SecurityContext securityContext;
     private final DocFinder docFinder;
     private final UserRefLookup userRefLookup;
-    private final Provider<DocDependencyService> docDependencyServiceProvider;
-    private final Provider<ProcessorConfig> processorConfigProvider;
-    private final Set<SupervisedPipelines> supervisedPipelines;
+    private final ProcessorFilterDependencies processorFilterDependencies;
 
     @Inject
     ProcessorFilterServiceImpl(final ProcessorService processorService,
@@ -103,9 +96,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                                final SecurityContext securityContext,
                                final DocFinder docFinder,
                                final UserRefLookup userRefLookup,
-                               final Provider<DocDependencyService> docDependencyServiceProvider,
-                               final Provider<ProcessorConfig> processorConfigProvider,
-                               final Set<SupervisedPipelines> supervisedPipelines) {
+                               final ProcessorFilterDependencies processorFilterDependencies) {
         this.processorService = processorService;
         this.processorFilterDao = processorFilterDao;
         this.processorTaskDao = processorTaskDao;
@@ -113,30 +104,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
         this.securityContext = securityContext;
         this.docFinder = docFinder;
         this.userRefLookup = userRefLookup;
-        this.docDependencyServiceProvider = docDependencyServiceProvider;
-        this.processorConfigProvider = processorConfigProvider;
-        this.supervisedPipelines = supervisedPipelines;
-    }
-
-    /// A pipeline with a supervised stage may defer its tasks, and a deferred task is woken by a row the
-    /// worker writes: a node that is fed from a master's queue would never see the wake, so a filter over
-    /// such a pipeline is refused while the node is master-fed, and says so where the filter is made.
-    private void requireWorkerClaimingForSupervised(final DocRef pipeline) {
-        if (processorConfigProvider.get().isClaimTasksOnWorker()) {
-            return;
-        }
-        for (final SupervisedPipelines check : supervisedPipelines) {
-            if (check.isSupervised(pipeline)) {
-                final String named = pipeline.getName() != null
-                        ? pipeline.getName()
-                        : pipeline.getUuid();
-                throw new IllegalStateException("Pipeline " + named
-                                                + " holds a supervised stage, whose tasks may be deferred and "
-                                                + "woken later: a filter over it needs this node to claim its "
-                                                + "own tasks. Set stroom.processor.claimTasksOnWorker to true "
-                                                + "and try again.");
-            }
-        }
+        this.processorFilterDependencies = processorFilterDependencies;
     }
 
     @Override
@@ -167,8 +135,6 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
             throw new PermissionException(securityContext.getUserRef(),
                     "You do not have permission to create this processor filter");
         }
-        requireWorkerClaimingForSupervised(pipelineDocRef);
-
         // If we are using auto priority then try and get a priority.
         final int calculatedPriority = getAutoPriority(processor, request.getPriority(), request.isAutoPriority());
 
@@ -279,13 +245,9 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
     @Override
     public ProcessorFilter create(final ProcessorFilter processorFilter) {
         final ProcessorFilter updated = ensureRunAs(processorFilter);
-        // An imported filter is a filter made: over a supervised pipeline it needs the same of the node.
-        if (updated.getPipeline() != null) {
-            requireWorkerClaimingForSupervised(updated.getPipeline());
-        }
         final ProcessorFilter createdFilter = securityContext.secureResult(PERMISSION, () ->
                 processorFilterDao.create(ensureValid(updated)));
-        updateDocDependencies(createdFilter);
+        processorFilterDependencies.update(createdFilter);
         return createdFilter.copy().processor(updated.getProcessor()).build();
     }
 
@@ -325,7 +287,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
             return processorFilterDao.update(updated);
         });
         // Recompute after the write has committed so the dependency service sees the current filter.
-        updateDocDependencies(result);
+        processorFilterDependencies.update(result);
         return result;
     }
 
@@ -341,67 +303,11 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                 // Once the filter is logically deleted no new tasks will be created for it, but we may still have
                 // active tasks for 'deleted' filters.
                 processorTaskDao.logicalDeleteByProcessorFilterId(id);
-                removeDocDependencies(uuid);
+                processorFilterDependencies.remove(uuid);
                 return true;
             }
             return false;
         });
-    }
-
-    /**
-     * Keep the doc_dependency store current for a filter create/update by extracting the filter's
-     * dependencies <b>directly from the in-hand object</b> and storing them (once, on this node)
-     * rather than relying on a cluster-wide entity event or re-reading the filter back via the
-     * handler registry. Runs as the processing user (pipeline-name resolution may do privileged
-     * lookups); failures are swallowed and logged by {@link DocDependencyService} so they cannot
-     * break the filter write.
-     */
-    private void updateDocDependencies(final ProcessorFilter filter) {
-        final String uuid = NullSafe.get(filter, ProcessorFilter::getUuid);
-        if (uuid != null) {
-            final DocRef docRef = new DocRef(ProcessorFilter.ENTITY_TYPE, uuid);
-            securityContext.asProcessingUser(() -> {
-                final Set<DocRef> deps = getDependencies(
-                        filter, ref -> docFinder.getName(ref).orElse("Unknown"));
-                docDependencyServiceProvider.get().setDependencies(docRef, deps);
-            });
-        }
-    }
-
-    /**
-     * @param pipelineNameResolver resolves the display name for the filter's pipeline DocRef (e.g. a
-     *                             live lookup against the doc store). May be {@code null}, in which
-     *                             case the pipeline's own name (if any) is used.
-     */
-    private Set<DocRef> getDependencies(final ProcessorFilter processorFilter,
-                                        final Function<DocRef, String> pipelineNameResolver) {
-        final DependencyRemapper dependencyRemapper = new DependencyRemapper();
-        final QueryData queryData = processorFilter.getQueryData();
-        if (queryData != null) {
-            if (queryData.getDataSource() != null) {
-                dependencyRemapper.remap(queryData.getDataSource());
-            }
-            if (queryData.getExpression() != null) {
-                dependencyRemapper.remapExpression(queryData.getExpression());
-            }
-        }
-        final String pipelineUuid = processorFilter.getPipelineUuid();
-        if (NullSafe.isNonBlankString(pipelineUuid)) {
-            final DocRef pipeline = processorFilter.getPipeline();
-            final String name = pipelineNameResolver != null
-                    ? pipelineNameResolver.apply(pipeline)
-                    : NullSafe.get(pipeline, DocRef::getName);
-            dependencyRemapper.remap(new DocRef(PipelineDoc.TYPE, pipelineUuid, name));
-        }
-        return dependencyRemapper.getDependencies();
-    }
-
-    private void removeDocDependencies(final String uuid) {
-        if (uuid != null) {
-            final DocRef docRef = new DocRef(ProcessorFilter.ENTITY_TYPE, uuid);
-            securityContext.asProcessingUser(() ->
-                    docDependencyServiceProvider.get().removeDependencies(docRef));
-        }
     }
 
     @Override
@@ -607,9 +513,9 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                         new RuntimeException("No processor filter found for docRef " + processorFilterDocRef));
 
         final ProcessorFilter restored = processorFilterDao.restoreProcessorFilter(processorFilter);
-        // The replica holds the doc ref's uuid now, so the dependency edges recorded against it
-        // are the replica's.
-        updateDocDependencies(restored);
+        // Deleting the filter removed its dependency edges. The replica holds the doc ref's uuid now,
+        // so write them back against it.
+        processorFilterDependencies.update(restored);
         return restored;
     }
 

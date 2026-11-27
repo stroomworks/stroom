@@ -34,7 +34,7 @@ import java.util.Optional;
 /// writing before running is what a supervisor that judges a candidate before promoting it must not do.
 ///
 /// So the carrier is its own thing, scoped to the pipeline being built and set by whoever is building it:
-/// the stepper from the person's edits, the Shapeshifter AI supervisor from a candidate it is judging.
+/// the stepper from the person's edits, the Learning Flow supervisor from a candidate it is judging.
 /// Empty for an ordinary processing run, which is every run that is neither.
 @PipelineScoped
 public class InjectedCode {

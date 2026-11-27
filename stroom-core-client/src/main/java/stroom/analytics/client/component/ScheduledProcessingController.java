@@ -122,18 +122,8 @@ public class ScheduledProcessingController extends Controller {
     }
 
     private void replay(final ExecutionHistory executionHistory) {
-        if (executionHistory != null && executionHistory.getExecutionSchedule() != null) {
-            final ExecutionSchedule newSchedule = executionHistory
-                    .getExecutionSchedule()
-                    .copy()
-                    .name(executionHistory.getExecutionSchedule().getName() + " (replay)")
-                    .enabled(false)
-                    .scheduleBounds(ScheduleBounds
-                            .builder()
-                            .startTimeMs(executionHistory.getEffectiveExecutionTimeMs())
-                            .endTimeMs(executionHistory.getEffectiveExecutionTimeMs())
-                            .build())
-                    .build();
+        final ExecutionSchedule newSchedule = ReplayScheduleFactory.create(executionHistory);
+        if (newSchedule != null) {
             add(newSchedule);
         }
     }
@@ -155,8 +145,9 @@ public class ScheduledProcessingController extends Controller {
                             .create(EXECUTION_SCHEDULE_RESOURCE)
                             .method(res -> res.createExecutionSchedule(executionSchedule))
                             .onSuccess(created -> {
-                                scheduleList.refresh();
+                                // The new schedule, if the page shows it
                                 scheduleList.setSelected(created);
+                                scheduleList.refresh();
                             })
                             .owner(this)
                             .taskMonitorFactory(taskMonitor())
@@ -175,8 +166,8 @@ public class ScheduledProcessingController extends Controller {
                             .create(EXECUTION_SCHEDULE_RESOURCE)
                             .method(res -> res.updateExecutionSchedule(executionSchedule))
                             .onSuccess(updated -> {
-                                scheduleList.refresh();
                                 scheduleList.setSelected(updated);
+                                scheduleList.refresh();
                             })
                             .owner(this)
                             .taskMonitorFactory(taskMonitor())
@@ -197,7 +188,12 @@ public class ScheduledProcessingController extends Controller {
                             restFactory
                                     .create(EXECUTION_SCHEDULE_RESOURCE)
                                     .method(res -> res.deleteExecutionSchedule(selected))
-                                    .onSuccess(success -> scheduleList.refresh())
+                                    .onSuccess(success -> {
+                                        // The schedule in its place, and its history (UI-GUIDE.md,
+                                        // "What a list selects")
+                                        scheduleList.selectNextAfterRemove(selected);
+                                        scheduleList.refresh();
+                                    })
                                     .owner(this)
                                     .taskMonitorFactory(taskMonitor())
                                     .exec();

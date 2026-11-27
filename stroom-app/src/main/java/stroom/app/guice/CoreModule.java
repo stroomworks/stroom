@@ -40,8 +40,6 @@ public class CoreModule extends AbstractModule {
         install(new stroom.credentials.impl.CredentialsModule());
         install(new stroom.credentials.impl.dao.CredentialsDaoModule());
         install(new stroom.aws.s3.impl.S3AllModules());
-        install(new stroom.pipelinefactory.impl.PipelineFactoryModule());
-        install(new stroom.pipelinefactory.impl.db.PipelineFactoryDaoModule());
         install(new stroom.cache.impl.CacheModule());
         install(new stroom.cache.service.impl.CacheServiceModule());
         install(new stroom.cache.service.impl.CacheResourceModule());
@@ -80,7 +78,7 @@ public class CoreModule extends AbstractModule {
         install(new stroom.documentation.impl.DocumentationModule());
         install(new stroom.docstore.impl.DocStoreModule());
         install(new stroom.docstore.impl.DocFinderModule());
-        install(new stroom.docstore.impl.dao.DocStoreDbPersistenceModule());
+        install(new stroom.docstore.impl.database.DocStoreDbPersistenceModule());
         install(new stroom.dropwizard.common.DropwizardModule());
         install(new stroom.explorer.impl.ExplorerFavModule());
         install(new stroom.explorer.impl.dao.ExplorerFavDbModule());
@@ -136,11 +134,12 @@ public class CoreModule extends AbstractModule {
         install(new stroom.security.impl.SecurityModule());
         install(new stroom.security.impl.SessionSecurityModule());
         install(new stroom.security.impl.dao.SecurityDaoModule());
-        install(new stroom.shapeshifter.ai.impl.db.ShapeshifterAiDaoModule());
+        install(new stroom.learningflow.impl.db.LearningFlowDaoModule());
         install(new stroom.analytics.impl.AnalyticRuleModule());
         install(new stroom.analytics.impl.ReportModule());
         install(new stroom.datagen.impl.DataGenModule());
         install(new stroom.floormap.impl.FloorMapModule());
+        install(new stroom.dataconnection.impl.DataConnectionModule());
         install(new stroom.planb.impl.PlanBModule());
         install(new stroom.sqlstore.impl.SqlStoreModule());
         install(new stroom.sqlstore.impl.db.SqlStoreDaoModule());

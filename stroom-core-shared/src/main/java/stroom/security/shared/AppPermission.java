@@ -41,6 +41,12 @@ public enum AppPermission implements HasDisplayValue {
     ANNOTATIONS(
             "Annotations",
             "Create and view annotations in query results."),
+    APPROVE_SMART_PIPELINES_AUTOMATICALLY(
+            "Approve Smart Pipelines Automatically",
+            "Set a Learning Flow to use new translations as soon as they pass, without anyone checking "
+            + "them. Approving one translation needs EDIT on its pipeline; this approves every future "
+            + "one, for every feed the Learning Flow serves, so it is the wider act. Not needed to "
+            + "switch a Learning Flow back to waiting for approval."),
     CREDENTIALS(
             "Credentials",
             "Create and view credentials"),

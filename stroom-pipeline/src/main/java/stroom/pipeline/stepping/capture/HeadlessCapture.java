@@ -41,7 +41,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /// Capture without stepping: run a pipeline over an input and keep what each element made of it, in
-/// memory, for whoever asked (§12 item 2 of the Shapeshifter AI design).
+/// memory, for whoever asked (§12 item 2 of the Learning Flow design).
 ///
 /// This is [SteppingController]'s other half. Stepping needs a session, a step request, a durable store
 /// and a person waiting; judging a configuration needs none of those — it needs the pipeline run and

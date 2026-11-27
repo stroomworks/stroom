@@ -25,6 +25,7 @@ import stroom.data.store.impl.fs.shared.FsVolumeResource;
 import stroom.dispatch.client.RestErrorHandler;
 import stroom.dispatch.client.RestFactory;
 import stroom.svg.shared.SvgImage;
+import stroom.util.client.CountDownAndRun;
 import stroom.util.client.DelayedUpdate;
 import stroom.util.shared.PathSafeNames;
 import stroom.widget.button.client.IsButton;
@@ -85,10 +86,12 @@ public class FsVolumeGroupEditorController extends Controller {
         fsVolumeStatusList.getToolbar().setName("Volume actions");
         fsVolumeStatusList.getToolbar().button(SvgImage.ADD, "New Data Volume", this::create);
         openButton = fsVolumeStatusList.getToolbar().button(SvgImage.EDIT,
-                "Edit Selected Data Volume", this::edit);
+                "Edit Selected Data Volume",
+                "Edit", this::edit);
         openButton.setEnabled(false);
         deleteButton = fsVolumeStatusList.getToolbar().button(SvgImage.DELETE,
-                "Delete Selected Data Volumes", this::delete);
+                "Delete Selected Data Volumes",
+                "Delete", this::delete);
         deleteButton.setEnabled(false);
         fsVolumeStatusList.getToolbar().button(SvgImage.REFRESH, "Rescan Data Volumes", this::onRescan);
         delayedUpdate = new DelayedUpdate(fsVolumeStatusList::refresh);
@@ -170,6 +173,9 @@ public class FsVolumeGroupEditorController extends Controller {
     private void editVolume(final FsVolume fsVolume, final String caption) {
         editProvider.get().show(this, fsVolume, caption, result -> {
             if (result != null) {
+                // The volume made or saved, if the page shows it (UI-GUIDE.md, "What a list selects")
+                fsVolumeStatusList.getSelectionModel()
+                        .selectWhenShown(row -> Objects.equals(row.getId(), result.getId()));
                 fsVolumeStatusList.refresh();
             }
         });
@@ -183,12 +189,20 @@ public class FsVolumeGroupEditorController extends Controller {
                     : "Are you sure you want to delete the selected volume?";
             ConfirmEvent.fire(this, message, result -> {
                 if (result) {
-                    fsVolumeStatusList.getSelectionModel().clear();
+                    // Once all are answered, the volume in place of the first
+                    final CountDownAndRun countdown = new CountDownAndRun(list.size(), () -> {
+                        fsVolumeStatusList.getSelectionModel().selectNextAfterRemove(list);
+                        fsVolumeStatusList.refresh();
+                    });
                     for (final FsVolume volume : list) {
                         restFactory
                                 .create(FS_VOLUME_RESOURCE)
                                 .method(res -> res.delete(volume.getId()))
-                                .onSuccess(response -> fsVolumeStatusList.refresh())
+                                .onSuccess(response -> countdown.countdown())
+                                .onFailure(error -> {
+                                    AlertEvent.fireError(this, error.getMessage(), null);
+                                    countdown.countdown();
+                                })
                                 .owner(this)
                                 .taskMonitorFactory(taskMonitor())
                                 .exec();
@@ -199,9 +213,10 @@ public class FsVolumeGroupEditorController extends Controller {
     }
 
     private void enableButtons() {
-        final boolean enabled = fsVolumeStatusList.getSelectionModel().getSelected() != null;
-        openButton.setEnabled(enabled);
-        deleteButton.setEnabled(enabled);
+        // Open edits one volume; Delete deletes all selected
+        final int count = fsVolumeStatusList.getSelectionModel().getSelectedCount();
+        openButton.setEnabled(count == 1);
+        deleteButton.setEnabled(count > 0);
     }
 
     private void doWithGroupNameValidation(final String groupName,

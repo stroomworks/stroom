@@ -111,6 +111,61 @@ public final class CredentialsScreenStories {
             .build()
             .followedBy(FIXTURES);
 
+    // The fixtures with credentials that have expired, whose certificate expires first, that the
+    // server's warning period (100 years here) says are expiring, and that never expire. The times
+    // are 2001-09-09 and 2100-01-01, so the story looks the same whenever it is run.
+    private static final RestFixtures EXPIRY_LIST = RestFixtures.builder()
+            .post(FIND_CREDENTIALS, RestReply.json("""
+                    {"values": [{"credential": {"uuid": "c-5", "name": "Old Token",
+                                                "credentialType": "ACCESS_TOKEN",
+                                                "expiryTimeMs": 1000000000000},
+                                 "edit": true, "delete": true, "expiryWarningPeriodMs": 1209600000},
+                                {"credential": {"uuid": "c-6", "name": "TLS Store",
+                                                "credentialType": "KEY_STORE", "keyStoreType": "PKCS12",
+                                                "expiryTimeMs": 4102444800000},
+                                 "edit": true, "delete": true, "certificateExpiryTimeMs": 1000000000000,
+                                 "expiryWarningPeriodMs": 1209600000},
+                                {"credential": {"uuid": "c-7", "name": "Expiring Creds",
+                                                "credentialType": "USERNAME_PASSWORD",
+                                                "expiryTimeMs": 4102444800000},
+                                 "edit": true, "delete": true, "expiryWarningPeriodMs": 3155760000000},
+                                {"credential": {"uuid": "c-8", "name": "Lasting Creds",
+                                                "credentialType": "USERNAME_PASSWORD"},
+                                 "edit": true, "delete": true, "expiryWarningPeriodMs": 1209600000}],
+                     "pageResponse": {"offset": 0, "length": 4, "total": 4, "exact": true}}"""))
+            .build()
+            .followedBy(FIXTURES);
+
+    // The fixtures that delete a credential, whose second find (after the delete) no longer has
+    // My Creds
+    private static final RestFixtures DELETE_MY_CREDS = RestFixtures.builder()
+            .post(FIND_CREDENTIALS, RestReply.json(CREDENTIALS), RestReply.json("""
+                    {"values": [{"credential": {"uuid": "c-2", "name": "Read Only Token",
+                                                "credentialType": "ACCESS_TOKEN"},
+                                 "edit": false, "delete": false},
+                                {"credential": {"uuid": "c-3", "name": "File Store",
+                                                "credentialType": "KEY_STORE_FILE", "keyStoreType": "JKS",
+                                                "keyStorePath": "/etc/stroom/ks.jks"},
+                                 "edit": true, "delete": true}],
+                     "pageResponse": {"offset": 0, "length": 2, "total": 2, "exact": true}}"""))
+            .post("/credentials/delete", RestReply.json("true"))
+            .build()
+            .followedBy(FIXTURES);
+
+    // The second search, once File Store (the last) is deleted
+    private static final RestFixtures DELETE_FILE_STORE = RestFixtures.builder()
+            .post(FIND_CREDENTIALS, RestReply.json(CREDENTIALS), RestReply.json("""
+                    {"values": [{"credential": {"uuid": "c-1", "name": "My Creds",
+                                                "credentialType": "USERNAME_PASSWORD"},
+                                 "edit": true, "delete": true},
+                                {"credential": {"uuid": "c-2", "name": "Read Only Token",
+                                                "credentialType": "ACCESS_TOKEN"},
+                                 "edit": false, "delete": false}],
+                     "pageResponse": {"offset": 0, "length": 2, "total": 2, "exact": true}}"""))
+            .post("/credentials/delete", RestReply.json("true"))
+            .build()
+            .followedBy(FIXTURES);
+
     private static final String REPLACE_SECRET_TITLE = "Replace Selected Credential's Secret";
     private static final String SECRET_HIDDEN =
             "The secret is set but cannot be shown. Use Replace Secret to set a new one.";
@@ -151,6 +206,40 @@ public final class CredentialsScreenStories {
                                              "secret": {"type": "usernamePassword", "username": "bob"}}""")
                                     .toSpyMatcher()));
                     SecurityPlays.expectNoProblems(play);
+                })
+                // Expired credentials say so, a key store's certificate that expires before its
+                // date is shown instead, and the server's warning period decides what is expiring
+                .story("Expiry", context -> render(context, EXPIRY_LIST, false))
+                .withPlay(play -> {
+                    play.findByText("Old Token");
+                    final Query oldToken = play.getByText("Old Token").closest(ROW);
+                    play.expect(oldToken).toHaveTextContent(TextMatch.containing("(EXPIRED)"));
+                    play.expect(play.within(oldToken).querySelector(".data-grid__alert-text")).toBeInTheDocument();
+
+                    final Query tlsStore = play.getByText("TLS Store").closest(ROW);
+                    play.expect(tlsStore).toHaveTextContent(TextMatch.containing("(EXPIRED)"));
+                    play.expect(tlsStore).toHaveTextContent(TextMatch.containing("(certificate)"));
+
+                    final Query expiring = play.getByText("Expiring Creds").closest(ROW);
+                    play.expect(play.within(expiring).querySelector(".data-grid__alert-text")).toBeInTheDocument();
+                    play.expect(expiring).not().toHaveTextContent(TextMatch.containing("(EXPIRED)"));
+
+                    final Query lasting = play.getByText("Lasting Creds").closest(ROW);
+                    play.expect(lasting).toHaveTextContent(TextMatch.containing("Never"));
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // Tab from the Settings tab goes straight to Name: the tab's panel holds fields, so it
+                // isn't a tab stop (it was, as it was checked before the dialog showed, finding none)
+                .story("SettingsTabGoesToName", CredentialsScreenStories::render)
+                .withPlay(play -> {
+                    play.findByText("My Creds");
+                    final Play dialog = openNewCredentials(play);
+                    final Query settings = dialog.getByRole("tab", "Settings");
+                    play.waitFor(() -> play.expect(dialog.getByRole("tabpanel", "Settings"))
+                            .not().toHaveAttribute("tabindex"));
+                    play.run("focus the Settings tab", () -> settings.element().get().focus());
+                    play.tab();
+                    play.expect(dialog.getByLabelText("Name")).toHaveFocus();
                 })
                 // Choosing SSH Key swaps in the private key fields
                 .story("SshKeyType", CredentialsScreenStories::render)
@@ -269,6 +358,41 @@ public final class CredentialsScreenStories {
                                     .toSpyMatcher()));
                     SecurityPlays.expectNoProblems(play);
                 })
+                // AWS Access Key (for an Amazon Athena Data Connection): the key ID and secret key are
+                // stored in an awsKey secret, trimmed
+                .story("AwsKey", CredentialsScreenStories::render)
+                .withPlay(play -> {
+                    play.findByText("My Creds");
+                    final Play dialog = openNewCredentials(play);
+                    play.type(dialog.getByLabelText("Name"), "Athena Key");
+                    chooseType(play, dialog, "AWS Access Key");
+                    play.type(dialog.findByLabelText("Access Key ID"), " AKIAEXAMPLE ");
+                    play.type(dialog.getByLabelText("Secret Access Key"), "secret123");
+                    play.click(dialog.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post("/credentials/store")
+                                    .withJsonBodyContaining("""
+                                            {"credential": {"name": "Athena Key"},
+                                             "secret": {"type": "awsKey", "accessKeyId": "AKIAEXAMPLE",
+                                               "secretAccessKey": "secret123"}}""")
+                                    .toSpyMatcher()));
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // AWS Access Key with no secret key: OK says so, and stores nothing
+                .story("AwsKeyRequired", CredentialsScreenStories::render)
+                .withPlay(play -> {
+                    play.findByText("My Creds");
+                    final Play dialog = openNewCredentials(play);
+                    play.type(dialog.getByLabelText("Name"), "Athena Key");
+                    chooseType(play, dialog, "AWS Access Key");
+                    play.type(dialog.findByLabelText("Access Key ID"), "AKIAEXAMPLE");
+                    play.click(dialog.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.ALERT_SPY))
+                            .toHaveBeenCalledWith("ERROR: Secret access key must not be empty"));
+                    play.expect(play.spy(ScreenHarness.REQUEST_SPY)).not().toHaveBeenCalledWith(
+                            RequestMatcher.post("/credentials/store").toSpyMatcher());
+                    play.expect(play.spy(ScreenHarness.UNHANDLED_REQUEST_SPY)).not().toHaveBeenCalled();
+                })
                 // Access Token with no token: OK says so, and stores nothing
                 .story("AccessTokenRequired", CredentialsScreenStories::render)
                 .withPlay(play -> {
@@ -343,10 +467,11 @@ public final class CredentialsScreenStories {
                     final Query replace = play.findByRole("button", TextMatch.containing(REPLACE_SECRET_TITLE));
                     play.expect(play.queryByText("My Creds")).toBeNull();
                     play.expect(replace).toHaveAttribute("aria-disabled", "true");
-                    // The first credential is selected when the list loads
-                    play.waitFor(3000, () -> play.expect(play.getByText("My Creds").closest(ROW))
-                            .toHaveClass(StroomDom.SELECTED_ROW));
-                    play.expect(replace).not().toHaveAttribute("aria-disabled", "true");
+                    // Nothing is selected when the list loads either: its selection only enables
+                    // buttons (UI-GUIDE.md, "What a list selects")
+                    play.waitFor(3000, () -> play.expect(play.getByText("My Creds")).toBeInTheDocument());
+                    play.expect(play.querySelectorAll("." + StroomDom.SELECTED_ROW)).toHaveLength(0);
+                    play.expect(replace).toHaveAttribute("aria-disabled", "true");
                     // A credential the user can't edit
                     play.click(play.getByText("Read Only Token"));
                     play.waitFor(() -> play.expect(play.getByText("Read Only Token").closest(ROW))
@@ -380,13 +505,26 @@ public final class CredentialsScreenStories {
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post("/credentials/replaceSecret")
                                     .withJsonBodyContaining("""
-                                            {"uuid": "c-1",
+                                            {"credential": {"uuid": "c-1"},
                                              "secret": {"type": "usernamePassword", "username": "alice",
                                                         "password": "n3w"}}""")
                                     .toSpyMatcher()));
                     play.waitFor(() -> play.expect(screen.queryByText("Replace Username / Password Secret"))
                             .toBeNull());
                     SecurityPlays.expectNoProblems(play);
+                })
+                // Replace Username / Password Secret left open (the screenshot and the dialog measurement
+                // show it)
+                .story("ReplaceSecretOpen", CredentialsScreenStories::render)
+                .withPlay(play -> {
+                    play.click(play.findByText("My Creds"));
+                    final Query replace = play.getByRole("button", TextMatch.containing(REPLACE_SECRET_TITLE));
+                    play.waitFor(() -> play.expect(replace).not().toHaveAttribute("aria-disabled", "true"));
+                    play.click(replace);
+                    final Play screen = play.screen();
+                    final Play dialog = screen.within(screen.findByText("Replace Username / Password Secret",
+                            StroomDom.DIALOG_TITLE).closest(StroomDom.DIALOG));
+                    dialog.findByLabelText("User Name");
                 })
                 // Replacing a Key Store File's secret starts from its type and path, which aren't secret
                 .story("ReplaceKeyStoreFileSecret", CredentialsScreenStories::render)
@@ -406,7 +544,7 @@ public final class CredentialsScreenStories {
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post("/credentials/replaceSecret")
                                     .withJsonBodyContaining("""
-                                            {"uuid": "c-3",
+                                            {"credential": {"uuid": "c-3"},
                                              "secret": {"type": "keyStoreFile", "keyStoreType": "JKS",
                                                         "keyStorePath": "/etc/stroom/ks.jks"}}""")
                                     .toSpyMatcher()));
@@ -418,6 +556,7 @@ public final class CredentialsScreenStories {
                 // the upload's resource key
                 .story("ReplaceKeyStoreSecret", context -> render(context, KEY_STORE_LIST, false))
                 .withPlay(play -> {
+                    play.click(play.findByText("TLS Store"));
                     play.waitFor(() -> play.expect(play.getByText("TLS Store").closest(ROW))
                             .toHaveClass(StroomDom.SELECTED_ROW));
                     final Query replace = play.getByRole("button", TextMatch.containing(REPLACE_SECRET_TITLE));
@@ -435,11 +574,57 @@ public final class CredentialsScreenStories {
                     play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
                             RequestMatcher.post("/credentials/replaceSecret")
                                     .withJsonBodyContaining("""
-                                            {"uuid": "c-4",
+                                            {"credential": {"uuid": "c-4"},
                                              "secret": {"type": "keyStore", "keyStoreType": "JKS",
                                                         "resourceKey": {"key": "rk-1"}}}""")
                                     .toSpyMatcher()));
                     play.waitFor(() -> play.expect(screen.queryByText("Replace Key Store Secret")).toBeNull());
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // Deleting the selected credential selects the one now in its place once the list has
+                // loaded again, with its own permissions (Read Only Token can be neither edited nor
+                // deleted). The first row was once selected before the list had loaded again, i.e. the
+                // deleted credential, so no row showed selected and Delete stayed live for it
+                .story("DeleteSelectsNext", context -> render(context, DELETE_MY_CREDS, true))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByText("My Creds"));
+                    play.waitFor(() -> play.expect(play.getByText("My Creds").closest(ROW))
+                            .toHaveAttribute("aria-selected", "true"));
+                    final Query delete = play.getByRole("button", TextMatch.containing("Delete Selected Credential"));
+                    final Query edit = play.getByRole("button", TextMatch.containing("Edit Selected Credential"));
+                    play.waitFor(() -> play.expect(delete).not().toHaveAttribute("aria-disabled", "true"));
+                    play.click(delete);
+                    final Play confirm = screen.within(screen.findByText(
+                            TextMatch.containing("delete the credentials 'My Creds'")).closest(StroomDom.DIALOG));
+                    play.click(confirm.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(play.spy(ScreenHarness.REQUEST_SPY)).toHaveBeenCalledWith(
+                            RequestMatcher.post("/credentials/delete").toSpyMatcher()));
+                    play.waitFor(() -> play.expect(play.queryByText("My Creds")).toBeNull());
+                    play.waitFor(() -> play.expect(play.getByText("Read Only Token").closest(ROW))
+                            .toHaveAttribute("aria-selected", "true"));
+                    play.expect(play.getByText("File Store").closest(ROW)).toHaveAttribute("aria-selected", "false");
+                    play.expect(delete).toHaveAttribute("aria-disabled", "true");
+                    play.expect(edit).toHaveAttribute("aria-disabled", "true");
+                    SecurityPlays.expectNoProblems(play);
+                })
+                // Deleting the last credential selects the new last one (it once selected the first)
+                .story("DeleteLastSelectsPrevious", context -> render(context, DELETE_FILE_STORE, true))
+                .withPlay(play -> {
+                    final Play screen = play.screen();
+                    play.click(play.findByText("File Store"));
+                    play.waitFor(() -> play.expect(play.getByText("File Store").closest(ROW))
+                            .toHaveAttribute("aria-selected", "true"));
+                    final Query delete = play.getByRole("button", TextMatch.containing("Delete Selected Credential"));
+                    play.waitFor(() -> play.expect(delete).not().toHaveAttribute("aria-disabled", "true"));
+                    play.click(delete);
+                    final Play confirm = screen.within(screen.findByText(
+                            TextMatch.containing("delete the credentials 'File Store'")).closest(StroomDom.DIALOG));
+                    play.click(confirm.getByRole("button", StroomDom.button("OK")));
+                    play.waitFor(() -> play.expect(play.queryByText("File Store")).toBeNull());
+                    play.waitFor(() -> play.expect(play.getByText("Read Only Token").closest(ROW))
+                            .toHaveAttribute("aria-selected", "true"));
+                    play.expect(play.getByText("My Creds").closest(ROW)).toHaveAttribute("aria-selected", "false");
                     SecurityPlays.expectNoProblems(play);
                 })
                 // Editing an existing credential never shows its secret: the type is fixed, the secret

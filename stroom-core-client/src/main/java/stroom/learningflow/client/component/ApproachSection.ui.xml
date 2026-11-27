@@ -1,0 +1,22 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- The step of the learning flow chosen on the Setup tab's route map (approach-section.css): its card, or, for
+     the fallback, what it is; then the question text it is asked with -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.learningflow.client.component">
+    <g:FlowPanel styleName="approach-section">
+        <g:FlowPanel ui:field="cards" styleName="approach-section__cards"/>
+        <g:HTMLPanel ui:field="fallback" styleName="approach-section__fallback" visible="false">
+            <h2 class="approach-section__fallback-title">Fallback: marked Unknowns</h2>
+            <p class="approach-section__note">Asked when the step that writes the transform runs out of tries.
+                It serves what it can of the stream, with the rest as marked Unknown events, so that the stream
+                isn't held up. It is switched on or off under Approving new translations.</p>
+        </g:HTMLPanel>
+
+        <g:FlowPanel ui:field="textsPart" styleName="approach-section__texts">
+            <tx:Label ui:field="textsHeading" styleName="approach-section__heading"/>
+            <s:QuestionTexts ui:field="texts"/>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

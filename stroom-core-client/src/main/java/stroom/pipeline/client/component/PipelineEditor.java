@@ -22,6 +22,10 @@ import stroom.docref.DocRef;
 import stroom.document.client.component.DocumentationTabController;
 import stroom.document.client.editor.DocumentEditor;
 import stroom.document.client.editor.LinkTabPanel;
+import stroom.learningflow.client.component.LearnedTranslationController;
+import stroom.learningflow.client.component.PipelineAiTabController;
+import stroom.learningflow.client.component.QualityTabController;
+import stroom.learningflow.shared.LearningFlowElements;
 import stroom.meta.shared.Meta;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.stepping.StepLocation;
@@ -38,10 +42,6 @@ import stroom.query.api.ExpressionOperator;
 import stroom.security.client.api.ClientSecurityContext;
 import stroom.security.client.component.DocumentUserPermissionsTabController;
 import stroom.security.shared.AppPermission;
-import stroom.shapeshifter.client.component.LearnedTranslationController;
-import stroom.shapeshifter.client.component.PipelineAiTabController;
-import stroom.shapeshifter.client.component.QualityTabController;
-import stroom.shapeshifter.shared.ShapeshifterAiElements;
 import stroom.svg.shared.SvgImage;
 import stroom.util.shared.NullSafe;
 import stroom.widget.button.client.ToolbarToggleButton;
@@ -58,9 +58,9 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import java.util.List;
 import java.util.function.Consumer;
 
-/// A pipeline's editor: its Data (for a user who may view data), Structure (where an AI Translator element
+/// A pipeline's editor: its Data (for a user who may view data), Structure (where a Smart Pipeline element
 /// selected unfolds to what it has learned), Learning Status (where the pipeline, or a parent it inherits from,
-/// has an AI Translator element), Quality Assurance (likewise), Processors and Active Tasks (for a
+/// has a Smart Pipeline element), Quality Assurance (likewise), Processors and Active Tasks (for a
 /// user who may manage processors), Documentation and Permissions tabs (see [DocumentEditor]). It opens on
 /// Data, or Processors, or Structure, the first the user may see.
 ///
@@ -93,7 +93,7 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
     private PipelineModel pipelineModel;
     private boolean steppingMetaListLoaded;
     private ExpressionOperator steppingMetaExpression;
-    /// Whether the editor is the content tab shown: the AI Translation tab is read again only while it is.
+    /// Whether the editor is the content tab shown; the Learning Status tab refreshes itself only while it is.
     private boolean contentVisible = true;
 
     /// Makes the editor, with the tabs the user may see.
@@ -110,8 +110,8 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
     /// @param steppingProvider            Makes the stepping.
     /// @param pipelineElementTypesFactory The pipeline element types factory.
     /// @param pipelineModelFactory        The pipeline model factory.
-    /// @param aiTranslationProvider       Makes the AI Translation tab.
-    /// @param learnedTranslationProvider  Makes what an AI Translator has learned, on the Structure tab.
+    /// @param aiTranslationProvider       Makes the Learning Status tab.
+    /// @param learnedTranslationProvider  Makes what a Smart Pipeline has learned, on the Structure tab.
     /// @param qualityProvider             Makes the Quality Assurance tab.
     @Inject
     public PipelineEditor(final EventBus eventBus,
@@ -150,12 +150,13 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
                 pipelineStructure,
                 this::readStructure,
                 PipelineStructureController::write);
-        // An AI Translator selected on the Structure tab can be unfolded to what it has learned: the pipeline and
-        // its learned translation are one thing to a person, though two documents behind the scenes
+        // A Smart Pipeline element selected on the Structure tab can be unfolded to show what it has learned,
+        // because to a person the pipeline and its learned translation are one thing, although they are two
+        // documents behind the scenes
         learnedTranslation = make(learnedTranslationProvider);
         pipelineStructure.setElementDetail(learnedTranslation);
         pipelineStructure.setOnSelect(element -> {
-            if (element != null && ShapeshifterAiElements.PARSER.equals(element.getType())) {
+            if (element != null && LearningFlowElements.PARSER.equals(element.getType())) {
                 learnedTranslation.show(getDocRef(), element.getId());
             } else {
                 learnedTranslation.hide();
@@ -164,10 +165,10 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
         learnedTranslation.setOnOpenStatus(() -> NullSafe.consume(learnedTranslation.getElementId(),
                 this::showAiTranslation));
 
-        // Made with the editor and read with the pipeline (in onRead, as a tab's content is otherwise read only
-        // once the tab is shown, and this one is hidden until it has read the pipeline): it is what says whether
-        // the pipeline has an AI element, and is shown only where it has. What it shows is the feed's
-        // learning, not the pipeline being edited.
+        // The Learning Status tab is made with the editor and read with the pipeline in onRead, because a tab's
+        // content is otherwise read only once the tab is shown, and this tab stays hidden until it has read the
+        // pipeline. It is what finds whether the pipeline has a Smart Pipeline element, and is shown only where
+        // it has. It shows the learning of those elements, not the pipeline document being edited.
         aiTranslation = make(aiTranslationProvider);
         addOwnedTab(AI_TRANSLATION, aiTranslation, (tab, docRef, doc) -> {
             // Read in onRead
@@ -175,11 +176,12 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
         setTabHidden(AI_TRANSLATION, true);
         aiTranslation.setOnAvailable(any -> setTabHidden(AI_TRANSLATION, !any));
 
-        // Beside it, the figures a QA person judges the translation by, for the same elements, which Learning
-        // Status finds, so that the pipeline isn't read twice
+        // The Quality Assurance tab shows the figures a person judges the translation by, for the same
+        // elements. Learning Status finds the elements and passes them on, so that the pipeline isn't read
+        // twice
         quality = make(qualityProvider);
         addOwnedTab(QUALITY, quality, (tab, docRef, doc) -> {
-            // Told the elements by Learning Status
+            // Learning Status passes it the elements
         });
         setTabHidden(QUALITY, true);
         aiTranslation.setOnElements(found -> {
@@ -237,8 +239,8 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
         }
     }
 
-    /// Shows the AI Translation tab at one of the pipeline's Shapeshifter AI elements, e.g. from the Feeds tab
-    /// of the document it learns under.
+    /// Shows the Learning Status tab at one of the pipeline's Smart Pipeline elements, e.g. when opened from the
+    /// Feeds tab of the Learning Flow document the element learns under.
     ///
     /// @param elementId The element's id.
     public void showAiTranslation(final String elementId) {
@@ -342,7 +344,7 @@ public class PipelineEditor extends DocumentEditor<PipelineDoc> {
         quality.setShowing(contentVisible && QUALITY.equals(tab));
     }
 
-    /// The AI Translation tab is read again only while it is on screen.
+    /// The Learning Status and Quality Assurance tabs refresh themselves only while they are on screen.
     @Override
     public void onContentTabVisible(final boolean visible) {
         contentVisible = visible;

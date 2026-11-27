@@ -22,12 +22,12 @@
                 <!-- The buttons for the elements, then View Source -->
                 <g:FlowPanel styleName="dock-min pipeline-structure__bar">
                     <v:Toolbar name="Pipeline elements">
-                        <v:ToolbarButton ui:field="add" svg="ADD" title="Add New Pipeline Element"/>
-                        <v:ToolbarButton ui:field="remove" svg="REMOVE" title="Remove Pipeline Element"
+                        <v:ToolbarButton ui:field="add" svg="ADD" title="Add New Pipeline Element" label="Add"/>
+                        <v:ToolbarButton ui:field="remove" svg="REMOVE" title="Remove Pipeline Element" label="Remove"
                                          enabled="false"/>
                         <v:ToolbarButton ui:field="edit" svg="EDIT" title="Edit Pipeline Element"
                                          enabled="false"/>
-                        <v:ToolbarButton ui:field="restore" svg="UNDO" title="Restore Pipeline Element"
+                        <v:ToolbarButton ui:field="restore" svg="UNDO" title="Restore Pipeline Element" label="Restore"
                                          enabled="false"/>
                     </v:Toolbar>
                     <v:Toolbar name="Pipeline source" addStyleNames="pipeline-structure__view-source">
@@ -42,7 +42,7 @@
             <split:SplitPane vertical="true" thin="true" sizes="50%, *"
                              names="Properties, Pipeline references" addStyleNames="max">
                 <!-- Above the properties, what else there is to say about the element selected, e.g. what an
-                     AI Translator has learned; empty for most -->
+                     Smart Pipeline has learned; empty for most -->
                 <g:FlowPanel styleName="max dock-container-vertical">
                     <g:SimplePanel ui:field="elementDetail" styleName="dock-min"/>
                     <g:SimplePanel styleName="dock-max">

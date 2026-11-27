@@ -1,0 +1,81 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<!-- A Smart Pipeline's Quality Assurance tab (quality-tab.css): which of its Smart Pipeline elements, where it has
+     more than one; then, each in a section of its own, the figures its translation is judged by, its volume day by
+     day, its regression set (what its records became, then one record at a time beside what it became), and,
+     folded, each learning run's score; or why there is nothing to judge -->
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:btn="urn:import:stroom.widget.button.client"
+             xmlns:c="urn:import:stroom.widget.component.client"
+             xmlns:dg="urn:import:stroom.widget.datagrid.client"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.widget.selection.client"
+             xmlns:tx="urn:import:stroom.widget.text.client"
+             xmlns:s="urn:import:stroom.learningflow.client.component">
+    <g:FlowPanel styleName="max quality-tab">
+        <g:FlowPanel ui:field="chooser" styleName="form quality-tab__chooser" visible="false">
+            <form:FormGroup identity="learningFlowQualityElement" label="Smart Pipeline element"
+                            helpText="This pipeline has more than one Smart Pipeline element. Each learns its own translation, judged on its own.">
+                <l:SelectionBox ui:field="element" addStyleNames="quality-tab__element"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <tx:Label ui:field="nothing" styleName="quality-tab__nothing" visible="false"/>
+        <g:FlowPanel ui:field="content" styleName="quality-tab__content">
+            <g:FlowPanel styleName="quality-tab__section">
+                <g:HTMLPanel styleName="quality-tab__head">
+                    <h2 class="quality-tab__title">Quality now</h2>
+                </g:HTMLPanel>
+                <tx:Label ui:field="message" styleName="quality-tab__message"/>
+                <c:AriaPanel ui:field="figures" styleName="quality-tab__figures" role="list"
+                             ariaLabel="Quality figures"/>
+            </g:FlowPanel>
+
+            <g:FlowPanel styleName="quality-tab__section">
+                <g:FlowPanel styleName="quality-tab__head">
+                    <g:HTMLPanel>
+                        <h2 class="quality-tab__title">Volume</h2>
+                    </g:HTMLPanel>
+                    <tx:Label ui:field="volumeSummary" styleName="quality-tab__message"/>
+                </g:FlowPanel>
+                <tx:Html ui:field="volumeChart" styleName="quality-tab__chart"/>
+                <s:Disclosure text="Day by day">
+                    <g:SimplePanel styleName="quality-tab__days dock-container-vertical">
+                        <dg:DataGrid ui:field="days" tableName="Volume by day"/>
+                    </g:SimplePanel>
+                </s:Disclosure>
+            </g:FlowPanel>
+
+            <g:FlowPanel styleName="quality-tab__section">
+                <g:FlowPanel styleName="quality-tab__head">
+                    <g:HTMLPanel>
+                        <h2 class="quality-tab__title">Regression set</h2>
+                    </g:HTMLPanel>
+                    <tx:Label ui:field="regressionNote" styleName="quality-tab__message"/>
+                </g:FlowPanel>
+                <tx:Label ui:field="regressionSummary" styleName="quality-tab__summary"/>
+                <tx:Label ui:field="samplesNote" styleName="quality-tab__message"/>
+                <g:FlowPanel ui:field="samples" styleName="quality-tab__samples">
+                    <g:FlowPanel ui:field="stepper" styleName="quality-tab__stepper">
+                        <btn:Toolbar name="Regression set records">
+                            <btn:ToolbarButton ui:field="previousSample" svg="STEP_BACKWARD" title="Previous record"/>
+                            <btn:ToolbarButton ui:field="nextSample" svg="STEP_FORWARD" title="Next record"/>
+                        </btn:Toolbar>
+                        <c:AriaPanel styleName="quality-tab__position" ariaLive="polite">
+                            <tx:Label ui:field="samplePosition"/>
+                        </c:AriaPanel>
+                    </g:FlowPanel>
+                    <c:AriaPanel ui:field="sample" styleName="quality-tab__sample" role="group"
+                                 ariaLabel="Regression set record"/>
+                </g:FlowPanel>
+            </g:FlowPanel>
+
+            <g:FlowPanel styleName="quality-tab__section">
+                <s:Disclosure text="Learning runs">
+                    <g:SimplePanel styleName="quality-tab__runs dock-container-vertical">
+                        <dg:DataGrid ui:field="runs" tableName="Learning runs"/>
+                    </g:SimplePanel>
+                </s:Disclosure>
+            </g:FlowPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

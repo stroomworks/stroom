@@ -120,6 +120,7 @@
     <inherits name="stroom.search.elastic.ElasticCluster" />
     <inherits name="stroom.search.elastic.ElasticIndex" />
     <inherits name="stroom.search.solr.SolrIndex" />
+    <inherits name="stroom.dataconnection.DataConnection" />
     <inherits name="stroom.ai.AI" />
     <inherits name="stroom.dashboard.Dashboard" />
     <inherits name="stroom.pathways.Pathways" />
@@ -129,8 +130,7 @@
     <inherits name="stroom.gitrepo.GitRepo" />
     <inherits name="stroom.credentials.Credentials"/>
     <inherits name="stroom.openai.OpenAIModel" />
-    <inherits name="stroom.pipelinefactory.PipelineFactory" />
-    <inherits name="stroom.shapeshifter.ShapeshifterAi" />
+    <inherits name="stroom.learningflow.LearningFlow" />
 
     <inherits name="stroom.query.Query" />
 

@@ -88,6 +88,19 @@ public class StreamTypeNames {
      * Processed detections
      */
     public static final String DETECTIONS = "Detections";
+    /**
+     * The records a Smart Pipeline's translation was learned and checked on, kept beside the feed so that
+     * a new translation can be held to doing no worse on them (ruling A56).
+     * <p>
+     * <b>Deliberately not in {@link #ALL_HARD_CODED_STREAM_TYPE_NAMES}.</b> That set is what a sender may
+     * declare on receipt as well as what may be stored, and nobody outside should be able to post a
+     * stream claiming to be a translation's corpus — the corpus is what a new translation is held to, so
+     * a planted one would decide promotions. It is added to the <em>stored</em> types in
+     * {@code MetaServiceConfig} instead, which is what type pickers read: a type that is nowhere listed
+     * cannot be chosen, and so cannot be <em>excluded</em> from a processor filter written over a feed
+     * alone (audit finding S13).
+     */
+    public static final String LEARNING_FLOW_CORPUS = "Learning Flow Corpus";
 
     /**
      * Must NOT be used for stream type name validation or getting a full list

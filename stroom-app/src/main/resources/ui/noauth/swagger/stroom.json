@@ -2786,25 +2786,6 @@
         "tags" : [ "ContentStoreContentPacks" ]
       }
     },
-    "/credentials/createDocRef" : {
-      "get" : {
-        "operationId" : "createDocRef",
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/DocRef"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Returns a newly generated DocRef that can be used to for permissions",
-        "tags" : [ "Credentials" ]
-      }
-    },
     "/credentials/delete" : {
       "post" : {
         "operationId" : "deleteCredential",
@@ -3520,6 +3501,159 @@
         "tags" : [ "Data" ]
       }
     },
+    "/dataConnection/v1/detectColumns" : {
+      "post" : {
+        "operationId" : "detectDataConnectionColumns",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DataConnectionDoc"
+              }
+            }
+          },
+          "description" : "dataConnectionDoc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/DataColumn"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Detect the columns of a Data Connection's CSV or workbook, or the attributes of its LDAP directory",
+        "tags" : [ "Data Connections" ]
+      }
+    },
+    "/dataConnection/v1/downloadExcelFile/{uuid}" : {
+      "get" : {
+        "operationId" : "downloadDataConnectionExcelFile",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResourceGeneration"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Download the workbook of an Excel Data Connection",
+        "tags" : [ "Data Connections" ]
+      }
+    },
+    "/dataConnection/v1/testConnection" : {
+      "post" : {
+        "operationId" : "testDataConnection",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DataConnectionDoc"
+              }
+            }
+          },
+          "description" : "dataConnectionDoc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DataConnectionTestResponse"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Test a Data Connection",
+        "tags" : [ "Data Connections" ]
+      }
+    },
+    "/dataConnection/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchDataConnection",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DataConnectionDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a Data Connection doc by its UUID",
+        "tags" : [ "Data Connections" ]
+      },
+      "put" : {
+        "operationId" : "updateDataConnection",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DataConnectionDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DataConnectionDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update a Data Connection doc",
+        "tags" : [ "Data Connections" ]
+      }
+    },
     "/dataDownload/v1/downloadZip" : {
       "post" : {
         "operationId" : "downloadZip",
@@ -3704,6 +3838,36 @@
           }
         },
         "summary" : "Fetch documentation for a data source",
+        "tags" : [ "Data Sources" ]
+      }
+    },
+    "/dataSource/v1/fetchMinRefreshInterval" : {
+      "post" : {
+        "operationId" : "fetchMinRefreshInterval",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DocRef"
+              }
+            }
+          },
+          "description" : "dataSourceRef",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SimpleDuration"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch the minimum automatic refresh interval of a data source",
         "tags" : [ "Data Sources" ]
       }
     },
@@ -4227,6 +4391,69 @@
         },
         "summary" : "Update an Elasticsearch cluster doc",
         "tags" : [ "Elastic Clusters" ]
+      }
+    },
+    "/elasticIndex/v1/fieldStats" : {
+      "post" : {
+        "operationId" : "fetchElasticIndexFieldStats",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ElasticFieldStatsRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ElasticFieldStats"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch sampled statistics about a field of an Elasticsearch index doc",
+        "tags" : [ "Elastic Indices" ]
+      }
+    },
+    "/elasticIndex/v1/fields" : {
+      "post" : {
+        "operationId" : "fetchElasticIndexFields",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ElasticIndexDoc"
+              }
+            }
+          },
+          "description" : "elasticIndexDoc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/ElasticIndexField"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Read the fields of an Elasticsearch index doc from its index mapping",
+        "tags" : [ "Elastic Indices" ]
       }
     },
     "/elasticIndex/v1/testIndex" : {
@@ -6916,6 +7143,36 @@
         "tags" : [ "Index Volumes" ]
       }
     },
+    "/index/volume/v2/validatePath" : {
+      "post" : {
+        "operationId" : "validateIndexVolumePath",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/IndexVolume"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ValidationResult"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Validates that the node called can use the path of an index volume",
+        "tags" : [ "Index Volumes" ]
+      }
+    },
     "/index/volume/v2/{id}" : {
       "delete" : {
         "operationId" : "deleteIndexVolume",
@@ -7588,6 +7845,897 @@
         },
         "summary" : "Update a kafkaConfig doc",
         "tags" : [ "Kafka Config" ]
+      }
+    },
+    "/learningFlow/v1/flowExamples" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowFlowExamples",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/BuiltInFlow"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The built-in default setups and their steps",
+        "tags" : [ "Learning Flow" ]
+      }
+    },
+    "/learningFlow/v1/targetSchema/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowTargetSchema",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TargetSchemaSummary"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "What a Learning Flow's Setup tab says about a target schema",
+        "tags" : [ "Learning Flow" ]
+      }
+    },
+    "/learningFlow/v1/templates" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowTemplates",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BuiltInTemplates"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The built-in text of a Learning Flow's templates and its version",
+        "tags" : [ "Learning Flow" ]
+      }
+    },
+    "/learningFlow/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchLearningFlow",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearningFlowDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a Learning Flow by its UUID",
+        "tags" : [ "Learning Flow" ]
+      },
+      "put" : {
+        "operationId" : "updateLearningFlow",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearningFlowDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearningFlowDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update a Learning Flow",
+        "tags" : [ "Learning Flow" ]
+      }
+    },
+    "/learningFlowQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowQuality",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/QualityReport"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The volume a Smart Pipeline translated lately, and the cardinality of its translation",
+        "tags" : [ "Learning Flow Quality" ]
+      }
+    },
+    "/learningFlowQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/samples" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowQualitySamples",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/QualitySample"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Samples of a Smart Pipeline's source records beside its translated output",
+        "tags" : [ "Learning Flow Quality" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/find" : {
+      "post" : {
+        "operationId" : "findLearningFlowAttempts",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AttemptCriteria"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageSupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find attempts at learning, across every Learning Flow",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Read one attempt with its turns",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/approve" : {
+      "post" : {
+        "operationId" : "approveLearningFlowAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Approve the translation an attempt drafted",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/exhaust" : {
+      "post" : {
+        "operationId" : "exhaustLearningFlowAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Send a parked attempt to the exhaustion step, and carry it on",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/grant" : {
+      "post" : {
+        "operationId" : "grantLearningFlowAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GrantRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Give a parked attempt more to spend, and carry it on",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/reject" : {
+      "post" : {
+        "operationId" : "rejectLearningFlowAttempt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReasonRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Reject the translation an attempt drafted, and give its learner up",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/turns/{number}" : {
+      "post" : {
+        "operationId" : "amendLearningFlowTurn",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AmendTurnRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorAttempt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Answer a turn instead, or edit one and run the attempt again from there",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/attempts/{id}/turns/{number}/prompt" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowTurnPrompt",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RebuiltPrompt"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Rebuild the prompt a turn was put to the model with",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/bindings/{bindingUuid}/improve" : {
+      "post" : {
+        "operationId" : "improveLearningFlowBinding",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "bindingUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ImproveRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ImproveOutcome"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Ask for a translation that is serving to be made better",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/bindings/{bindingUuid}/retract" : {
+      "post" : {
+        "operationId" : "retractLearningFlowBinding",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "bindingUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReasonRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "integer",
+                  "format" : "int32"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Take back a translation that is serving, and say how many streams it produced output for",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/learners/find" : {
+      "post" : {
+        "operationId" : "findLearningFlowLearners",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearnerCriteria"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageSupervisorLearner"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find the learners of Smart Pipelines: each pipeline's Smart Pipeline element that has learned or is learning, where it stands, what serves it and what waits on it",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/giveUp" : {
+      "post" : {
+        "operationId" : "giveUpLearningFlowLearner",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReasonRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorLearner"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Give a learner up: it learns no more, and its streams nothing serves error",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/guidance" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "What people have told a learner",
+        "tags" : [ "Learning Flow Supervisor" ]
+      },
+      "post" : {
+        "operationId" : "addLearningFlowGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GuidanceRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Tell a learner something, without asking for anything to be run",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/guidance/{id}" : {
+      "delete" : {
+        "operationId" : "deleteLearningFlowGuidance",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorGuidance"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Take back something said to a learner, so that it stops being carried",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/relearn" : {
+      "post" : {
+        "operationId" : "relearnLearningFlowLearner",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReasonRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SupervisorLearner"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Send a learner back to learn afresh from its next stream",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/settings" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowLearnerSettings",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearningFlowDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The Learning Flow a learner runs under, for its pipeline's viewers",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/waiting" : {
+      "post" : {
+        "operationId" : "findLearningFlowLearnerWaiting",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "elementId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PageRequest"
+              }
+            }
+          },
+          "description" : "page",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageBacklogStream"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find the streams waiting on one learner, oldest first",
+        "tags" : [ "Learning Flow Supervisor" ]
+      }
+    },
+    "/learningFlowSupervisor/v1/pipelines/{pipelineUuid}/learners" : {
+      "get" : {
+        "operationId" : "fetchLearningFlowPipelineLearners",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "pipelineUuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/SupervisorLearner"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "The learners of one Smart Pipeline, for its own editor",
+        "tags" : [ "Learning Flow Supervisor" ]
       }
     },
     "/meta/v1/find" : {
@@ -9084,140 +10232,6 @@
         },
         "summary" : "Update a pipeline doc",
         "tags" : [ "Pipelines" ]
-      }
-    },
-    "/pipelineFactory/v1/{uuid}" : {
-      "get" : {
-        "operationId" : "fetchPipelineFactory",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/PipelineFactoryDoc"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Fetch a Pipeline Factory by its UUID",
-        "tags" : [ "Pipeline Factories" ]
-      },
-      "put" : {
-        "operationId" : "updatePipelineFactory",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/PipelineFactoryDoc"
-              }
-            }
-          },
-          "description" : "doc",
-          "required" : true
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/PipelineFactoryDoc"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Update a Pipeline Factory",
-        "tags" : [ "Pipeline Factories" ]
-      }
-    },
-    "/pipelineFactory/v1/{uuid}/combinations" : {
-      "get" : {
-        "operationId" : "fetchPipelineFactoryCombinations",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/PipelineFactoryCombination"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The combinations a Pipeline Factory has met and what it made for each",
-        "tags" : [ "Pipeline Factories" ]
-      }
-    },
-    "/pipelineFactory/v1/{uuid}/forget" : {
-      "post" : {
-        "operationId" : "forgetPipelineFactoryCombination",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "type" : "object",
-                "additionalProperties" : {
-                  "type" : "string"
-                }
-              }
-            }
-          },
-          "description" : "values",
-          "required" : true
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "boolean"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Forget a combination, so that its next stream makes its pipeline afresh",
-        "tags" : [ "Pipeline Factories" ]
       }
     },
     "/planB/v1/{uuid}" : {
@@ -11108,6 +12122,12 @@
           "schema" : {
             "type" : "string"
           }
+        }, {
+          "in" : "query",
+          "name" : "dispatchId",
+          "schema" : {
+            "type" : "string"
+          }
         } ],
         "responses" : {
           "default" : {
@@ -11125,12 +12145,40 @@
         "tags" : [ "Remote Search" ]
       }
     },
+    "/remoteSearch/v1/joinTables" : {
+      "get" : {
+        "operationId" : "getRemoteSearchJoinTables",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "queryKey",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/octet-stream" : { }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Get the join tables of a search, for a node that searches its first source",
+        "tags" : [ "Remote Search" ]
+      }
+    },
     "/remoteSearch/v1/poll" : {
       "get" : {
         "operationId" : "pollRemoteSearch",
         "parameters" : [ {
           "in" : "query",
           "name" : "queryKey",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "dispatchId",
           "schema" : {
             "type" : "string"
           }
@@ -12102,938 +13150,6 @@
         },
         "summary" : "Revoke all signing keys (requires Administrator)",
         "tags" : [ "Signing Keys" ]
-      }
-    },
-    "/smartPipelines/v1/templates" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesTemplates",
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/BuiltInTemplates"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The built-in text of a Learning Flow's templates and its version",
-        "tags" : [ "Smart Pipelines Learning Flow" ]
-      }
-    },
-    "/smartPipelines/v1/{uuid}" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesLearningFlow",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Fetch a Learning Flow by its UUID",
-        "tags" : [ "Smart Pipelines Learning Flow" ]
-      },
-      "put" : {
-        "operationId" : "updateSmartPipelinesLearningFlow",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "uuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ShapeshifterAiDoc"
-              }
-            }
-          },
-          "description" : "doc",
-          "required" : true
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Update a Learning Flow",
-        "tags" : [ "Smart Pipelines Learning Flow" ]
-      }
-    },
-    "/smartPipelinesQuality/v1/assessments" : {
-      "post" : {
-        "operationId" : "addSmartPipelinesAssessment",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/AssessmentRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/QualityAssessment"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Record an assessment of a Smart Pipeline's translated output, flagging any issue to the Data Provider",
-        "tags" : [ "Smart Pipelines Quality" ]
-      }
-    },
-    "/smartPipelinesQuality/v1/assessments/{id}/resolve" : {
-      "post" : {
-        "operationId" : "resolveSmartPipelinesAssessment",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/QualityAssessment"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Resolve an issue recorded of a Smart Pipeline's translated output, once it is fixed",
-        "tags" : [ "Smart Pipelines Quality" ]
-      }
-    },
-    "/smartPipelinesQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesQuality",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/QualityReport"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The volume a Smart Pipeline translated lately, and the cardinality of its translation",
-        "tags" : [ "Smart Pipelines Quality" ]
-      }
-    },
-    "/smartPipelinesQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/assessments" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesAssessments",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/QualityAssessment"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The assessments recorded of a Smart Pipeline's translated output",
-        "tags" : [ "Smart Pipelines Quality" ]
-      }
-    },
-    "/smartPipelinesQuality/v1/pipelines/{pipelineUuid}/elements/{elementId}/samples" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesQualitySamples",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/QualitySample"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Samples of a Smart Pipeline's source records beside its translated output",
-        "tags" : [ "Smart Pipelines Quality" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/find" : {
-      "post" : {
-        "operationId" : "findSmartPipelinesAttempts",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/AttemptCriteria"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ResultPageSupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Find attempts at learning, across every Learning Flow",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesAttempt",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Read one attempt with its turns",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}/approve" : {
-      "post" : {
-        "operationId" : "approveSmartPipelinesAttempt",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Approve the translation an attempt drafted",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}/exhaust" : {
-      "post" : {
-        "operationId" : "exhaustSmartPipelinesAttempt",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Send a parked attempt to the exhaustion step, and carry it on",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}/grant" : {
-      "post" : {
-        "operationId" : "grantSmartPipelinesAttempt",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/GrantRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Give a parked attempt more to spend, and carry it on",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}/reject" : {
-      "post" : {
-        "operationId" : "rejectSmartPipelinesAttempt",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ReasonRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Reject the translation an attempt drafted, and give its learner up",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/attempts/{id}/turns/{number}" : {
-      "post" : {
-        "operationId" : "amendSmartPipelinesTurn",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        }, {
-          "in" : "path",
-          "name" : "number",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/AmendTurnRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorAttempt"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Answer a turn instead, or edit one and run the attempt again from there",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/bindings/{bindingUuid}/accept" : {
-      "post" : {
-        "operationId" : "acceptSmartPipelinesBinding",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "bindingUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorLearner"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Accept a provisional translation now, rather than waiting for the records that would promote it",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/bindings/{bindingUuid}/improve" : {
-      "post" : {
-        "operationId" : "improveSmartPipelinesBinding",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "bindingUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ImproveRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ImproveOutcome"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Ask for a translation that is serving to be made better",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/bindings/{bindingUuid}/retract" : {
-      "post" : {
-        "operationId" : "retractSmartPipelinesBinding",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "bindingUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ReasonRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "integer",
-                  "format" : "int32"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Take back a translation that is serving, and say how many streams it produced output for",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/learners/find" : {
-      "post" : {
-        "operationId" : "findSmartPipelinesLearners",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/LearnerCriteria"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ResultPageSupervisorLearner"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Find the learners of Smart Pipelines: each pipeline's AI Translator element that has learned or is learning, where it stands, what serves it and what waits on it",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/giveUp" : {
-      "post" : {
-        "operationId" : "giveUpSmartPipelinesLearner",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ReasonRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorLearner"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Give a learner up: it learns no more, and its streams nothing serves error",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/guidance" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesGuidance",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/SupervisorGuidance"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "What people have told a learner",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      },
-      "post" : {
-        "operationId" : "addSmartPipelinesGuidance",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/GuidanceRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/SupervisorGuidance"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Tell a learner something, without asking for anything to be run",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/guidance/{id}" : {
-      "delete" : {
-        "operationId" : "deleteSmartPipelinesGuidance",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/SupervisorGuidance"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Take back something said to a learner, so that it stops being carried",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/relearn" : {
-      "post" : {
-        "operationId" : "relearnSmartPipelinesLearner",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/ReasonRequest"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SupervisorLearner"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Send a learner back to learn afresh from its next stream",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/settings" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesLearnerSettings",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ShapeshifterAiDoc"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The Learning Flow a learner runs under, for its pipeline's viewers",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/elements/{elementId}/waiting" : {
-      "post" : {
-        "operationId" : "findSmartPipelinesLearnerWaiting",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "in" : "path",
-          "name" : "elementId",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/PageRequest"
-              }
-            }
-          },
-          "description" : "page",
-          "required" : true
-        },
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ResultPageBacklogStream"
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "Find the streams waiting on one learner, oldest first",
-        "tags" : [ "Smart Pipelines Supervisor" ]
-      }
-    },
-    "/smartPipelinesSupervisor/v1/pipelines/{pipelineUuid}/learners" : {
-      "get" : {
-        "operationId" : "fetchSmartPipelinesPipelineLearners",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "pipelineUuid",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "default" : {
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/SupervisorLearner"
-                  }
-                }
-              }
-            },
-            "description" : "default response"
-          }
-        },
-        "summary" : "The learners of one Smart Pipeline, for its own editor",
-        "tags" : [ "Smart Pipelines Supervisor" ]
       }
     },
     "/solrIndex/v1/fetchSolrTypes" : {
@@ -14134,6 +14250,36 @@
           }
         },
         "summary" : "Fetch some suggestions",
+        "tags" : [ "Suggestions" ]
+      }
+    },
+    "/suggest/v1/fieldValues" : {
+      "post" : {
+        "operationId" : "fetchFieldValues",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FetchFieldValuesRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FieldValues"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch the most common values of a field",
         "tags" : [ "Suggestions" ]
       }
     },
@@ -16146,7 +16292,7 @@
         "properties" : {
           "permission" : {
             "type" : "string",
-            "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+            "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
           },
           "type" : {
             "type" : "string"
@@ -17245,7 +17391,7 @@
               "type" : "array",
               "items" : {
                 "type" : "string",
-                "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+                "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
               },
               "uniqueItems" : true
             },
@@ -17263,7 +17409,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -17271,7 +17417,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -17287,7 +17433,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             },
             "uniqueItems" : true
           },
@@ -17454,21 +17600,6 @@
           }
         }
       },
-      "AssessmentRequest" : {
-        "type" : "object",
-        "properties" : {
-          "comment" : {
-            "type" : "string"
-          },
-          "learner" : {
-            "$ref" : "#/components/schemas/LearnerRef"
-          },
-          "verdict" : {
-            "type" : "string",
-            "enum" : [ "LOOKS_RIGHT", "ISSUE" ]
-          }
-        }
-      },
       "AssignTasksRequest" : {
         "type" : "object",
         "properties" : {
@@ -17481,6 +17612,41 @@
           },
           "sourceTaskId" : {
             "$ref" : "#/components/schemas/TaskId"
+          }
+        }
+      },
+      "AthenaConnectionSettings" : {
+        "type" : "object",
+        "properties" : {
+          "catalog" : {
+            "type" : "string"
+          },
+          "credentialName" : {
+            "type" : "string"
+          },
+          "database" : {
+            "type" : "string"
+          },
+          "maxDataScannedMb" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "minRefreshMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "outputLocation" : {
+            "type" : "string"
+          },
+          "region" : {
+            "type" : "string"
+          },
+          "resultReuseMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "workGroup" : {
+            "type" : "string"
           }
         }
       },
@@ -17520,7 +17686,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Provisional", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
+              "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
             }
           }
         }
@@ -17708,6 +17874,22 @@
             "type" : "boolean"
           }
         }
+      },
+      "AwsKeySecret" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/Secret"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "accessKeyId" : {
+              "type" : "string"
+            },
+            "secretAccessKey" : {
+              "type" : "string"
+            }
+          }
+        } ]
       },
       "AwsPolicyDescriptorType" : {
         "type" : "object",
@@ -17920,6 +18102,24 @@
           "upTime" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "BuiltInFlow" : {
+        "type" : "object",
+        "properties" : {
+          "displayValue" : {
+            "type" : "string"
+          },
+          "example" : {
+            "type" : "string",
+            "enum" : [ "DIRECT", "TARGET_FIRST", "ESCALATING" ]
+          },
+          "steps" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FlowStep"
+            }
           }
         }
       },
@@ -18217,12 +18417,33 @@
           }
         }
       },
+      "CheckResult" : {
+        "type" : "object",
+        "properties" : {
+          "check" : {
+            "type" : "string",
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+          },
+          "score" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "state" : {
+            "type" : "string",
+            "enum" : [ "OFF", "ADVICE", "GATE" ]
+          },
+          "threshold" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        }
+      },
       "CheckSetting" : {
         "type" : "object",
         "properties" : {
           "check" : {
             "type" : "string",
-            "enum" : [ "COMPILE", "COVERAGE", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
           },
           "parameters" : {
             "$ref" : "#/components/schemas/ScorerParameters"
@@ -19173,7 +19394,7 @@
           },
           "credentialType" : {
             "type" : "string",
-            "enum" : [ "USERNAME_PASSWORD", "ACCESS_TOKEN", "SSH_KEY", "KEY_STORE", "KEY_STORE_FILE" ]
+            "enum" : [ "USERNAME_PASSWORD", "ACCESS_TOKEN", "SSH_KEY", "KEY_STORE", "KEY_STORE_FILE", "AWS_KEY" ]
           },
           "expiryTimeMs" : {
             "type" : "integer",
@@ -19204,6 +19425,10 @@
       "CredentialWithPerms" : {
         "type" : "object",
         "properties" : {
+          "certificateExpiryTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
           "credential" : {
             "$ref" : "#/components/schemas/Credential"
           },
@@ -19212,6 +19437,10 @@
           },
           "edit" : {
             "type" : "boolean"
+          },
+          "expiryWarningPeriodMs" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -19225,6 +19454,26 @@
             "type" : "string"
           },
           "ignoreCase" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "CsvSettings" : {
+        "type" : "object",
+        "properties" : {
+          "columns" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DataColumn"
+            }
+          },
+          "data" : {
+            "type" : "string"
+          },
+          "delimiter" : {
+            "type" : "string"
+          },
+          "header" : {
             "type" : "boolean"
           }
         }
@@ -19443,6 +19692,93 @@
             }
           }
         } ]
+      },
+      "DataColumn" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "TEXT", "LONG", "DOUBLE", "DATE", "BOOLEAN" ]
+          }
+        }
+      },
+      "DataConnectionDoc" : {
+        "type" : "object",
+        "properties" : {
+          "athena" : {
+            "$ref" : "#/components/schemas/AthenaConnectionSettings"
+          },
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "csv" : {
+            "$ref" : "#/components/schemas/CsvSettings"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "excel" : {
+            "$ref" : "#/components/schemas/ExcelSettings"
+          },
+          "jdbc" : {
+            "$ref" : "#/components/schemas/JdbcConnectionSettings"
+          },
+          "ldap" : {
+            "$ref" : "#/components/schemas/LdapSettings"
+          },
+          "maxRows" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "queryTimeoutSeconds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "sourceType" : {
+            "type" : "string",
+            "enum" : [ "JDBC", "ATHENA", "CSV", "EXCEL", "LDAP" ]
+          },
+          "timeField" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DataConnectionTestResponse" : {
+        "type" : "object",
+        "properties" : {
+          "message" : {
+            "type" : "string"
+          },
+          "ok" : {
+            "type" : "boolean"
+          }
+        }
       },
       "DataGenDoc" : {
         "type" : "object",
@@ -20201,7 +20537,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "CUT", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FLOOR_MAP_EVENT_STORE", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PIPELINE_FACTORY", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "NOT_ALLOWED", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PASTE", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REDO", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SELECT_ALL", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "CUT", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_CONNECTION", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FLOOR_MAP_EVENT_STORE", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "NOT_ALLOWED", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PASTE", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REDO", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SELECT_ALL", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "type" : {
             "type" : "string"
@@ -20575,6 +20911,141 @@
           }
         }
       },
+      "ElasticDenseVectorSettings" : {
+        "type" : "object",
+        "properties" : {
+          "config" : {
+            "$ref" : "#/components/schemas/DenseVectorFieldConfig"
+          },
+          "rerankScoreField" : {
+            "type" : "string"
+          },
+          "rerankTextField" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ElasticFieldStats" : {
+        "type" : "object",
+        "properties" : {
+          "distinctCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "distinctCountExact" : {
+            "type" : "boolean"
+          },
+          "docsWithValue" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "exact" : {
+            "type" : "boolean"
+          },
+          "fieldName" : {
+            "type" : "string"
+          },
+          "histogram" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ElasticFieldValueCount"
+            }
+          },
+          "max" : {
+            "type" : "string"
+          },
+          "maxSampleSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "mean" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "median" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "min" : {
+            "type" : "string"
+          },
+          "sampleSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "sampledDocs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "topValues" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ElasticFieldValueCount"
+            }
+          },
+          "totalDocs" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "ElasticFieldStatsRequest" : {
+        "type" : "object",
+        "properties" : {
+          "exact" : {
+            "type" : "boolean"
+          },
+          "fieldName" : {
+            "type" : "string"
+          },
+          "fromMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "indexDocRef" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "sampleSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "toMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "topValuesCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "topValuesFilter" : {
+            "type" : "string"
+          },
+          "topValuesOnly" : {
+            "type" : "boolean"
+          },
+          "virtualGroups" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ElasticVirtualFieldGroup"
+            }
+          }
+        }
+      },
+      "ElasticFieldValueCount" : {
+        "type" : "object",
+        "properties" : {
+          "count" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
       "ElasticIndexDoc" : {
         "type" : "object",
         "properties" : {
@@ -20593,6 +21064,12 @@
           },
           "description" : {
             "type" : "string"
+          },
+          "fieldSettings" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ElasticIndexFieldSettings"
+            }
           },
           "fields" : {
             "type" : "array",
@@ -20654,6 +21131,12 @@
       "ElasticIndexField" : {
         "type" : "object",
         "properties" : {
+          "conflictingTypes" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
           "denseVectorFieldConfig" : {
             "$ref" : "#/components/schemas/DenseVectorFieldConfig"
           },
@@ -20677,8 +21160,52 @@
           "indexed" : {
             "type" : "boolean"
           },
+          "mappingParameters" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
+          "multiFieldParent" : {
+            "type" : "string"
+          },
           "nativeType" : {
             "type" : "string"
+          },
+          "queryOptionSet" : {
+            "$ref" : "#/components/schemas/QueryOptionSet"
+          },
+          "sourceIndices" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "supportsTopValues" : {
+            "type" : "boolean"
+          },
+          "virtual" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ElasticIndexFieldSettings" : {
+        "type" : "object",
+        "properties" : {
+          "denseVector" : {
+            "$ref" : "#/components/schemas/ElasticDenseVectorSettings"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "fieldName" : {
+            "type" : "string"
+          },
+          "virtualGroups" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ElasticVirtualFieldGroup"
+            }
           }
         }
       },
@@ -20690,6 +21217,17 @@
           },
           "ok" : {
             "type" : "boolean"
+          }
+        }
+      },
+      "ElasticVirtualFieldGroup" : {
+        "type" : "object",
+        "properties" : {
+          "expression" : {
+            "$ref" : "#/components/schemas/ExpressionOperator"
+          },
+          "name" : {
+            "type" : "string"
           }
         }
       },
@@ -20913,6 +21451,32 @@
           "streamId" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "ExcelSettings" : {
+        "type" : "object",
+        "properties" : {
+          "columns" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DataColumn"
+            }
+          },
+          "copyWorkbookFrom" : {
+            "type" : "string"
+          },
+          "fileName" : {
+            "type" : "string"
+          },
+          "header" : {
+            "type" : "boolean"
+          },
+          "sheet" : {
+            "type" : "string"
+          },
+          "uploadKey" : {
+            "$ref" : "#/components/schemas/ResourceKey"
           }
         }
       },
@@ -21398,6 +21962,14 @@
               "type" : "string",
               "description" : "The name of the field that is being evaluated in this predicate term"
             },
+            "options" : {
+              "type" : "object",
+              "additionalProperties" : {
+                "type" : "string",
+                "description" : "Field-level query options that tailor how the data source searches the field, keyed by option id. Only options whose value differs from the default are stored. The options a field supports depend on its data source."
+              },
+              "description" : "Field-level query options that tailor how the data source searches the field, keyed by option id. Only options whose value differs from the default are stored. The options a field supports depend on its data source."
+            },
             "value" : {
               "type" : "string",
               "description" : "The value that the field value is being evaluated against. Not required if a dictionary is supplied"
@@ -21410,6 +21982,9 @@
         "type" : "object",
         "properties" : {
           "dependencyWarningsEnabled" : {
+            "type" : "boolean"
+          },
+          "edgeAuthentication" : {
             "type" : "boolean"
           },
           "externalIdentityProvider" : {
@@ -21780,6 +22355,30 @@
           }
         }
       },
+      "FetchFieldValuesRequest" : {
+        "type" : "object",
+        "properties" : {
+          "dataSource" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "dateTimeSettings" : {
+            "$ref" : "#/components/schemas/DateTimeSettings"
+          },
+          "expression" : {
+            "$ref" : "#/components/schemas/ExpressionOperator"
+          },
+          "field" : {
+            "$ref" : "#/components/schemas/QueryField"
+          },
+          "filter" : {
+            "type" : "string"
+          },
+          "timeRange" : {
+            "$ref" : "#/components/schemas/TimeRange"
+          }
+        },
+        "required" : [ "dataSource", "field" ]
+      },
       "FetchHighlightsRequest" : {
         "type" : "object",
         "properties" : {
@@ -21896,6 +22495,42 @@
           }
         },
         "required" : [ "dataSource", "field" ]
+      },
+      "FieldValueCount" : {
+        "type" : "object",
+        "properties" : {
+          "count" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "termValue" : {
+            "type" : "string"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
+      "FieldValues" : {
+        "type" : "object",
+        "properties" : {
+          "allTime" : {
+            "type" : "boolean"
+          },
+          "scope" : {
+            "type" : "string"
+          },
+          "totalCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FieldValueCount"
+            }
+          }
+        }
       },
       "FilterFieldDefinition" : {
         "type" : "object",
@@ -22063,7 +22698,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "USERNAME_PASSWORD", "ACCESS_TOKEN", "SSH_KEY", "KEY_STORE", "KEY_STORE_FILE" ]
+              "enum" : [ "USERNAME_PASSWORD", "ACCESS_TOKEN", "SSH_KEY", "KEY_STORE", "KEY_STORE_FILE", "AWS_KEY" ]
             },
             "uniqueItems" : true
           },
@@ -22174,6 +22809,9 @@
         "properties" : {
           "dataSourceRef" : {
             "$ref" : "#/components/schemas/DocRef"
+          },
+          "nativeQuery" : {
+            "type" : "string"
           },
           "pageRequest" : {
             "$ref" : "#/components/schemas/PageRequest"
@@ -23724,10 +24362,13 @@
             "advanceSize" : {
               "type" : "string"
             },
-            "function" : {
+            "offset" : {
               "type" : "string"
             },
             "timeField" : {
+              "type" : "string"
+            },
+            "timeZone" : {
               "type" : "string"
             },
             "windowSize" : {
@@ -24165,6 +24806,10 @@
           "version" : {
             "type" : "integer",
             "format" : "int32"
+          },
+          "volumeType" : {
+            "type" : "string",
+            "enum" : [ "LOCAL", "SHARED" ]
           }
         }
       },
@@ -24310,6 +24955,35 @@
         },
         "required" : [ "minimumPasswordLength", "minimumPasswordStrength" ]
       },
+      "JdbcConnectionSettings" : {
+        "type" : "object",
+        "properties" : {
+          "connectionProperties" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
+          "credentialName" : {
+            "type" : "string"
+          },
+          "fetchSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "maxPoolSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "minRefreshMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        }
+      },
       "Job" : {
         "type" : "object",
         "properties" : {
@@ -24442,6 +25116,38 @@
           "scheduleReferenceTime" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "JoinKey" : {
+        "type" : "object",
+        "description" : "A pair of expressions whose values must be equal for two rows to join",
+        "properties" : {
+          "left" : {
+            "type" : "string",
+            "description" : "The expression worked out from the rows the join is applied to"
+          },
+          "right" : {
+            "type" : "string",
+            "description" : "The expression worked out from the joined source's rows"
+          }
+        }
+      },
+      "JoinWindow" : {
+        "type" : "object",
+        "description" : "The time window a joined row's time must fall in",
+        "properties" : {
+          "after" : {
+            "type" : "boolean",
+            "description" : "True if the window starts at the time field and runs forward, false or missing if it ends there and runs back"
+          },
+          "duration" : {
+            "type" : "string",
+            "description" : "The length of the window as a StroomQL duration, e.g. 10m"
+          },
+          "timeField" : {
+            "type" : "string",
+            "description" : "The field of the rows being joined that holds the time the window starts or ends at"
           }
         }
       },
@@ -24621,6 +25327,41 @@
           }
         }
       },
+      "LdapSettings" : {
+        "type" : "object",
+        "properties" : {
+          "attributes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DataColumn"
+            }
+          },
+          "baseDn" : {
+            "type" : "string"
+          },
+          "credentialName" : {
+            "type" : "string"
+          },
+          "minRefreshMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "pageSize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "scope" : {
+            "type" : "string",
+            "enum" : [ "BASE", "ONE_LEVEL", "SUBTREE" ]
+          },
+          "startTls" : {
+            "type" : "boolean"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        }
+      },
       "LearnerCriteria" : {
         "type" : "object",
         "properties" : {
@@ -24683,6 +25424,169 @@
             }
           }
         }
+      },
+      "LearningFlowDoc" : {
+        "type" : "object",
+        "properties" : {
+          "attemptBudgetMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "checks" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CheckSetting"
+            }
+          },
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "flow" : {
+            "$ref" : "#/components/schemas/LearningFlow"
+          },
+          "heldOutFraction" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "instructions" : {
+            "type" : "string"
+          },
+          "learningMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "DISABLED" ]
+          },
+          "maxAttempts" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "maxDeferralAgeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "minRecordsToLearn" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "model" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "promotionMode" : {
+            "type" : "string",
+            "enum" : [ "AUTOMATIC", "REVIEW" ]
+          },
+          "regressionCap" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "relearnThreshold" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "sampleSizeLimit" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "spendCallsPerHour" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "spendTokensPerHour" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "targetSchema" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "tokenBudget" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
+      },
+      "LearningFlowStepDetails" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ElementStepDetails"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "bindingUuid" : {
+              "type" : "string"
+            },
+            "decision" : {
+              "type" : "string"
+            },
+            "document" : {
+              "$ref" : "#/components/schemas/DocRef"
+            },
+            "dryRun" : {
+              "type" : "boolean"
+            },
+            "fragment" : {
+              "$ref" : "#/components/schemas/DocRef"
+            },
+            "nested" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/NestedElementData"
+              }
+            },
+            "reason" : {
+              "type" : "string"
+            },
+            "recordBoundary" : {
+              "type" : "string"
+            },
+            "score" : {
+              "type" : "number",
+              "format" : "double"
+            },
+            "stream" : {
+              "type" : "object",
+              "additionalProperties" : {
+                "type" : "string"
+              }
+            },
+            "transcript" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/SupervisorTurn"
+              }
+            },
+            "verdicts" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/components/schemas/StageVerdict"
+              }
+            }
+          }
+        } ]
       },
       "LifespanInfo" : {
         "type" : "object",
@@ -24945,7 +25849,7 @@
           },
           "partitionBy" : {
             "type" : "string",
-            "enum" : [ "DAY", "WEEK", "MONTH", "YEAR" ]
+            "enum" : [ "NONE", "DAY", "WEEK", "MONTH", "YEAR" ]
           },
           "partitionSize" : {
             "type" : "integer",
@@ -25465,6 +26369,9 @@
           "dateTimeSettings" : {
             "$ref" : "#/components/schemas/DateTimeSettings"
           },
+          "dispatchId" : {
+            "type" : "string"
+          },
           "key" : {
             "$ref" : "#/components/schemas/QueryKey"
           },
@@ -25486,6 +26393,9 @@
               "type" : "integer",
               "format" : "int64"
             }
+          },
+          "sourceNode" : {
+            "type" : "string"
           },
           "sourceTaskId" : {
             "$ref" : "#/components/schemas/TaskId"
@@ -26104,7 +27014,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "CUT", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FLOOR_MAP_EVENT_STORE", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PIPELINE_FACTORY", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "NOT_ALLOWED", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PASTE", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REDO", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SELECT_ALL", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "CUT", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_CONNECTION", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FLOOR_MAP_EVENT_STORE", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "NOT_ALLOWED", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PASTE", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REDO", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SELECT_ALL", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "roles" : {
             "type" : "array",
@@ -26131,161 +27041,6 @@
             "items" : {
               "$ref" : "#/components/schemas/PipelineElement"
             }
-          }
-        }
-      },
-      "PipelineFactoryCombination" : {
-        "type" : "object",
-        "properties" : {
-          "createTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "filterUuid" : {
-            "type" : "string"
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "pipeline" : {
-            "$ref" : "#/components/schemas/DocRef"
-          },
-          "pipelineExists" : {
-            "type" : "boolean"
-          },
-          "state" : {
-            "type" : "string"
-          },
-          "tries" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "updateTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "values" : {
-            "type" : "object",
-            "additionalProperties" : {
-              "type" : "string"
-            }
-          }
-        }
-      },
-      "PipelineFactoryDoc" : {
-        "type" : "object",
-        "properties" : {
-          "createTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "createUser" : {
-            "type" : "string"
-          },
-          "description" : {
-            "type" : "string"
-          },
-          "enabled" : {
-            "type" : "boolean"
-          },
-          "filterSettings" : {
-            "$ref" : "#/components/schemas/PipelineFactoryFilterSettings"
-          },
-          "folderPattern" : {
-            "type" : "string"
-          },
-          "key" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string"
-            }
-          },
-          "name" : {
-            "type" : "string"
-          },
-          "namePattern" : {
-            "type" : "string"
-          },
-          "properties" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/PipelineFactoryProperty"
-            }
-          },
-          "runAsUser" : {
-            "$ref" : "#/components/schemas/UserRef"
-          },
-          "streamFilter" : {
-            "$ref" : "#/components/schemas/ExpressionOperator"
-          },
-          "template" : {
-            "$ref" : "#/components/schemas/DocRef"
-          },
-          "type" : {
-            "type" : "string"
-          },
-          "updateTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "updateUser" : {
-            "type" : "string"
-          },
-          "uuid" : {
-            "type" : "string"
-          },
-          "version" : {
-            "type" : "string"
-          }
-        }
-      },
-      "PipelineFactoryFilterSettings" : {
-        "type" : "object",
-        "properties" : {
-          "autoPriority" : {
-            "type" : "boolean"
-          },
-          "enabled" : {
-            "type" : "boolean"
-          },
-          "export" : {
-            "type" : "boolean"
-          },
-          "maxMetaCreateTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "maxProcessingTasks" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "maxTaskCreationDelay" : {
-            "$ref" : "#/components/schemas/SimpleDuration"
-          },
-          "minMetaCreateTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "priority" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "profileName" : {
-            "type" : "string"
-          }
-        }
-      },
-      "PipelineFactoryProperty" : {
-        "type" : "object",
-        "properties" : {
-          "elementId" : {
-            "type" : "string"
-          },
-          "name" : {
-            "type" : "string"
-          },
-          "value" : {
-            "type" : "string"
           }
         }
       },
@@ -27189,39 +27944,6 @@
           }
         }
       },
-      "QualityAssessment" : {
-        "type" : "object",
-        "properties" : {
-          "author" : {
-            "type" : "string"
-          },
-          "bindingUuid" : {
-            "type" : "string"
-          },
-          "comment" : {
-            "type" : "string"
-          },
-          "createTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "resolveTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "resolvedBy" : {
-            "type" : "string"
-          },
-          "verdict" : {
-            "type" : "string",
-            "enum" : [ "LOOKS_RIGHT", "ISSUE" ]
-          }
-        }
-      },
       "QualityReport" : {
         "type" : "object",
         "properties" : {
@@ -27285,17 +28007,32 @@
         "type" : "object",
         "description" : "The query terms for the search",
         "properties" : {
+          "alias" : {
+            "type" : "string"
+          },
           "dataSource" : {
             "$ref" : "#/components/schemas/DocRef"
           },
           "expression" : {
             "$ref" : "#/components/schemas/ExpressionOperator"
           },
+          "joins" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/QueryJoin"
+            }
+          },
+          "nativeQuery" : {
+            "type" : "string"
+          },
           "params" : {
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/Param"
             }
+          },
+          "sourceTableSettings" : {
+            "$ref" : "#/components/schemas/TableSettings"
           },
           "timeRange" : {
             "$ref" : "#/components/schemas/TimeRange"
@@ -27477,7 +28214,7 @@
         "properties" : {
           "conditionSet" : {
             "type" : "string",
-            "enum" : [ "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary', 'between', '>', '>=', '<', '<='", "'=', '!='", "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', 'in folder'", "'=', '!=', 'in', 'in dictionary'", "'is', 'is not', 'in folder', '=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '==', '!==', 'in', 'in dictionary'", "'==', '!==', 'between', 'in', 'in dictionary'", "'==', '!==', 'in', 'in dictionary', '=', '!=', 'between', 'contains', 'contains (CS)', '>', '>=', '<', '<=', 'is null', 'is not null', 'matches regex', 'matches regex (CS)', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'matches regex'", "'=', '!='", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!='", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', '=', '!='", "'between'", "'=', '!=', 'in'", "'contains', '=', '!=', 'matches regex', 'in'", "'contains', '=', '!=', 'starts with', 'ends with', 'matches regex', '>', '>=', '<', '<=', 'in', 'in dictionary'", "'=', '!='", "'contains', '=', '!=', 'in', 'in dictionary'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', 'word boundary', '>', '>=', '<', '<=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'is'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'is'", "'of'", "'has permissions', 'has owner permission', 'has delete permission', 'has edit permission', 'has view permission', 'has use permission'", "'is', 'is not'" ]
+            "enum" : [ "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary', 'between', '>', '>=', '<', '<='", "'=', '!='", "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', 'in folder'", "'=', '!=', 'in', 'in dictionary'", "'is', 'is not', 'in folder', '=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '==', '!==', 'in', 'in dictionary'", "'==', '!==', 'between', 'in', 'in dictionary'", "'==', '!==', 'in', 'in dictionary', '=', '!=', 'between', 'contains', 'contains (CS)', '>', '>=', '<', '<=', 'is null', 'is not null', 'matches regex', 'matches regex (CS)', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'matches regex'", "'=', '!='", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!='", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', '=', '!='", "'between'", "'=', '!=', 'in'", "'contains', '=', '!=', 'matches regex', 'in'", "'contains', '=', '!=', 'starts with', 'ends with', 'matches regex', '>', '>=', '<', '<=', 'in', 'in dictionary'", "'=', '!='", "'contains', '=', '!=', 'in', 'in dictionary'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', 'word boundary', '>', '>=', '<', '<=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'is'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'is'", "'of'", "'has permissions', 'has owner permission', 'has delete permission', 'has edit permission', 'has view permission', 'has use permission'", "'is', 'is not'" ]
           },
           "docRefType" : {
             "type" : "string"
@@ -27492,7 +28229,13 @@
           "name" : {
             "type" : "string"
           },
+          "queryOptionSet" : {
+            "$ref" : "#/components/schemas/QueryOptionSet"
+          },
           "queryable" : {
+            "type" : "boolean"
+          },
+          "supportsTopValues" : {
             "type" : "boolean"
           },
           "type" : {
@@ -27671,6 +28414,37 @@
           }
         }
       },
+      "QueryJoin" : {
+        "type" : "object",
+        "description" : "A source joined to the rows of a query",
+        "properties" : {
+          "alias" : {
+            "type" : "string",
+            "description" : "The name the joined source's fields are prefixed with, as in <alias>.<field>"
+          },
+          "keys" : {
+            "type" : "array",
+            "description" : "The pairs of expressions whose values must be equal for rows to join",
+            "items" : {
+              "$ref" : "#/components/schemas/JoinKey"
+            }
+          },
+          "query" : {
+            "$ref" : "#/components/schemas/Query"
+          },
+          "tableSettings" : {
+            "$ref" : "#/components/schemas/TableSettings"
+          },
+          "type" : {
+            "type" : "string",
+            "description" : "The kind of join",
+            "enum" : [ "INNER", "LEFT", "SEMI", "ANTI", "RIGHT", "FULL" ]
+          },
+          "window" : {
+            "$ref" : "#/components/schemas/JoinWindow"
+          }
+        }
+      },
       "QueryKey" : {
         "type" : "object",
         "description" : "A unique key to identify the instance of the search by. This key is used to identify multiple requests for the same search when running in incremental mode.",
@@ -27679,6 +28453,83 @@
             "type" : "string",
             "description" : "The UUID that makes up the query key",
             "example" : "7740bcd0-a49e-4c22-8540-044f85770716"
+          }
+        }
+      },
+      "QueryOptionChoice" : {
+        "type" : "object",
+        "properties" : {
+          "displayValue" : {
+            "type" : "string"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
+      "QueryOptionDefinition" : {
+        "type" : "object",
+        "properties" : {
+          "choices" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/QueryOptionChoice"
+            }
+          },
+          "defaultValue" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "maxValue" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "minValue" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "rules" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/QueryOptionRule"
+            }
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "BOOLEAN", "CHOICE", "INTEGER" ]
+          }
+        }
+      },
+      "QueryOptionRule" : {
+        "type" : "object",
+        "properties" : {
+          "negate" : {
+            "type" : "boolean"
+          },
+          "optionId" : {
+            "type" : "string"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
+      "QueryOptionSet" : {
+        "type" : "object",
+        "properties" : {
+          "definitions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/QueryOptionDefinition"
+            }
           }
         }
       },
@@ -27868,6 +28719,23 @@
         "type" : "object",
         "properties" : {
           "reason" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RebuiltPrompt" : {
+        "type" : "object",
+        "properties" : {
+          "notes" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "prompt" : {
+            "type" : "string"
+          },
+          "refusal" : {
             "type" : "string"
           }
         }
@@ -28154,15 +29022,15 @@
       "ReplaceSecretRequest" : {
         "type" : "object",
         "properties" : {
+          "credential" : {
+            "$ref" : "#/components/schemas/Credential"
+          },
           "expiryTimeMs" : {
             "type" : "integer",
             "format" : "int64"
           },
           "secret" : {
             "$ref" : "#/components/schemas/Secret"
-          },
-          "uuid" : {
-            "type" : "string"
           }
         }
       },
@@ -29642,19 +30510,6 @@
           }
         }
       },
-      "SchemaConformanceParameters" : {
-        "type" : "object",
-        "allOf" : [ {
-          "$ref" : "#/components/schemas/ScorerParameters"
-        }, {
-          "type" : "object",
-          "properties" : {
-            "schemaGroup" : {
-              "type" : "string"
-            }
-          }
-        } ]
-      },
       "ScorerParameters" : {
         "type" : "object",
         "discriminator" : {
@@ -29865,6 +30720,7 @@
         "discriminator" : {
           "mapping" : {
             "accessToken" : "#/components/schemas/AccessTokenSecret",
+            "awsKey" : "#/components/schemas/AwsKeySecret",
             "keyStore" : "#/components/schemas/KeyStoreSecret",
             "keyStoreFile" : "#/components/schemas/KeyStoreFileSecret",
             "sshKey" : "#/components/schemas/SshKeySecret",
@@ -30227,168 +31083,6 @@
           }
         } ]
       },
-      "ShapeshifterAiDoc" : {
-        "type" : "object",
-        "properties" : {
-          "attemptBudgetMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "checks" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/CheckSetting"
-            }
-          },
-          "createTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "createUser" : {
-            "type" : "string"
-          },
-          "description" : {
-            "type" : "string"
-          },
-          "flow" : {
-            "$ref" : "#/components/schemas/LearningFlow"
-          },
-          "heldOutFraction" : {
-            "type" : "number",
-            "format" : "double"
-          },
-          "instructions" : {
-            "type" : "string"
-          },
-          "learningMode" : {
-            "type" : "string",
-            "enum" : [ "AUTOMATIC", "DISABLED" ]
-          },
-          "maxAttempts" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "maxDeferralAgeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "minRecordsToLearn" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "model" : {
-            "$ref" : "#/components/schemas/DocRef"
-          },
-          "name" : {
-            "type" : "string"
-          },
-          "promotionMode" : {
-            "type" : "string",
-            "enum" : [ "AUTOMATIC", "REVIEW" ]
-          },
-          "regressionCap" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "regressionRetentionDays" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "relearnThreshold" : {
-            "type" : "number",
-            "format" : "double"
-          },
-          "sampleSizeLimit" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "targetSchema" : {
-            "$ref" : "#/components/schemas/DocRef"
-          },
-          "tokenBudget" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "type" : {
-            "type" : "string"
-          },
-          "updateTimeMs" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "updateUser" : {
-            "type" : "string"
-          },
-          "uuid" : {
-            "type" : "string"
-          },
-          "version" : {
-            "type" : "string"
-          }
-        }
-      },
-      "ShapeshifterAiStepDetails" : {
-        "type" : "object",
-        "allOf" : [ {
-          "$ref" : "#/components/schemas/ElementStepDetails"
-        }, {
-          "type" : "object",
-          "properties" : {
-            "bindingUuid" : {
-              "type" : "string"
-            },
-            "decision" : {
-              "type" : "string"
-            },
-            "document" : {
-              "$ref" : "#/components/schemas/DocRef"
-            },
-            "dryRun" : {
-              "type" : "boolean"
-            },
-            "fragment" : {
-              "$ref" : "#/components/schemas/DocRef"
-            },
-            "nested" : {
-              "type" : "array",
-              "items" : {
-                "$ref" : "#/components/schemas/NestedElementData"
-              }
-            },
-            "provisional" : {
-              "type" : "boolean"
-            },
-            "reason" : {
-              "type" : "string"
-            },
-            "recordBoundary" : {
-              "type" : "string"
-            },
-            "score" : {
-              "type" : "number",
-              "format" : "double"
-            },
-            "stream" : {
-              "type" : "object",
-              "additionalProperties" : {
-                "type" : "string"
-              }
-            },
-            "transcript" : {
-              "type" : "array",
-              "items" : {
-                "$ref" : "#/components/schemas/SupervisorTurn"
-              }
-            },
-            "verdicts" : {
-              "type" : "array",
-              "items" : {
-                "$ref" : "#/components/schemas/StageVerdict"
-              }
-            }
-          }
-        } ]
-      },
       "SharedElementData" : {
         "type" : "object",
         "properties" : {
@@ -30513,7 +31207,7 @@
           "properties" : {
             "appPermission" : {
               "type" : "string",
-              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
+              "enum" : [ "ADMINISTRATOR", "ANNOTATIONS", "APPROVE_SMART_PIPELINES_AUTOMATICALLY", "CREDENTIALS", "MANAGE_CACHE_PERMISSION", "VIEW_DATA_PERMISSION", "VIEW_DATA_WITH_PIPELINE_PERMISSION", "DELETE_DATA_PERMISSION", "IMPORT_DATA_PERMISSION", "EXPORT_DATA_PERMISSION", "MANAGE_USERS_PERMISSION", "CHANGE_OWNER_PERMISSION", "STEPPING_PERMISSION", "MANAGE_PROCESSORS_PERMISSION", "MANAGE_TASKS_PERMISSION", "DOWNLOAD_SEARCH_RESULTS_PERMISSION", "MANAGE_API_KEYS", "MANAGE_CONTENT_TEMPLATES_PERMISSION", "MANAGE_DATA_RECEIPT_RULES_PERMISSION", "MANAGE_JOBS_PERMISSION", "MANAGE_PROPERTIES_PERMISSION", "MANAGE_POLICIES_PERMISSION", "MANAGE_NODES_PERMISSION", "MANAGE_INDEX_SHARDS_PERMISSION", "MANAGE_VOLUMES_PERMISSION", "MANAGE_DB_PERMISSION", "IMPORT_CONFIGURATION", "EXPORT_CONFIGURATION", "VIEW_SYSTEM_INFO_PERMISSION", "CHECK_RECEIPT_STATUS", "FETCH_HASHED_RECEIPT_POLICY_RULES", "VERIFY_API_KEY", "STROOM_PROXY" ]
             }
           }
         } ]
@@ -31143,7 +31837,7 @@
         "properties" : {
           "check" : {
             "type" : "string",
-            "enum" : [ "COMPILE", "COVERAGE", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
           },
           "gate" : {
             "type" : "boolean"
@@ -31725,6 +32419,12 @@
           "doc" : {
             "$ref" : "#/components/schemas/DocRef"
           },
+          "evidence" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CheckResult"
+            }
+          },
           "exhaustNext" : {
             "type" : "boolean"
           },
@@ -31763,13 +32463,20 @@
           "report" : {
             "$ref" : "#/components/schemas/StopReport"
           },
+          "reviewedBy" : {
+            "type" : "string"
+          },
+          "reviewedTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
           "score" : {
             "type" : "number",
             "format" : "double"
           },
           "status" : {
             "type" : "string",
-            "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Provisional", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
+            "enum" : [ "In progress", "Awaiting model", "Awaiting review", "Parked", "Promoted", "Rejected", "Retracted", "Abandoned", "Error" ]
           },
           "tokensSpent" : {
             "type" : "integer",
@@ -31821,6 +32528,9 @@
           "doc" : {
             "$ref" : "#/components/schemas/DocRef"
           },
+          "fallbackUnavailable" : {
+            "type" : "boolean"
+          },
           "fragment" : {
             "$ref" : "#/components/schemas/DocRef"
           },
@@ -31852,9 +32562,6 @@
             "type" : "number",
             "format" : "double"
           },
-          "provisional" : {
-            "type" : "boolean"
-          },
           "raised" : {
             "type" : "boolean"
           },
@@ -31866,9 +32573,26 @@
             "type" : "number",
             "format" : "double"
           },
+          "skips" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "spendPaused" : {
+            "type" : "string"
+          },
           "state" : {
             "type" : "string",
             "enum" : [ "Given up", "Learning off", "Waiting for a person", "Learning", "Serving" ]
+          },
+          "timeZone" : {
+            "type" : "string"
+          },
+          "timeZoneProblem" : {
+            "type" : "string"
+          },
+          "timeZoneSource" : {
+            "type" : "string",
+            "enum" : [ "HEADER", "PIPELINE", "DEFAULT" ]
           },
           "waiting" : {
             "type" : "integer",
@@ -31899,7 +32623,7 @@
           },
           "outcome" : {
             "type" : "string",
-            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "ERRORS_SHORT", "CLASSIFICATION_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
+            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "COMPLETENESS_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "TIMES_SHORT", "LITERALS_SHORT", "PERMITTED_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
           },
           "question" : {
             "type" : "string"
@@ -32391,6 +33115,26 @@
           }
         }
       },
+      "TargetSchemaSummary" : {
+        "type" : "object",
+        "properties" : {
+          "eventLogging" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "rootChildren" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "rootElement" : {
+            "type" : "string"
+          }
+        }
+      },
       "TaskId" : {
         "type" : "object",
         "properties" : {
@@ -32857,6 +33601,27 @@
           }
         }
       },
+      "TimesParameters" : {
+        "type" : "object",
+        "allOf" : [ {
+          "$ref" : "#/components/schemas/ScorerParameters"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "afterDays" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "beforeDays" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "timeField" : {
+              "type" : "string"
+            }
+          }
+        } ]
+      },
       "TokenError" : {
         "type" : "object",
         "properties" : {
@@ -33146,7 +33911,7 @@
           },
           "on" : {
             "type" : "string",
-            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "ERRORS_SHORT", "CLASSIFICATION_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
+            "enum" : [ "PASSED", "REFUSED", "COMPILE_FAILED", "RUN_FAILED", "COVERAGE_SHORT", "COMPLETENESS_SHORT", "YIELD_SHORT", "WHOLENESS_SHORT", "CONFORMANCE_SHORT", "QUALITY_SHORT", "RULES_SHORT", "TIMES_SHORT", "LITERALS_SHORT", "PERMITTED_SHORT", "PRESERVATION_SHORT", "FIDELITY_SHORT" ]
           }
         }
       },
@@ -33155,7 +33920,7 @@
         "properties" : {
           "check" : {
             "type" : "string",
-            "enum" : [ "COMPILE", "COVERAGE", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "PRESERVATION", "FIDELITY", "REGRESSION" ]
+            "enum" : [ "COMPILE", "COVERAGE", "COMPLETENESS", "YIELD", "WHOLENESS", "CONFORMANCE", "QUALITY", "RULES", "TIMES", "LITERALS", "PERMITTED", "PRESERVATION", "FIDELITY", "REGRESSION" ]
           },
           "score" : {
             "type" : "number",
@@ -33603,6 +34368,10 @@
           },
           "timeZone" : {
             "$ref" : "#/components/schemas/UserTimeZone"
+          },
+          "toolbarDisplay" : {
+            "type" : "string",
+            "enum" : [ "ICONS", "ICONS_AND_TEXT", "TEXT" ]
           },
           "visualisationPalette" : {
             "type" : "string"
@@ -34102,6 +34871,10 @@
             "format" : "int64"
           },
           "records" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "skips" : {
             "type" : "integer",
             "format" : "int64"
           },

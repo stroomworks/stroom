@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 /**
  * One element of a pipeline an element ran <em>inside</em> itself, and what it made of the record being
  * stepped (A30, design 01 §11.7).
@@ -67,19 +69,19 @@ public class NestedElementData {
                              @JsonProperty("type") final String type,
                              @JsonProperty("input") final String input,
                              @JsonProperty("output") final String output,
-                             @JsonProperty("formatInput") final boolean formatInput,
-                             @JsonProperty("formatOutput") final boolean formatOutput,
-                             @JsonProperty("wholeStream") final boolean wholeStream,
-                             @JsonProperty("truncated") final boolean truncated) {
+                             @JsonProperty("formatInput") final Boolean formatInput,
+                             @JsonProperty("formatOutput") final Boolean formatOutput,
+                             @JsonProperty("wholeStream") final Boolean wholeStream,
+                             @JsonProperty("truncated") final Boolean truncated) {
         this.id = id;
         this.name = name;
         this.type = type;
         this.input = input;
         this.output = output;
-        this.formatInput = formatInput;
-        this.formatOutput = formatOutput;
-        this.wholeStream = wholeStream;
-        this.truncated = truncated;
+        this.formatInput = Objects.requireNonNullElse(formatInput, false);
+        this.formatOutput = Objects.requireNonNullElse(formatOutput, false);
+        this.wholeStream = Objects.requireNonNullElse(wholeStream, false);
+        this.truncated = Objects.requireNonNullElse(truncated, false);
     }
 
     /**

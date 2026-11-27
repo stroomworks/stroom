@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /// The mock task service with one thing real: a wake, over the mock task DAO. The mock harness runs
-/// tasks it creates itself, and a promotion in Shapeshifter AI wakes its pipeline's deferred tasks
+/// tasks it creates itself, and a promotion in Learning Flow wakes its pipeline's deferred tasks
 /// through the task service (design 06 A129), so a harness whose wake did nothing would leave every
 /// deferred stream asleep.
 public class WakingMockProcessorTaskService extends MockProcessorTaskService {

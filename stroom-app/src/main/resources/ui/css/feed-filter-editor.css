@@ -15,10 +15,10 @@
  */
 
 /*
-   The filter of a Shapeshifter AI document's Feeds tab (stroom.shapeshifter.client.component.FeedFilterEditor):
+   The filter of a Learning Flow document's Feeds tab (stroom.learningflow.client.component.FeedFilterEditor):
    its choice of where feeds stand, as wide as its longest item with a count.
 */
 
 .feed-filter-editor__filter {
-    width: 280px;
+    width: calc(280px * var(--text-scale));
 }

@@ -51,6 +51,7 @@ import stroom.gwt.workbench.client.app.dictionary.DictionaryEditorStories;
 import stroom.gwt.workbench.client.app.editors.AnalyticRuleEditorStories;
 import stroom.gwt.workbench.client.app.editors.CodeDocumentEditorStories;
 import stroom.gwt.workbench.client.app.editors.DashboardEditorStories;
+import stroom.gwt.workbench.client.app.editors.DataConnectionEditorStories;
 import stroom.gwt.workbench.client.app.editors.DataGenEditorStories;
 import stroom.gwt.workbench.client.app.editors.DocumentationEditorStories;
 import stroom.gwt.workbench.client.app.editors.ElasticClusterEditorStories;
@@ -97,6 +98,12 @@ import stroom.gwt.workbench.client.app.index.ElasticIndexEditorStories;
 import stroom.gwt.workbench.client.app.index.IndexEditorStories;
 import stroom.gwt.workbench.client.app.index.IndexVolumesScreenStories;
 import stroom.gwt.workbench.client.app.index.SolrIndexEditorStories;
+import stroom.gwt.workbench.client.app.learningflow.LearningFlowEditorStories;
+import stroom.gwt.workbench.client.app.learningflow.LearningFlowStopReportStories;
+import stroom.gwt.workbench.client.app.learningflow.PipelineAiTranslationStories;
+import stroom.gwt.workbench.client.app.learningflow.PipelineQualityStories;
+import stroom.gwt.workbench.client.app.learningflow.StageDecisionPaneStories;
+import stroom.gwt.workbench.client.app.learningflow.SupervisorStories;
 import stroom.gwt.workbench.client.app.main.AboutDialogStories;
 import stroom.gwt.workbench.client.app.main.ApiErrorAlertHostStories;
 import stroom.gwt.workbench.client.app.main.AppPageStories;
@@ -121,7 +128,6 @@ import stroom.gwt.workbench.client.app.pipeline.PipelineEditorStories;
 import stroom.gwt.workbench.client.app.pipeline.PipelineTreeStories;
 import stroom.gwt.workbench.client.app.pipeline.StepFilterDialogStories;
 import stroom.gwt.workbench.client.app.pipeline.SteppingScreenStories;
-import stroom.gwt.workbench.client.app.pipelinefactory.PipelineFactoryEditorStories;
 import stroom.gwt.workbench.client.app.processing.ExecutionSchedulesScreenStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterEditDialogStories;
 import stroom.gwt.workbench.client.app.processing.ProcessorFilterListStories;
@@ -143,12 +149,6 @@ import stroom.gwt.workbench.client.app.security.UserGroupsScreenStories;
 import stroom.gwt.workbench.client.app.security.UserProfileScreenStories;
 import stroom.gwt.workbench.client.app.security.UserTabScreenStories;
 import stroom.gwt.workbench.client.app.security.UsersScreenStories;
-import stroom.gwt.workbench.client.app.shapeshifter.PipelineAiTranslationStories;
-import stroom.gwt.workbench.client.app.shapeshifter.PipelineQualityStories;
-import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiEditorStories;
-import stroom.gwt.workbench.client.app.shapeshifter.ShapeshifterAiStopReportStories;
-import stroom.gwt.workbench.client.app.shapeshifter.StageDecisionPaneStories;
-import stroom.gwt.workbench.client.app.shapeshifter.SupervisorStories;
 import stroom.gwt.workbench.client.app.vis.ChartVisStories;
 import stroom.gwt.workbench.client.app.vis.MapVisStories;
 import stroom.gwt.workbench.client.app.vis.NetworkVisStories;
@@ -293,7 +293,7 @@ public final class AppStories {
         RecentItemsDialogStories.addTo(registry);
         // App/Main/ResultStoresDialog
         ResultStoresDialogStories.addTo(registry);
-        // App/Main/ShapeshifterAiSupervisor
+        // App/Main/LearningFlowSupervisor
         SupervisorStories.addTo(registry);
         // App/Main/ServerTasksScreen
         ServerTasksScreenStories.addTo(registry);
@@ -343,6 +343,8 @@ public final class AppStories {
         DataGenEditorStories.addTo(registry);
         // App/Editors/DocumentationEditor
         DocumentationEditorStories.addTo(registry);
+        // App/Editors/DataConnectionEditor
+        DataConnectionEditorStories.addTo(registry);
         // App/Editors/ElasticClusterEditor
         ElasticClusterEditorStories.addTo(registry);
         // App/Editors/FloorMapEditor
@@ -362,18 +364,16 @@ public final class AppStories {
         OpenAiModelEditorStories.addTo(registry);
         // App/Editors/PathwaysEditor
         PathwaysEditorStories.addTo(registry);
-        // App/Editors/PipelineFactoryEditor
-        PipelineFactoryEditorStories.addTo(registry);
         // App/Editors/PlanBEditor
         PlanBEditorStories.addTo(registry);
         // App/Editors/QueryEditor
         QueryEditorStories.addTo(registry);
         // App/Editors/ReportEditor
         ReportEditorStories.addTo(registry);
-        // App/Editors/ShapeshifterAiEditor
-        ShapeshifterAiEditorStories.addTo(registry);
-        ShapeshifterAiStopReportStories.addTo(registry);
-        // App/Editors/PipelineAiTranslation
+        // App/Editors/LearningFlowEditor and App/Editors/LearningFlowStopReports
+        LearningFlowEditorStories.addTo(registry);
+        LearningFlowStopReportStories.addTo(registry);
+        // App/Editors/PipelineAiTranslation, App/Editors/PipelineQualityAssurance, App/Editors/PipelineStructureLearned
         PipelineAiTranslationStories.addTo(registry);
         PipelineQualityStories.addTo(registry);
         // App/Editors/StatisticStoreEditor

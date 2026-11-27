@@ -8,8 +8,7 @@ dependencies {
     implementation project(':stroom-activity:stroom-activity-impl')
     implementation project(':stroom-activity:stroom-activity-impl-db')
     implementation project(':stroom-ai:stroom-ai-impl')
-    implementation project(':stroom-pipeline-factory:stroom-pipeline-factory-impl')
-    implementation project(':stroom-shapeshifter:stroom-shapeshifter-ai')
+    implementation project(':stroom-learning-flow:stroom-learning-flow')
     implementation project(':stroom-analytics:stroom-analytics-impl')
     implementation project(':stroom-annotation:stroom-annotation-impl')
     implementation project(':stroom-annotation:stroom-annotation-impl-db')
@@ -34,6 +33,7 @@ dependencies {
     implementation project(':stroom-data:stroom-data-store-impl-fs-db')
     implementation project(':stroom-docref')
     implementation project(':stroom-docstore:stroom-docstore-impl')
+    implementation project(':stroom-docstore:stroom-docstore-impl-database')
     implementation project(':stroom-docstore:stroom-docstore-impl-db')
     implementation project(':stroom-event-logging:stroom-event-logging-impl')
     implementation project(':stroom-explorer:stroom-explorer-impl')
@@ -57,6 +57,7 @@ dependencies {
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-processor:stroom-processor-impl')
     implementation project(':stroom-processor:stroom-processor-impl-db')
+    implementation project(':stroom-data-connection:stroom-data-connection-impl')
     implementation project(':stroom-sqlstore:stroom-sqlstore-impl')
     implementation project(':stroom-receive:stroom-receive-common')
     implementation project(':stroom-receive:stroom-receive-rules-impl')
@@ -120,4 +121,11 @@ tasks.register('generateExpectedYaml', JavaExec) {
 
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'stroom.config.app.GenerateExpectedYaml'
+}
+
+processTestResources {
+    // TestStroomYamlUtil writes this into src/test/resources (it is gitignored). Keep it off
+    // the test classpath, else whether the test has run changes the inputs of the test task
+    // and stops it coming from the build cache.
+    exclude 'stroom/config/app/actual.yaml'
 }
